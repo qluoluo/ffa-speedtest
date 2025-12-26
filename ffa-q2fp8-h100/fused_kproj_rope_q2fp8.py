@@ -37,40 +37,35 @@ def apply_rope(x: torch.Tensor, cos: torch.Tensor, sin: torch.Tensor) -> torch.T
     return (x * cos) + (rotate_half(x) * sin)
 
 
-def encode_k_fp4_fp8_residual(
+def quantize_k_2bit_fp8_residual(
     k: torch.Tensor,
     fp8_dtype: torch.dtype,
-) -> Tuple[torch.Tensor, torch.Tensor]:
-    """Encode K into FP4 (E2M1) nibbles and store FP8 residuals."""
-    fp4_pos = torch.tensor(
-        [0.0, 0.5, 1.0, 1.5, 2.0, 3.0, 4.0, 6.0],
-        device=k.device,
-        dtype=k.dtype,
+) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    k_min = k.amin(dim=1)
+    k_max = k.amax(dim=1)
+    scale = ((k_max - k_min).clamp_min(1e-6) / 3.0).contiguous()
+    zero = k_min.contiguous()
+    k_q = torch.round((k - zero[:, None, :, :]) / scale[:, None, :, :]).clamp(0, 3).to(torch.uint8)
+    k_dequant = (
+        k_q.to(torch.float32) * scale[:, None, :, :].to(torch.float32) + zero[:, None, :, :].to(torch.float32)
     )
-    thresholds = torch.tensor(
-        [0.25, 0.75, 1.25, 1.75, 2.5, 3.5, 5.0],
-        device=k.device,
-        dtype=k.dtype,
-    )
+    k_residual = (k.to(torch.float32) - k_dequant).to(fp8_dtype).contiguous()
 
-    abs_k = k.abs()
-    idx = torch.bucketize(abs_k, thresholds, right=True).to(torch.int64)
-    sign = (k < 0)
-    k_fp4 = (idx.to(torch.uint8) | (sign.to(torch.uint8) << 3)).contiguous()
-    sign_scale = torch.where(sign, -torch.ones_like(abs_k), torch.ones_like(abs_k))
-    k_dequant = fp4_pos[idx] * sign_scale
-    k_residual = (k - k_dequant).to(fp8_dtype).contiguous()
-
-    B, T, HKV, K = k_fp4.shape
-    values_per_byte = 2
+    B, T, HKV, K = k_q.shape
+    values_per_byte = 4
     k_packed_len = (K + values_per_byte - 1) // values_per_byte
     pad = k_packed_len * values_per_byte - K
     if pad:
-        pad_tensor = torch.zeros((B, T, HKV, pad), device=k_fp4.device, dtype=k_fp4.dtype)
-        k_fp4 = torch.cat([k_fp4, pad_tensor], dim=-1)
-    k_fp4 = k_fp4.view(B, T, HKV, k_packed_len, values_per_byte)
-    k_fp4_packed = (k_fp4[..., 0] | (k_fp4[..., 1] << 4)).contiguous()
-    return k_fp4_packed, k_residual
+        pad_tensor = torch.zeros((B, T, HKV, pad), device=k_q.device, dtype=k_q.dtype)
+        k_q = torch.cat([k_q, pad_tensor], dim=-1)
+    k_q = k_q.view(B, T, HKV, k_packed_len, values_per_byte)
+    k_q_packed = (
+        k_q[..., 0]
+        | (k_q[..., 1] << 2)
+        | (k_q[..., 2] << 4)
+        | (k_q[..., 3] << 6)
+    ).contiguous()
+    return k_q_packed, scale, zero, k_residual
 
 
 def _normalize_k_weight(w_k: torch.Tensor, in_dim: int) -> torch.Tensor:
@@ -232,13 +227,17 @@ def _kproj_rope_minmax_kernel(
 
 
 @triton.jit
-def _kproj_rope_fp4_kernel(
+def _kproj_rope_quant_kernel(
     h_ptr,
     w_ptr,
     cos_ptr,
     sin_ptr,
     bias_ptr,
-    k_fp4_ptr,
+    k_min_ptr,
+    k_max_ptr,
+    k_q_ptr,
+    k_scale_ptr,
+    k_zero_ptr,
     k_res_ptr,
     T,
     H: tl.constexpr,
@@ -251,6 +250,7 @@ def _kproj_rope_fp4_kernel(
     HAS_BIAS: tl.constexpr,
     IN_DTYPE: tl.constexpr,
     RES_DTYPE: tl.constexpr,
+    SCALE_DTYPE: tl.constexpr,
 ):
     pid0 = tl.program_id(0)
     pid_b = tl.program_id(1)
@@ -272,6 +272,26 @@ def _kproj_rope_fp4_kernel(
 
     offs_t = t_block * BLOCK_T + tl.arange(0, BLOCK_T)
     t_mask = offs_t < T
+
+    base_k_ptr = (pid_b * HKV + pid_hkv) * K
+    min_even_f = tl.load(k_min_ptr + base_k_ptr + k_even_idx, mask=k_mask_even, other=0.0)
+    max_even_f = tl.load(k_max_ptr + base_k_ptr + k_even_idx, mask=k_mask_even, other=0.0)
+    min_odd_f = tl.load(k_min_ptr + base_k_ptr + k_odd_idx, mask=k_mask_odd, other=0.0)
+    max_odd_f = tl.load(k_max_ptr + base_k_ptr + k_odd_idx, mask=k_mask_odd, other=0.0)
+
+    min_even = tl.cast(min_even_f, IN_DTYPE)
+    max_even = tl.cast(max_even_f, IN_DTYPE)
+    min_odd = tl.cast(min_odd_f, IN_DTYPE)
+    max_odd = tl.cast(max_odd_f, IN_DTYPE)
+
+    min_scale = tl.full((BLOCK_PAIR,), 1e-6, IN_DTYPE)
+    scale_even = tl.maximum(tl.cast((max_even - min_even) / 3.0, IN_DTYPE), min_scale)
+    scale_odd = tl.maximum(tl.cast((max_odd - min_odd) / 3.0, IN_DTYPE), min_scale)
+    if t_block == 0:
+        tl.store(k_scale_ptr + base_k_ptr + k_even_idx, tl.cast(scale_even, SCALE_DTYPE), mask=k_mask_even)
+        tl.store(k_zero_ptr + base_k_ptr + k_even_idx, tl.cast(min_even, SCALE_DTYPE), mask=k_mask_even)
+        tl.store(k_scale_ptr + base_k_ptr + k_odd_idx, tl.cast(scale_odd, SCALE_DTYPE), mask=k_mask_odd)
+        tl.store(k_zero_ptr + base_k_ptr + k_odd_idx, tl.cast(min_odd, SCALE_DTYPE), mask=k_mask_odd)
 
     acc_even = tl.zeros((BLOCK_T, BLOCK_PAIR), dtype=tl.float32)
     acc_odd = tl.zeros((BLOCK_T, BLOCK_PAIR), dtype=tl.float32)
@@ -330,46 +350,31 @@ def _kproj_rope_fp4_kernel(
 
     k_even_f = tl.cast(k_even_rot, tl.float32)
     k_odd_f = tl.cast(k_odd_rot, tl.float32)
+    min_even_f = tl.cast(min_even, tl.float32)
+    min_odd_f = tl.cast(min_odd, tl.float32)
+    scale_even_f = tl.cast(scale_even, tl.float32)
+    scale_odd_f = tl.cast(scale_odd, tl.float32)
+    x_even = (k_even_f - min_even_f[None, :]) / scale_even_f[None, :]
+    x_odd = (k_odd_f - min_odd_f[None, :]) / scale_odd_f[None, :]
+    floor_even = tl.floor(x_even)
+    floor_odd = tl.floor(x_odd)
+    frac_even = x_even - floor_even
+    frac_odd = x_odd - floor_odd
+    is_half_even = frac_even == 0.5
+    is_half_odd = frac_odd == 0.5
+    floor_even_i = tl.cast(floor_even, tl.int32)
+    floor_odd_i = tl.cast(floor_odd, tl.int32)
+    is_odd_even = (floor_even_i & 1) == 1
+    is_odd_odd = (floor_odd_i & 1) == 1
+    round_up_even = frac_even > 0.5
+    round_up_odd = frac_odd > 0.5
+    q_even = tl.where(round_up_even | (is_half_even & is_odd_even), floor_even + 1.0, floor_even)
+    q_odd = tl.where(round_up_odd | (is_half_odd & is_odd_odd), floor_odd + 1.0, floor_odd)
+    q_even = tl.cast(tl.minimum(tl.maximum(q_even, 0.0), 3.0), tl.int32)
+    q_odd = tl.cast(tl.minimum(tl.maximum(q_odd, 0.0), 3.0), tl.int32)
 
-    abs_even = tl.abs(k_even_f)
-    abs_odd = tl.abs(k_odd_f)
-    idx_even = tl.zeros((BLOCK_T, BLOCK_PAIR), dtype=tl.int32)
-    idx_odd = tl.zeros((BLOCK_T, BLOCK_PAIR), dtype=tl.int32)
-    idx_even += abs_even > 0.25
-    idx_even += abs_even > 0.75
-    idx_even += abs_even > 1.25
-    idx_even += abs_even > 1.75
-    idx_even += abs_even > 2.5
-    idx_even += abs_even > 3.5
-    idx_even += abs_even > 5.0
-    idx_odd += abs_odd > 0.25
-    idx_odd += abs_odd > 0.75
-    idx_odd += abs_odd > 1.25
-    idx_odd += abs_odd > 1.75
-    idx_odd += abs_odd > 2.5
-    idx_odd += abs_odd > 3.5
-    idx_odd += abs_odd > 5.0
-
-    sign_even = tl.cast(k_even_f < 0, tl.int32)
-    sign_odd = tl.cast(k_odd_f < 0, tl.int32)
-    q_even = idx_even | (sign_even << 3)
-    q_odd = idx_odd | (sign_odd << 3)
-
-    exp_even = (q_even >> 1) & 0x3
-    exp_odd = (q_odd >> 1) & 0x3
-    mant_even = q_even & 0x1
-    mant_odd = q_odd & 0x1
-    exp_even_f = tl.cast(exp_even - 1, tl.float32)
-    exp_odd_f = tl.cast(exp_odd - 1, tl.float32)
-    norm_even = tl.exp2(exp_even_f) * (1.0 + tl.cast(mant_even, tl.float32) * 0.5)
-    norm_odd = tl.exp2(exp_odd_f) * (1.0 + tl.cast(mant_odd, tl.float32) * 0.5)
-    sub_even = tl.cast(mant_even, tl.float32) * 0.5
-    sub_odd = tl.cast(mant_odd, tl.float32) * 0.5
-    deq_even = tl.where(exp_even == 0, sub_even, norm_even)
-    deq_odd = tl.where(exp_odd == 0, sub_odd, norm_odd)
-    deq_even = tl.where(sign_even == 1, -deq_even, deq_even)
-    deq_odd = tl.where(sign_odd == 1, -deq_odd, deq_odd)
-
+    deq_even = tl.cast(q_even, tl.float32) * scale_even_f[None, :] + min_even_f[None, :]
+    deq_odd = tl.cast(q_odd, tl.float32) * scale_odd_f[None, :] + min_odd_f[None, :]
     res_even = tl.cast(k_even_f - deq_even, RES_DTYPE)
     res_odd = tl.cast(k_odd_f - deq_odd, RES_DTYPE)
 
@@ -379,15 +384,22 @@ def _kproj_rope_fp4_kernel(
 
     q_even = tl.where(k_mask_even[None, :], q_even, 0)
     q_odd = tl.where(k_mask_odd[None, :], q_odd, 0)
-    packed = tl.cast(q_even | (q_odd << 4), tl.uint8)
+    q_even_group = tl.reshape(q_even, (BLOCK_T, BLOCK_PAIR // 2, 2))
+    q_odd_group = tl.reshape(q_odd, (BLOCK_T, BLOCK_PAIR // 2, 2))
+    pair_pos = tl.arange(0, 2)
+    even_weights = tl.cast(1 << (pair_pos * 4), tl.int32)
+    odd_weights = tl.cast(1 << (pair_pos * 4 + 2), tl.int32)
+    packed = tl.sum(q_even_group * even_weights + q_odd_group * odd_weights, axis=2)
+    packed = tl.cast(packed, tl.uint8)
 
-    pack_offs = base_pair + tl.arange(0, BLOCK_PAIR)
+    base_pack = base_pair // 2
+    pack_offs = base_pack + tl.arange(0, BLOCK_PAIR // 2)
     pack_mask = pack_offs < K_PACKED
     base_q_ptr = (pid_b * T + offs_t[:, None]) * (HKV * K_PACKED) + pid_hkv * K_PACKED
-    tl.store(k_fp4_ptr + base_q_ptr + pack_offs[None, :], packed, mask=t_mask[:, None] & pack_mask[None, :])
+    tl.store(k_q_ptr + base_q_ptr + pack_offs[None, :], packed, mask=t_mask[:, None] & pack_mask[None, :])
 
 
-def kproj_rope_fp4_reference(
+def kproj_rope_quantize_reference(
     h: torch.Tensor,
     w_k: torch.Tensor,
     cos: torch.Tensor,
@@ -396,7 +408,7 @@ def kproj_rope_fp4_reference(
     head_dim: int,
     bias: Optional[torch.Tensor] = None,
     fp8_dtype: Optional[torch.dtype] = None,
-) -> Tuple[torch.Tensor, torch.Tensor]:
+) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
     if fp8_dtype is None:
         fp8_dtype = _resolve_fp8_dtype(h.device)
     w_k = _normalize_k_weight(w_k, h.shape[-1])
@@ -409,10 +421,10 @@ def kproj_rope_fp4_reference(
         )
     k = k_linear.view(B, T, num_kv_heads, head_dim)
     k = apply_rope(k, cos, sin)
-    return encode_k_fp4_fp8_residual(k, fp8_dtype)
+    return quantize_k_2bit_fp8_residual(k, fp8_dtype)
 
 
-def kproj_rope_fp4_triton(
+def kproj_rope_quantize_triton(
     h: torch.Tensor,
     w_k: torch.Tensor,
     cos: torch.Tensor,
@@ -426,13 +438,13 @@ def kproj_rope_fp4_triton(
     block_pair: int = 16,
     num_warps: int = 4,
     num_stages: int = 2,
-) -> Tuple[torch.Tensor, torch.Tensor]:
+) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
     if not h.is_cuda:
         raise ValueError("Triton kernel requires CUDA tensors.")
     if head_dim % 2 != 0:
         raise ValueError(f"head_dim must be even for RoPE, got {head_dim}")
-    if block_pair <= 0:
-        raise ValueError("block_pair must be positive.")
+    if block_pair % 2 != 0:
+        raise ValueError("block_pair must be even to pack int2 values.")
     w_k = _normalize_k_weight(w_k, h.shape[-1])
 
     B, T, H = h.shape
@@ -459,10 +471,14 @@ def kproj_rope_fp4_triton(
 
     K = head_dim
     HKV = num_kv_heads
-    K_PACKED = (K + 1) // 2
+    K_PACKED = (K + 3) // 4
     pair_count = K // 2
 
-    k_fp4_packed = torch.empty((B, T, HKV, K_PACKED), device=h.device, dtype=torch.uint8)
+    k_min = torch.full((B, HKV, K), float("inf"), device=h.device, dtype=torch.float32)
+    k_max = torch.full((B, HKV, K), float("-inf"), device=h.device, dtype=torch.float32)
+    k_scale = torch.empty((B, HKV, K), device=h.device, dtype=h.dtype)
+    k_zero = torch.empty((B, HKV, K), device=h.device, dtype=h.dtype)
+    k_q_packed = torch.empty((B, T, HKV, K_PACKED), device=h.device, dtype=torch.uint8)
     k_residual = torch.empty((B, T, HKV, K), device=h.device, dtype=residual_store_dtype)
 
     n_t_blocks = triton.cdiv(T, block_t)
@@ -471,13 +487,40 @@ def kproj_rope_fp4_triton(
 
     in_tl = _torch_to_tl_dtype(h.dtype)
     res_tl = _torch_to_tl_dtype(residual_store_dtype)
-    _kproj_rope_fp4_kernel[grid](
+    scale_tl = _torch_to_tl_dtype(h.dtype)
+
+    _kproj_rope_minmax_kernel[grid](
         h,
         w_k,
         cos,
         sin,
         bias_ptr,
-        k_fp4_packed,
+        k_min,
+        k_max,
+        T=T,
+        H=H,
+        HKV=HKV,
+        K=K,
+        BLOCK_T=block_t,
+        BLOCK_H=block_h,
+        BLOCK_PAIR=block_pair,
+        HAS_BIAS=has_bias,
+        IN_DTYPE=in_tl,
+        num_warps=num_warps,
+        num_stages=num_stages,
+    )
+
+    _kproj_rope_quant_kernel[grid](
+        h,
+        w_k,
+        cos,
+        sin,
+        bias_ptr,
+        k_min,
+        k_max,
+        k_q_packed,
+        k_scale,
+        k_zero,
         k_residual,
         T=T,
         H=H,
@@ -490,6 +533,7 @@ def kproj_rope_fp4_triton(
         HAS_BIAS=has_bias,
         IN_DTYPE=in_tl,
         RES_DTYPE=res_tl,
+        SCALE_DTYPE=scale_tl,
         num_warps=num_warps,
         num_stages=num_stages,
     )
@@ -497,10 +541,10 @@ def kproj_rope_fp4_triton(
     if use_fp8:
         k_residual = k_residual.to(fp8_dtype)
 
-    return k_fp4_packed, k_residual
+    return k_q_packed, k_scale, k_zero, k_residual
 
 
-def kproj_rope_fp4_fused(
+def kproj_rope_quantize_fused(
     h: torch.Tensor,
     w_k: torch.Tensor,
     cos: torch.Tensor,
@@ -509,8 +553,8 @@ def kproj_rope_fp4_fused(
     head_dim: int,
     bias: Optional[torch.Tensor] = None,
     fp8_dtype: Optional[torch.dtype] = None,
-) -> Tuple[torch.Tensor, torch.Tensor]:
-    return kproj_rope_fp4_triton(
+) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    return kproj_rope_quantize_triton(
         h=h,
         w_k=w_k,
         cos=cos,
@@ -537,7 +581,7 @@ def run_smoke_test(
     w_k = torch.randn(HKV * K, H, device=device, dtype=dtype)
     cos, sin = build_rope_cache(T, K, device=device, dtype=dtype)
 
-    ref = kproj_rope_fp4_reference(
+    ref = kproj_rope_quantize_reference(
         h=h,
         w_k=w_k,
         cos=cos,
@@ -546,7 +590,7 @@ def run_smoke_test(
         head_dim=K,
         fp8_dtype=fp8_dtype,
     )
-    fused = kproj_rope_fp4_triton(
+    fused = kproj_rope_quantize_triton(
         h=h,
         w_k=w_k,
         cos=cos,
@@ -556,20 +600,24 @@ def run_smoke_test(
         fp8_dtype=fp8_dtype,
     )
 
-    k_fp4_ref, k_res_ref = ref
-    k_fp4_fused, k_res_fused = fused
+    k_q_ref, scale_ref, zero_ref, k_res_ref = ref
+    k_q_fused, scale_fused, zero_fused, k_res_fused = fused
 
-    packed_mismatch = (k_fp4_ref != k_fp4_fused).float().mean().item()
+    packed_mismatch = (k_q_ref != k_q_fused).float().mean().item()
+    scale_max = (scale_ref.float() - scale_fused.float()).abs().max().item()
+    zero_max = (zero_ref.float() - zero_fused.float()).abs().max().item()
     res_mean = (k_res_ref.float() - k_res_fused.float()).abs().mean().item()
-    if packed_mismatch > 0.01 or res_mean > 0.05:
+    if packed_mismatch > 0.01 or scale_max > 0.05 or zero_max > 0.05 or res_mean > 0.05:
         raise AssertionError(
             "fused output mismatch: "
-            f"packed_mismatch={packed_mismatch:.6f}, res_mean={res_mean:.6f}"
+            f"packed_mismatch={packed_mismatch:.6f}, "
+            f"scale_max={scale_max:.6f}, zero_max={zero_max:.6f}, res_mean={res_mean:.6f}"
         )
 
     print(
         "[OK] triton fused output matches reference within tolerances "
-        f"(packed_mismatch={packed_mismatch:.6f}, res_mean={res_mean:.6f})"
+        f"(packed_mismatch={packed_mismatch:.6f}, scale_max={scale_max:.6f}, "
+        f"zero_max={zero_max:.6f}, res_mean={res_mean:.6f})"
     )
     print(
         f"device={device}, dtype={dtype}, fp8_dtype={fp8_dtype}, "
@@ -578,7 +626,7 @@ def run_smoke_test(
 
 
 def parse_args() -> argparse.Namespace:
-    p = argparse.ArgumentParser(description="Fuse K projection + RoPE + fp4/fp8 split and test.")
+    p = argparse.ArgumentParser(description="Fuse K projection + RoPE + int2/fp8 split and test.")
     p.add_argument("--device", type=str, default="cuda" if torch.cuda.is_available() else "cpu")
     p.add_argument("--dtype", type=str, default="fp16", choices=["fp16", "bf16", "fp32"])
     p.add_argument("--B", type=int, default=2)

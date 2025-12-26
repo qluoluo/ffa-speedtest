@@ -1,9 +1,9 @@
-# Optimization Notes (FP4FP8 Decode Path)
+# Optimization Notes (NF4FP8 Decode Path)
 
-This file consolidates optimization ideas near the FP4FP8 decode implementation
+This file consolidates optimization ideas near the NF4FP8 decode implementation
 without modifying the original kernels.
 
-## Decode Kernel (`attn_kernel/attn_kernel_v1210_fused_bsz_fp4fp8.py`)
+## Decode Kernel (`attn_kernel/attn_kernel_v1210_fused_bsz_nf4fp8.py`)
 - CUDAGraph-friendly path: preallocate and reuse `o/m/l/o_buf` and `mask_buf`
   (avoid per-call allocations) and expose a "plan/run" style API to reduce
   overhead and enable stable graph capture.
@@ -19,12 +19,12 @@ without modifying the original kernels.
 - Bandwidth: `o_buf` is fp32; if acceptable, consider fp16/bf16 staging with
   fp32 accumulation in stage2 to reduce memory traffic.
 
-## Fused K-Projection + RoPE + FP4 Encoding (`fused_kproj_rope_fp4fp8.py`)
+## Fused K-Projection + RoPE + NF4 Encoding (`fused_kproj_rope_nf4fp8.py`)
 - Incremental update: avoid full-sequence min/max recompute each decode step by
-  maintaining per-(B,HKV,K) running min/max or block-wise scales for new tokens.
-- Block-wise FP4 encoding: if accuracy allows, compute thresholds per page/block
-  to reduce reduction cost and enable streaming updates.
+  maintaining per-(B,HKV,K) running absmax or block-wise scales for new tokens.
+- Block-wise NF4 encoding: if accuracy allows, compute scales per page/block to
+  reduce reduction cost and enable streaming updates.
 - Autotune: expose or autotune `block_t`, `block_h`, `block_pair`,
   `num_warps`, `num_stages` for different shapes and GPUs.
-- Memory layout: keep `k_fp4/k_residual` in a layout that matches decode kernel
-  access patterns to reduce cache misses.
+- Memory layout: keep `k_nf4/k_scale/k_residual` in a layout that matches decode
+  kernel access patterns to reduce cache misses.

@@ -1,15 +1,15 @@
-# CUDAGraph wrapper for FP4FP8 decode kernel (no changes to the original kernel).
+# CUDAGraph wrapper for NVFP4FP8 decode kernel (no changes to the original kernel).
 from __future__ import annotations
 
 from typing import Optional
 
 import torch
 
-from .attn_kernel_v1210_fused_bsz_fp4fp8 import attn_forward_decode_fp4
+from .attn_kernel_v1210_fused_bsz_nvfp4fp8 import attn_forward_decode_nvfp4fp8
 
 
-class CUDAGraphDecodeRunnerFP4FP8:
-    """Capture and replay the FP4FP8 decode kernel with static buffers.
+class CUDAGraphDecodeRunnerNVFP4FP8:
+    """Capture and replay the NVFP4FP8 decode kernel with static buffers.
 
     This wrapper avoids per-step kernel launches by using torch.cuda.CUDAGraph.
     Output is written into a persistent tensor; callers should not assume it
@@ -20,6 +20,7 @@ class CUDAGraphDecodeRunnerFP4FP8:
         self,
         q: torch.Tensor,
         k_fp4: torch.Tensor,
+        k_scale: torch.Tensor,
         v: torch.Tensor,
         *,
         k_residual: Optional[torch.Tensor] = None,
@@ -53,6 +54,7 @@ class CUDAGraphDecodeRunnerFP4FP8:
 
         self._static_q = torch.empty_like(q, device=self._device)
         self._static_k_fp4 = torch.empty_like(k_fp4, device=self._device)
+        self._static_k_scale = torch.empty_like(k_scale, device=self._device)
         self._static_v = torch.empty_like(v, device=self._device)
         self._static_k_residual = None
         if self._use_fp8_residual:
@@ -67,6 +69,7 @@ class CUDAGraphDecodeRunnerFP4FP8:
         # Seed static buffers once to avoid uninitialized data in capture.
         self._static_q.copy_(q)
         self._static_k_fp4.copy_(k_fp4)
+        self._static_k_scale.copy_(k_scale)
         self._static_v.copy_(v)
         if self._use_fp8_residual:
             self._static_k_residual.copy_(k_residual)
@@ -75,9 +78,10 @@ class CUDAGraphDecodeRunnerFP4FP8:
 
         # Warmup to trigger Triton JIT before graph capture.
         for _ in range(max(1, warmup)):
-            attn_forward_decode_fp4(
+            attn_forward_decode_nvfp4fp8(
                 q=self._static_q,
                 k_fp4=self._static_k_fp4,
+                k_scale=self._static_k_scale,
                 k_residual=self._static_k_residual,
                 v=self._static_v,
                 k_bits=self._k_bits,
@@ -94,9 +98,10 @@ class CUDAGraphDecodeRunnerFP4FP8:
         self._graph = torch.cuda.CUDAGraph()
         self._pool = torch.cuda.graphs.graph_pool_handle()
         with torch.cuda.graph(self._graph, pool=self._pool):
-            self._static_out = attn_forward_decode_fp4(
+            self._static_out = attn_forward_decode_nvfp4fp8(
                 q=self._static_q,
                 k_fp4=self._static_k_fp4,
+                k_scale=self._static_k_scale,
                 k_residual=self._static_k_residual,
                 v=self._static_v,
                 k_bits=self._k_bits,
@@ -117,6 +122,7 @@ class CUDAGraphDecodeRunnerFP4FP8:
         self,
         q: torch.Tensor,
         k_fp4: torch.Tensor,
+        k_scale: torch.Tensor,
         v: torch.Tensor,
         *,
         k_residual: Optional[torch.Tensor] = None,
@@ -132,6 +138,7 @@ class CUDAGraphDecodeRunnerFP4FP8:
 
         self._static_q.copy_(q)
         self._static_k_fp4.copy_(k_fp4)
+        self._static_k_scale.copy_(k_scale)
         self._static_v.copy_(v)
         if self._use_fp8_residual:
             self._static_k_residual.copy_(k_residual)
@@ -143,9 +150,10 @@ class CUDAGraphDecodeRunnerFP4FP8:
             return self._static_out
 
         # NOTE: Skip ratio computation is not captured; it re-runs the kernel once.
-        _, skip_ratio = attn_forward_decode_fp4(
+        _, skip_ratio = attn_forward_decode_nvfp4fp8(
             q=self._static_q,
             k_fp4=self._static_k_fp4,
+            k_scale=self._static_k_scale,
             k_residual=self._static_k_residual,
             v=self._static_v,
             k_bits=self._k_bits,

@@ -1,17 +1,21 @@
-# CUDAGraph wrapper for FP4FP8 decode kernel (no changes to the original kernel).
+# CUDAGraph wrapper for the H100-tuned Q2FP8 decode kernel.
 from __future__ import annotations
 
 from typing import Optional
 
 import torch
 
-from .attn_kernel_v1210_fused_bsz_fp4fp8 import attn_forward_decode_fp4
+from .attn_kernel_v1210_fused_bsz_q2fp8 import (
+    allocate_q2fp8_decode_workspace,
+    attn_forward_decode_quantized,
+)
 
 
-class CUDAGraphDecodeRunnerFP4FP8:
-    """Capture and replay the FP4FP8 decode kernel with static buffers.
+class CUDAGraphDecodeRunnerQ2FP8:
+    """Capture and replay the Q2FP8 decode kernel with static buffers.
 
-    This wrapper avoids per-step kernel launches by using torch.cuda.CUDAGraph.
+    This wrapper avoids per-step allocations and kernel launches by using
+    torch.cuda.CUDAGraph plus a reusable workspace.
     Output is written into a persistent tensor; callers should not assume it
     survives across replays.
     """
@@ -19,12 +23,14 @@ class CUDAGraphDecodeRunnerFP4FP8:
     def __init__(
         self,
         q: torch.Tensor,
-        k_fp4: torch.Tensor,
+        k_q: torch.Tensor,
+        k_scale: torch.Tensor,
+        k_zero: torch.Tensor,
         v: torch.Tensor,
         *,
         k_residual: Optional[torch.Tensor] = None,
         precomputed_threshold: Optional[torch.Tensor] = None,
-        k_bits: int = 4,
+        k_bits: int = 2,
         scale: Optional[float] = None,
         BS: int = 128,
         SBS: Optional[int] = None,
@@ -52,7 +58,9 @@ class CUDAGraphDecodeRunnerFP4FP8:
             raise ValueError("precomputed_threshold is required when use_ext_th=True")
 
         self._static_q = torch.empty_like(q, device=self._device)
-        self._static_k_fp4 = torch.empty_like(k_fp4, device=self._device)
+        self._static_k_q = torch.empty_like(k_q, device=self._device)
+        self._static_k_scale = torch.empty_like(k_scale, device=self._device)
+        self._static_k_zero = torch.empty_like(k_zero, device=self._device)
         self._static_v = torch.empty_like(v, device=self._device)
         self._static_k_residual = None
         if self._use_fp8_residual:
@@ -64,9 +72,19 @@ class CUDAGraphDecodeRunnerFP4FP8:
                 precomputed_threshold, device=self._device
             )
 
+        self._workspace = allocate_q2fp8_decode_workspace(
+            q=self._static_q,
+            k_q=self._static_k_q,
+            v=self._static_v,
+            BS=self._BS,
+            SBS=self._SBS,
+        )
+
         # Seed static buffers once to avoid uninitialized data in capture.
         self._static_q.copy_(q)
-        self._static_k_fp4.copy_(k_fp4)
+        self._static_k_q.copy_(k_q)
+        self._static_k_scale.copy_(k_scale)
+        self._static_k_zero.copy_(k_zero)
         self._static_v.copy_(v)
         if self._use_fp8_residual:
             self._static_k_residual.copy_(k_residual)
@@ -75,9 +93,11 @@ class CUDAGraphDecodeRunnerFP4FP8:
 
         # Warmup to trigger Triton JIT before graph capture.
         for _ in range(max(1, warmup)):
-            attn_forward_decode_fp4(
+            attn_forward_decode_quantized(
                 q=self._static_q,
-                k_fp4=self._static_k_fp4,
+                k_q=self._static_k_q,
+                k_scale=self._static_k_scale,
+                k_zero=self._static_k_zero,
                 k_residual=self._static_k_residual,
                 v=self._static_v,
                 k_bits=self._k_bits,
@@ -88,15 +108,18 @@ class CUDAGraphDecodeRunnerFP4FP8:
                 return_skip_ratio=False,
                 precomputed_threshold=self._static_threshold,
                 use_fp8_residual=self._use_fp8_residual,
+                workspace=self._workspace,
             )
         torch.cuda.synchronize(self._device)
 
         self._graph = torch.cuda.CUDAGraph()
         self._pool = torch.cuda.graphs.graph_pool_handle()
         with torch.cuda.graph(self._graph, pool=self._pool):
-            self._static_out = attn_forward_decode_fp4(
+            self._static_out = attn_forward_decode_quantized(
                 q=self._static_q,
-                k_fp4=self._static_k_fp4,
+                k_q=self._static_k_q,
+                k_scale=self._static_k_scale,
+                k_zero=self._static_k_zero,
                 k_residual=self._static_k_residual,
                 v=self._static_v,
                 k_bits=self._k_bits,
@@ -107,6 +130,7 @@ class CUDAGraphDecodeRunnerFP4FP8:
                 return_skip_ratio=False,
                 precomputed_threshold=self._static_threshold,
                 use_fp8_residual=self._use_fp8_residual,
+                workspace=self._workspace,
             )
 
     @property
@@ -116,7 +140,9 @@ class CUDAGraphDecodeRunnerFP4FP8:
     def replay(
         self,
         q: torch.Tensor,
-        k_fp4: torch.Tensor,
+        k_q: torch.Tensor,
+        k_scale: torch.Tensor,
+        k_zero: torch.Tensor,
         v: torch.Tensor,
         *,
         k_residual: Optional[torch.Tensor] = None,
@@ -131,7 +157,9 @@ class CUDAGraphDecodeRunnerFP4FP8:
             raise ValueError("precomputed_threshold is required for this captured graph.")
 
         self._static_q.copy_(q)
-        self._static_k_fp4.copy_(k_fp4)
+        self._static_k_q.copy_(k_q)
+        self._static_k_scale.copy_(k_scale)
+        self._static_k_zero.copy_(k_zero)
         self._static_v.copy_(v)
         if self._use_fp8_residual:
             self._static_k_residual.copy_(k_residual)
@@ -143,9 +171,11 @@ class CUDAGraphDecodeRunnerFP4FP8:
             return self._static_out
 
         # NOTE: Skip ratio computation is not captured; it re-runs the kernel once.
-        _, skip_ratio = attn_forward_decode_fp4(
+        _, skip_ratio = attn_forward_decode_quantized(
             q=self._static_q,
-            k_fp4=self._static_k_fp4,
+            k_q=self._static_k_q,
+            k_scale=self._static_k_scale,
+            k_zero=self._static_k_zero,
             k_residual=self._static_k_residual,
             v=self._static_v,
             k_bits=self._k_bits,
@@ -156,6 +186,7 @@ class CUDAGraphDecodeRunnerFP4FP8:
             return_skip_ratio=True,
             precomputed_threshold=self._static_threshold,
             use_fp8_residual=self._use_fp8_residual,
+            workspace=self._workspace,
         )
         return self._static_out, skip_ratio
 

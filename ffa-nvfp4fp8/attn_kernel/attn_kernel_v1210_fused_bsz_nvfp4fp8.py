@@ -1,5 +1,5 @@
-# attn_kernel_v1210_fused_bsz_fp4fp8.py
-# FP4 K with fp8 residual refinement.
+# attn_kernel_v1210_fused_bsz_nvfp4fp8.py
+# NVFP4 K (block-scaled FP4) with fp8 residual refinement.
 import math
 
 import torch
@@ -22,14 +22,31 @@ def _fp4_decode(q_vals):
 
 
 @triton.jit
-def attn_forward_stage1_fused_threshold_qbits(
-    q, k_fp4, k_res, v,
-    m_buf, l_buf, o_buf,
+def attn_forward_stage1_fused_threshold_nvfp4(
+    q,
+    k_fp4,
+    k_scale,
+    k_res,
+    v,
+    m_buf,
+    l_buf,
+    o_buf,
     mask_buf,
-    scale, T, NTB, NTBS, delta,
+    scale,
+    T,
+    NTB,
+    NTBS,
+    delta,
     th_in,
-    B: tl.constexpr, HKV: tl.constexpr, HQ: tl.constexpr, K: tl.constexpr, K_PACKED: tl.constexpr, V: tl.constexpr,
-    G: tl.constexpr, BS: tl.constexpr, SBS: tl.constexpr,
+    B: tl.constexpr,
+    HKV: tl.constexpr,
+    HQ: tl.constexpr,
+    K: tl.constexpr,
+    K_PACKED: tl.constexpr,
+    V: tl.constexpr,
+    G: tl.constexpr,
+    BS: tl.constexpr,
+    SBS: tl.constexpr,
     BM_DOT: tl.constexpr = 16,
     T_BS: tl.constexpr = 16,
     K_BITS: tl.constexpr = 4,
@@ -43,7 +60,7 @@ def attn_forward_stage1_fused_threshold_qbits(
 
     RCP_LN2 = 1.4426950408889634
     NEG_INF = float("-inf")
-    TRUE_K  = tl.full([K], True, tl.int1)
+    TRUE_K = tl.full([K], True, tl.int1)
     QMAX = (1 << K_BITS) - 1
     VALS_PER_BYTE: tl.constexpr = 8 // K_BITS
 
@@ -51,38 +68,43 @@ def attn_forward_stage1_fused_threshold_qbits(
     NSB: tl.constexpr = (BS + SBS - 1) // SBS
     base_hq = pid_hkv * G
 
-    rows     = tl.arange(0, BM_DOT)
+    rows = tl.arange(0, BM_DOT)
     row_mask = rows < G
-    offs_k   = tl.arange(0, K)
+    offs_k = tl.arange(0, K)
     pack_idx = offs_k // VALS_PER_BYTE
     pack_shifts = (offs_k % VALS_PER_BYTE) * K_BITS
 
-    q_ptrs   = q + pid_b * (HQ * K) + (base_hq + rows)[:, None] * K + offs_k[None, :]
-    q_tile   = tl.load(q_ptrs, mask=row_mask[:, None], other=0.0).to(tl.float16)
+    q_ptrs = q + pid_b * (HQ * K) + (base_hq + rows)[:, None] * K + offs_k[None, :]
+    q_tile = tl.load(q_ptrs, mask=row_mask[:, None], other=0.0).to(tl.float16)
+
+    scale_ptr = k_scale + pid_b * (NTB * HKV) + pid_tb * HKV + pid_hkv
+    scale_block = tl.load(scale_ptr).to(tl.float32)
 
     if USE_EXT_TH:
         th_rows = tl.load(th_in + pid_b * HQ + (base_hq + rows), mask=row_mask, other=0.0)
     else:
         tb0 = 0
+        scale0 = tl.load(k_scale + pid_b * (NTB * HKV) + tb0 * HKV + pid_hkv).to(tl.float32)
         offs_t0 = tb0 * T_BS + tl.arange(0, T_BS)
         t_mask0 = offs_t0 < T
         base_tok0_q = pid_b * (T * HKV * K_PACKED) + (offs_t0[None, :] * (HKV * K_PACKED)) + (pid_hkv * K_PACKED)
         kfp4_ptrs0 = k_fp4 + base_tok0_q + pack_idx[:, None]
         kfp4_tile0 = tl.load(kfp4_ptrs0, mask=(TRUE_K[:, None] & t_mask0[None, :]), other=0).to(tl.int32)
         kfp4_tile0 = (kfp4_tile0 >> pack_shifts[:, None]) & tl.full((), QMAX, tl.int32)
-        k_tile0 = _fp4_decode(kfp4_tile0).to(tl.float16)
+        k_tile0 = (_fp4_decode(kfp4_tile0) * scale0).to(tl.float16)
         b_s0 = tl.dot(q_tile, k_tile0, out_dtype=tl.float32) * scale * RCP_LN2
         b_s0 = tl.where(t_mask0[None, :], b_s0, NEG_INF)
         m0 = tl.max(b_s0, axis=1)
 
         tb1 = NTB - 1
+        scale1 = tl.load(k_scale + pid_b * (NTB * HKV) + tb1 * HKV + pid_hkv).to(tl.float32)
         offs_t1 = tb1 * T_BS + tl.arange(0, T_BS)
         t_mask1 = offs_t1 < T
         base_tok1_q = pid_b * (T * HKV * K_PACKED) + (offs_t1[None, :] * (HKV * K_PACKED)) + (pid_hkv * K_PACKED)
         kfp4_ptrs1 = k_fp4 + base_tok1_q + pack_idx[:, None]
         kfp4_tile1 = tl.load(kfp4_ptrs1, mask=(TRUE_K[:, None] & t_mask1[None, :]), other=0).to(tl.int32)
         kfp4_tile1 = (kfp4_tile1 >> pack_shifts[:, None]) & tl.full((), QMAX, tl.int32)
-        k_tile1 = _fp4_decode(kfp4_tile1).to(tl.float16)
+        k_tile1 = (_fp4_decode(kfp4_tile1) * scale1).to(tl.float16)
         b_s1 = tl.dot(q_tile, k_tile1, out_dtype=tl.float32) * scale * RCP_LN2
         b_s1 = tl.where(t_mask1[None, :], b_s1, NEG_INF)
         m1 = tl.max(b_s1, axis=1)
@@ -98,13 +120,13 @@ def attn_forward_stage1_fused_threshold_qbits(
         kfp4_ptrssb = k_fp4 + base_toksb_q + pack_idx[:, None]
         kfp4_tilesb = tl.load(kfp4_ptrssb, mask=(TRUE_K[:, None] & t_mask_sb[None, :]), other=0).to(tl.int32)
         kfp4_tilesb = (kfp4_tilesb >> pack_shifts[:, None]) & tl.full((), QMAX, tl.int32)
-        k_tile_q = _fp4_decode(kfp4_tilesb).to(tl.float16)
-        b_s_q     = tl.dot(q_tile, k_tile_q, out_dtype=tl.float32) * scale * RCP_LN2
+        k_tile_q = (_fp4_decode(kfp4_tilesb) * scale_block).to(tl.float16)
+        b_s_q = tl.dot(q_tile, k_tile_q, out_dtype=tl.float32) * scale * RCP_LN2
         b_s_act = tl.where(t_mask_sb[None, :], b_s_q, NEG_INF)
 
         m_rows_blk = tl.max(b_s_act, axis=1)
 
-        below   = (m_rows_blk < th_rows) & row_mask
+        below = (m_rows_blk < th_rows) & row_mask
         n_below = tl.sum(below.to(tl.int32), axis=0)
         n_valid = tl.sum(row_mask.to(tl.int32), axis=0)
         prune_blk = n_below == n_valid
@@ -128,14 +150,14 @@ def attn_forward_stage1_fused_threshold_qbits(
                 b_s = b_s_q
                 m_rows = m_rows_blk
 
-            b_p    = tl.where(t_mask_sb[None, :], tl.exp2(b_s - m_rows[:, None]), 0.0)
+            b_p = tl.where(t_mask_sb[None, :], tl.exp2(b_s - m_rows[:, None]), 0.0)
             l_rows = tl.sum(b_p, axis=1)
 
             need_v = tl.sum(t_mask_sb.to(tl.int32), axis=0) > 0
             o_tile = tl.zeros([BM_DOT, V], tl.float32)
             if need_v:
                 v_ptrs = v + pid_b * (T * HKV * V) + (offs_t_sb[:, None] * (HKV * V)) + (pid_hkv * V) + v_offs[None, :]
-                b_v    = tl.load(v_ptrs, mask=t_mask_sb[:, None], other=0.0).to(tl.float16)
+                b_v = tl.load(v_ptrs, mask=t_mask_sb[:, None], other=0.0).to(tl.float16)
                 o_tile = tl.dot(b_p.to(tl.float16), b_v, out_dtype=tl.float32)
 
             m_ptrs = m_buf + pid_b * (HQ * NTBS) + (base_hq + rows) * NTBS + tb_sb
@@ -149,15 +171,24 @@ def attn_forward_stage1_fused_threshold_qbits(
 
 @triton.jit
 def attn_forward_stage2_masked(
-    m_buf, l_buf, o_buf, mask_buf, o, NTBS,
-    B: tl.constexpr, HKV: tl.constexpr, G: tl.constexpr, HQ: tl.constexpr, V: tl.constexpr,
+    m_buf,
+    l_buf,
+    o_buf,
+    mask_buf,
+    o,
+    NTBS,
+    B: tl.constexpr,
+    HKV: tl.constexpr,
+    G: tl.constexpr,
+    HQ: tl.constexpr,
+    V: tl.constexpr,
 ):
     pid_b = tl.program_id(0)
     pid_hkv = tl.program_id(1)
     g = tl.program_id(2)
     pid_hq = pid_hkv * G + g
     v_offs = tl.arange(0, V)
-    neg_inf = tl.full((), float('-inf'), tl.float32)
+    neg_inf = tl.full((), float("-inf"), tl.float32)
     b_m = neg_inf
     b_acc = tl.zeros((), tl.float32)
     b_o = tl.zeros([V], tl.float32)
@@ -179,10 +210,24 @@ def attn_forward_stage2_masked(
     tl.store(o_ptrs, out_tile.to(o_ptrs.dtype.element_ty))
 
 
-def attn_forward_decode_fp4(
-    q: torch.Tensor,           # [B, 1, HQ, K]
-    k_fp4: torch.Tensor,       # [B, T, HKV, ceil(K / (8 / k_bits))], packed FP4 nibbles (E2M1)
-    v: torch.Tensor,           # [B, T, HKV, V]
+def _normalize_k_scale(k_scale: torch.Tensor, expect_shape: tuple[int, int, int]) -> torch.Tensor:
+    if k_scale.ndim == 4 and k_scale.shape[1] == 1:
+        k_scale = k_scale.squeeze(1)
+    if k_scale.shape == (expect_shape[0], expect_shape[2], expect_shape[1]):
+        k_scale = k_scale.permute(0, 2, 1)
+    if k_scale.shape != expect_shape:
+        raise ValueError(
+            f"Unsupported k_scale shape: {k_scale.shape=} expected {expect_shape}"
+        )
+    return k_scale.contiguous()
+
+
+def attn_forward_decode_nvfp4fp8(
+    q: torch.Tensor,  # [B, 1, HQ, K]
+    k_fp4: torch.Tensor,  # [B, T, HKV, ceil(K / (8 / k_bits))], packed FP4 nibbles (E2M1)
+    k_scale: torch.Tensor,  # [B, NTB, HKV], block scales (page size = BS)
+    v: torch.Tensor,  # [B, T, HKV, V]
+    *,
     k_residual: torch.Tensor | None = None,  # [B, T, HKV, K], fp8 residual
     k_bits: int = 4,
     scale: float = None,
@@ -194,16 +239,15 @@ def attn_forward_decode_fp4(
     use_fp8_residual: bool = True,
     **kwargs,
 ):
-    # import os
-    # print(f"ENTER {__file__} attn_forward_decode_fp4")
-
-    assert q.is_cuda and k_fp4.is_cuda and v.is_cuda
+    assert q.is_cuda and k_fp4.is_cuda and k_scale.is_cuda and v.is_cuda
     if k_residual is not None and not k_residual.is_cuda:
         raise ValueError("k_residual must be a CUDA tensor when provided")
     if k_bits != 4:
-        raise ValueError(f"attn_forward_decode_fp4 currently supports 4-bit keys, got k_bits={k_bits}")
+        raise ValueError(f"attn_forward_decode_nvfp4fp8 supports 4-bit keys, got k_bits={k_bits}")
     if k_fp4.is_floating_point():
         raise ValueError("k_fp4 must contain packed FP4 (E2M1) nibbles in an integer tensor (e.g., uint8)")
+    if not k_scale.is_floating_point():
+        raise ValueError("k_scale must be a floating point tensor")
     if k_residual is not None and not k_residual.is_floating_point():
         raise ValueError("k_residual must be a floating point tensor (e.g., fp8/fp16/bf16)")
 
@@ -240,14 +284,17 @@ def attn_forward_decode_fp4(
     NSB = triton.cdiv(BS, SBS)
     NTBS = NTB * NSB
 
+    k_scale = _normalize_k_scale(k_scale, (B, NTB, HKV))
+
     assert q.is_contiguous() and k_fp4.is_contiguous() and v.is_contiguous()
     if use_fp8_residual and k_residual is None:
         raise ValueError("use_fp8_residual=True requires k_residual")
     if k_residual is not None:
         assert k_residual.is_contiguous()
-    
+
     q = q.contiguous()
     k_fp4 = k_fp4.contiguous()
+    k_scale = k_scale.contiguous()
     use_fp8_residual = use_fp8_residual and (k_residual is not None)
     k_res = k_residual.contiguous() if use_fp8_residual else k_fp4
     v = v.contiguous()
@@ -265,14 +312,34 @@ def attn_forward_decode_fp4(
         threshold_buf = torch.empty((B, HQ), device=q.device, dtype=torch.float32)
         use_ext_th = False
 
-    attn_forward_stage1_fused_threshold_qbits[(NTB, B, HKV)](
-        q, k_fp4, k_res, v,
-        m_buf, l_buf, o_buf,
+    attn_forward_stage1_fused_threshold_nvfp4[(NTB, B, HKV)](
+        q,
+        k_fp4,
+        k_scale,
+        k_res,
+        v,
+        m_buf,
+        l_buf,
+        o_buf,
         mask_buf,
-        scale, T, NTB, NTBS, delta,
+        scale,
+        T,
+        NTB,
+        NTBS,
+        delta,
         threshold_buf,
-        B=B, HKV=HKV, HQ=HQ, K=K, K_PACKED=K_packed, V=V, G=G, BS=BS, SBS=SBS,
-        K_BITS=k_bits, USE_EXT_TH=use_ext_th, USE_FP8_RESIDUAL=use_fp8_residual,
+        B=B,
+        HKV=HKV,
+        HQ=HQ,
+        K=K,
+        K_PACKED=K_packed,
+        V=V,
+        G=G,
+        BS=BS,
+        SBS=SBS,
+        K_BITS=k_bits,
+        USE_EXT_TH=use_ext_th,
+        USE_FP8_RESIDUAL=use_fp8_residual,
     )
 
     skip_ratio = None
@@ -282,13 +349,19 @@ def attn_forward_decode_fp4(
         skip_ratio = float((1.0 - (kept.float() / float(total))).item())
 
     attn_forward_stage2_masked[(B, HKV, G)](
-        m_buf, l_buf, o_buf,
+        m_buf,
+        l_buf,
+        o_buf,
         mask_buf,
-        o, NTBS,
-        B=B, HKV=HKV, G=G, HQ=HQ, V=V,
+        o,
+        NTBS,
+        B=B,
+        HKV=HKV,
+        G=G,
+        HQ=HQ,
+        V=V,
     )
 
     if return_skip_ratio:
         return o, skip_ratio
-    else:
-        return o
+    return o

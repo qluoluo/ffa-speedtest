@@ -1,4 +1,4 @@
-# Benchmarking & plotting for FP4 K + fp8 residual decode with CUDAGraph.
+# Benchmarking & plotting for NVFP4 K + fp8 residual decode with CUDAGraph.
 import argparse
 import json
 import math
@@ -13,9 +13,9 @@ from utils.bench import benchmark
 from utils.cache import dtype_key, to_k_str
 from utils.load import load_qkvh
 
-from attn_kernel.attn_kernel_v1210_fused_bsz_fp4fp8 import attn_forward_decode_fp4
-from attn_kernel.attn_kernel_v1210_fused_bsz_fp4fp8_cudagraph import (
-    CUDAGraphDecodeRunnerFP4FP8,
+from attn_kernel.attn_kernel_v1210_fused_bsz_nvfp4fp8 import attn_forward_decode_nvfp4fp8
+from attn_kernel.attn_kernel_v1210_fused_bsz_nvfp4fp8_cudagraph import (
+    CUDAGraphDecodeRunnerNVFP4FP8,
 )
 
 # Ensure package importability
@@ -28,9 +28,12 @@ EXP_ROOT_DIR = Path(
 )
 EXP_ROOT_SUBDIR = Path("Llama-3_2-3B/longbench_gov_report_48_68_256k")
 
+FP4_POS_LEVELS = (0.0, 0.5, 1.0, 1.5, 2.0, 3.0, 4.0, 6.0)
+FP4_THRESHOLDS = (0.25, 0.75, 1.25, 1.75, 2.5, 3.5, 5.0)
+
 
 def parse_args():
-    p = argparse.ArgumentParser(description="Benchmark FP4FP8 decode with CUDAGraph.")
+    p = argparse.ArgumentParser(description="Benchmark NVFP4FP8 decode with CUDAGraph.")
     p.add_argument("--dtype", type=str, default="fp16", choices=["fp16", "bf16", "fp32"])
     p.add_argument("--BS", type=int, default=128)
     p.add_argument("--SBS", type=int, default=None)
@@ -72,38 +75,69 @@ def convert_layout(q_rope_1: torch.Tensor, k_rope: torch.Tensor, v: torch.Tensor
     return q, k, v
 
 
-def encode_k_fp4_fp8_residual(k: torch.Tensor, fp8_dtype: torch.dtype = torch.float8_e5m2):
-    # FP4 E2M1 (bias=1) positive levels: [0, 0.5, 1, 1.5, 2, 3, 4, 6].
-    fp4_pos = torch.tensor(
-        [0.0, 0.5, 1.0, 1.5, 2.0, 3.0, 4.0, 6.0],
-        device=k.device,
-        dtype=k.dtype,
-    )
-    thresholds = torch.tensor(
-        [0.25, 0.75, 1.25, 1.75, 2.5, 3.5, 5.0],
-        device=k.device,
-        dtype=k.dtype,
-    )
+def _resolve_fp8_dtype(device: torch.device) -> torch.dtype:
+    if hasattr(torch, "float8_e5m2"):
+        try:
+            torch.empty(1, device=device, dtype=torch.float8_e5m2)
+            return torch.float8_e5m2
+        except Exception:
+            pass
+    return torch.float16
 
-    abs_k = k.abs()
+
+def encode_k_nvfp4_fp8_residual(
+    k: torch.Tensor,
+    page_size: int,
+    fp8_dtype: torch.dtype | None = None,
+):
+    if page_size <= 0:
+        raise ValueError(f"page_size must be positive, got {page_size}")
+    if fp8_dtype is None:
+        fp8_dtype = _resolve_fp8_dtype(k.device)
+
+    B, T, HKV, K = k.shape
+    fp4_pos = torch.tensor(FP4_POS_LEVELS, device=k.device, dtype=k.dtype)
+    thresholds = torch.tensor(FP4_THRESHOLDS, device=k.device, dtype=k.dtype)
+    fp4_max = fp4_pos[-1]
+
+    num_pages = (T + page_size - 1) // page_size
+    pad_t = num_pages * page_size - T
+    if pad_t:
+        pad_tensor = torch.zeros((B, pad_t, HKV, K), device=k.device, dtype=k.dtype)
+        k_pad = torch.cat([k, pad_tensor], dim=1)
+    else:
+        k_pad = k
+
+    k_blocks = k_pad.view(B, num_pages, page_size, HKV, K)
+    max_abs = k_blocks.abs().amax(dim=(2, 4))
+    k_scale = (max_abs / fp4_max).clamp_min(1e-6).to(k.dtype).contiguous()
+
+    scale_block = k_scale[:, :, None, :, None]
+    k_scaled = k_blocks / scale_block
+    abs_k = k_scaled.abs()
     idx = torch.bucketize(abs_k, thresholds, right=True).to(torch.int64)
-    sign = (k < 0)
+    sign = k_scaled < 0
     k_fp4 = (idx.to(torch.uint8) | (sign.to(torch.uint8) << 3)).contiguous()
     sign_scale = torch.where(sign, -torch.ones_like(abs_k), torch.ones_like(abs_k))
     k_dequant = fp4_pos[idx] * sign_scale
-    k_residual = (k - k_dequant).to(fp8_dtype).contiguous()
+    k_dequant = k_dequant * scale_block
+    k_residual = (k_blocks - k_dequant).to(fp8_dtype).contiguous()
 
-    # Pack 2x4-bit values into a single byte to avoid storing each 4-bit value as uint8
-    B, T, HKV, K = k.shape
-    values_per_byte = 2  # 8 bits / 4 bits
+    k_fp4 = k_fp4.view(B, num_pages * page_size, HKV, K)
+    k_residual = k_residual.view(B, num_pages * page_size, HKV, K)
+    if pad_t:
+        k_fp4 = k_fp4[:, :T]
+        k_residual = k_residual[:, :T]
+
+    values_per_byte = 2
     k_packed_len = (K + values_per_byte - 1) // values_per_byte
-    pad = k_packed_len * values_per_byte - K
-    if pad:
-        pad_tensor = torch.zeros((B, T, HKV, pad), device=k_fp4.device, dtype=k_fp4.dtype)
+    pad_k = k_packed_len * values_per_byte - K
+    if pad_k:
+        pad_tensor = torch.zeros((B, T, HKV, pad_k), device=k_fp4.device, dtype=k_fp4.dtype)
         k_fp4 = torch.cat([k_fp4, pad_tensor], dim=-1)
     k_fp4 = k_fp4.view(B, T, HKV, k_packed_len, values_per_byte)
     k_fp4_packed = (k_fp4[..., 0] | (k_fp4[..., 1] << 4)).contiguous()
-    return k_fp4_packed, k_residual
+    return k_fp4_packed, k_scale, k_residual, fp8_dtype
 
 
 def get_gpu_info():
@@ -149,13 +183,13 @@ def make_cache_file_path(raw_data_dir, layer_idx, T_full, Hq, Hkv, D, Dv, BS, SB
     return raw_dir / fname
 
 
-def save_raw_cache(path, meta: dict, lengths, fp4_ms, fp4_cg_ms, flash_ms, skip_ratios):
+def save_raw_cache(path, meta: dict, lengths, nvfp4_ms, nvfp4_cg_ms, flash_ms, skip_ratios):
     path = Path(path)
     payload = {
         "meta": meta,
         "lengths": [int(x) for x in lengths],
-        "fp4_ms": [float(x) for x in fp4_ms],
-        "fp4_cg_ms": [float(x) for x in fp4_cg_ms],
+        "nvfp4_ms": [float(x) for x in nvfp4_ms],
+        "nvfp4_cg_ms": [float(x) for x in nvfp4_cg_ms],
         "flash_ms": [None if x is None else float(x) for x in flash_ms],
         "skip_ratios": [None if x is None else float(x) for x in skip_ratios],
     }
@@ -169,8 +203,8 @@ def load_raw_cache(path):
         data = json.load(f)
     return (
         data["lengths"],
-        data["fp4_ms"],
-        data["fp4_cg_ms"],
+        data["nvfp4_ms"],
+        data["nvfp4_cg_ms"],
         data.get("flash_ms", [None] * len(data["lengths"])),
         data.get("skip_ratios", [None] * len(data["lengths"])),
         data.get("meta", {}),
@@ -216,8 +250,8 @@ def maybe_load_flash(no_flash: bool):
 
 def plot_curve(
     x_lengths,
-    fp4_ms_list,
-    fp4_cg_ms_list,
+    nvfp4_ms_list,
+    nvfp4_cg_ms_list,
     flash_ms_list,
     T_full,
     BS,
@@ -239,10 +273,10 @@ def plot_curve(
     out_dir.mkdir(parents=True, exist_ok=True)
     fig, ax1 = plt.subplots(figsize=(12, 8))
 
-    line_fp4, = ax1.plot(x_lengths, fp4_ms_list, label="FP4FP8", marker="o", markersize=2)
-    line_fp4_cg, = ax1.plot(x_lengths, fp4_cg_ms_list, label="FP4FP8 CUDAGraph", marker="o", markersize=2)
-    lines = [line_fp4, line_fp4_cg]
-    labels = ["FP4FP8", "FP4FP8 CUDAGraph"]
+    line_nvfp4, = ax1.plot(x_lengths, nvfp4_ms_list, label="NVFP4FP8", marker="o", markersize=2)
+    line_nvfp4_cg, = ax1.plot(x_lengths, nvfp4_cg_ms_list, label="NVFP4FP8 CUDAGraph", marker="o", markersize=2)
+    lines = [line_nvfp4, line_nvfp4_cg]
+    labels = ["NVFP4FP8", "NVFP4FP8 CUDAGraph"]
 
     if flash_ms_list is not None and any(x is not None for x in flash_ms_list):
         line_flash, = ax1.plot(
@@ -267,7 +301,7 @@ def plot_curve(
 
     if skip_ratios is not None:
         ax2 = ax1.twinx()
-        skip_pct = [sr * 100.0 if sr is not None else 0.0 for sr in skip_ratios]
+        skip_pct = [sr * 100.0 for sr in skip_ratios]
         line_skip, = ax2.plot(
             x_lengths,
             skip_pct,
@@ -285,9 +319,9 @@ def plot_curve(
     ax1.legend(lines, labels)
 
     if attn_kernel_name:
-        plot_path = out_dir / f"layer_{layer_idx}_speed_Tmax{Tmax_k_str}_{attn_kernel_name}_cudagraph.png"
+        plot_path = out_dir / f"layer_{layer_idx}_speed_Tmax{Tmax_k_str}_{attn_kernel_name}.png"
     else:
-        plot_path = out_dir / f"layer_{layer_idx}_speed_Tmax{Tmax_k_str}_cudagraph.png"
+        plot_path = out_dir / f"layer_{layer_idx}_speed_Tmax{Tmax_k_str}.png"
 
     fig.tight_layout()
     fig.savefig(plot_path, dpi=300)
@@ -306,10 +340,10 @@ def main():
     step = int(args.step)
     iters = int(args.iters)
     warmup = int(args.warmup)
+    cg_warmup = int(args.cg_warmup)
+    replay_only = bool(args.cg_replay_only)
     bsz = int(args.bsz)
     max_length = None if args.max_length is not None and args.max_length < 0 else args.max_length
-
-    attn_kernel_name = "attn_kernel_v1210_fused_bsz_fp4fp8"
 
     exp_root = EXP_ROOT_DIR / EXP_ROOT_SUBDIR
     layer_data_root = exp_root / "layer_data"
@@ -320,21 +354,33 @@ def main():
     print(f"[Info] Using GPU[{gpu_idx}]: {gpu_name} ({gpu_mem_gb}GB)")
 
     q_rope_full, k_rope_full, v_full = load_layer_batch(layer_data_root, layer_indices, dtype, max_length)
+    fp8_dtype = _resolve_fp8_dtype(q_rope_full.device)
+    if not hasattr(torch, "float8_e5m2") or fp8_dtype != torch.float8_e5m2:
+        print("[Info] fp8 dtype not available on this device, using fp16 residuals.")
 
     bsz_actual, Hq, T_full, K = q_rope_full.shape
     _, Hkv, _, V = v_full.shape
     scale = 1.0 / math.sqrt(K)
+    page_size = BS
 
     print(f"[Info] Layers={layer_indices}, bsz={bsz_actual}, Hq={Hq}, Hkv={Hkv}, T_full={T_full}, K={K}, V={V}")
 
-    lengths = list(range(step, T_full, step)) + [T_full]
-
     flash_attn_compute, flash_err = maybe_load_flash(args.no_flash)
     if flash_attn_compute is None:
-        print(f"[Info] FlashAttention baseline disabled: {flash_err}")
+        print(f"[Info] FlashAttention disabled ({flash_err})")
+
+    lengths = list(range(step, T_full, step)) + [T_full]
 
     plot_root_dir, raw_data_dir = build_plot_dirs(
-        attn_kernel_name, gpu_tag, BS, SBS, delta, layer_indices, bsz, max_length, THIS_DIR
+        "attn_kernel_v1210_fused_bsz_nvfp4fp8",
+        gpu_tag,
+        BS,
+        SBS,
+        delta,
+        layer_indices,
+        bsz,
+        max_length,
+        THIS_DIR,
     )
     cache_path = make_cache_file_path(
         raw_data_dir,
@@ -352,28 +398,36 @@ def main():
         iters,
         warmup,
         bsz=bsz,
-        replay_only=args.cg_replay_only,
+        replay_only=replay_only,
     )
 
     if cache_path.exists():
-        x_lengths, fp4_ms_list, fp4_cg_ms_list, flash_ms_list, skip_ratios, _meta = load_raw_cache(cache_path)
+        (
+            x_lengths,
+            nvfp4_ms_list,
+            nvfp4_cg_ms_list,
+            flash_ms_list,
+            skip_ratios,
+            _meta,
+        ) = load_raw_cache(cache_path)
         print(f"[Info] Loaded cached results from {cache_path}")
     else:
-        fp4_ms_list, fp4_cg_ms_list, flash_ms_list, skip_ratios = [], [], [], []
-
+        nvfp4_ms_list, nvfp4_cg_ms_list, flash_ms_list, skip_ratios = [], [], [], []
         for L in tqdm(lengths, desc=f"delta={delta:g}, layers{layer_range_str}(bsz={bsz})"):
             q_rope_1 = q_rope_full[:, :, L - 1 : L, :].contiguous()
             k_rope = k_rope_full[:, :, :L, :].contiguous()
             v = v_full[:, :, :L, :].contiguous()
 
             q, k, v = convert_layout(q_rope_1, k_rope, v)
-            q_1 = q.unsqueeze(1)  # [B, 1, Hq, K]
-            k_fp4, k_residual = encode_k_fp4_fp8_residual(k)
+            q_1 = q.unsqueeze(1)
+            k_fp4, k_scale, k_residual, _fp8_dtype = encode_k_nvfp4_fp8_residual(
+                k, page_size=page_size, fp8_dtype=fp8_dtype
+            )
 
-            # One forward to obtain skip ratio and validate shapes
-            _, skip_ratio = attn_forward_decode_fp4(
+            _, skip_ratio = attn_forward_decode_nvfp4fp8(
                 q=q_1,
                 k_fp4=k_fp4,
+                k_scale=k_scale,
                 k_residual=k_residual,
                 v=v,
                 k_bits=4,
@@ -384,9 +438,10 @@ def main():
                 return_skip_ratio=True,
             )
 
-            runner = CUDAGraphDecodeRunnerFP4FP8(
+            runner = CUDAGraphDecodeRunnerNVFP4FP8(
                 q_1,
                 k_fp4,
+                k_scale,
                 v,
                 k_residual=k_residual,
                 k_bits=4,
@@ -395,13 +450,14 @@ def main():
                 SBS=SBS,
                 delta=delta,
                 use_fp8_residual=True,
-                warmup=args.cg_warmup,
+                warmup=cg_warmup,
             )
 
-            def run_fp4():
-                return attn_forward_decode_fp4(
+            def run_nvfp4():
+                return attn_forward_decode_nvfp4fp8(
                     q=q_1,
                     k_fp4=k_fp4,
+                    k_scale=k_scale,
                     k_residual=k_residual,
                     v=v,
                     k_bits=4,
@@ -412,29 +468,27 @@ def main():
                     return_skip_ratio=False,
                 )
 
-            def run_fp4_cg():
-                if args.cg_replay_only:
+            def run_nvfp4_cg():
+                if replay_only:
                     return runner.replay_only()
                 return runner(
                     q_1,
                     k_fp4,
+                    k_scale,
                     v,
                     k_residual=k_residual,
                 )
 
-            def run_flash():
-                return flash_attn_compute(q, k, v)
-
-            ms_fp4 = benchmark(run_fp4, iters=iters, warmup=warmup)
-            ms_fp4_cg = benchmark(run_fp4_cg, iters=iters, warmup=warmup)
-            ms_flash = None
-            if flash_attn_compute is not None:
-                ms_flash = benchmark(run_flash, iters=iters, warmup=warmup)
-
-            fp4_ms_list.append(ms_fp4)
-            fp4_cg_ms_list.append(ms_fp4_cg)
-            flash_ms_list.append(ms_flash)
+            ms_nvfp4 = benchmark(run_nvfp4, iters=iters, warmup=warmup)
+            ms_nvfp4_cg = benchmark(run_nvfp4_cg, iters=iters, warmup=warmup)
+            nvfp4_ms_list.append(ms_nvfp4)
+            nvfp4_cg_ms_list.append(ms_nvfp4_cg)
             skip_ratios.append(float(skip_ratio))
+
+            if flash_attn_compute is None:
+                flash_ms_list.append(None)
+            else:
+                flash_ms_list.append(benchmark(lambda: flash_attn_compute(q, k, v), iters=iters, warmup=warmup))
 
         x_lengths = lengths
         meta = dict(
@@ -451,20 +505,18 @@ def main():
             step=int(step),
             iters=int(iters),
             warmup=int(warmup),
-            attn_kernel=attn_kernel_name,
+            attn_kernel="attn_kernel_v1210_fused_bsz_nvfp4fp8",
             bsz=int(bsz),
-            cudagraph=True,
-            cudagraph_replay_only=bool(args.cg_replay_only),
+            replay_only=replay_only,
         )
-        save_raw_cache(cache_path, meta, x_lengths, fp4_ms_list, fp4_cg_ms_list, flash_ms_list, skip_ratios)
+        save_raw_cache(cache_path, meta, x_lengths, nvfp4_ms_list, nvfp4_cg_ms_list, flash_ms_list, skip_ratios)
         print(f"[Info] Saved raw benchmark data to {cache_path}")
 
-    plot_path = None
     if not args.no_plot:
         plot_path = plot_curve(
             x_lengths,
-            fp4_ms_list,
-            fp4_cg_ms_list,
+            nvfp4_ms_list,
+            nvfp4_cg_ms_list,
             flash_ms_list,
             T_full,
             BS,
@@ -472,18 +524,18 @@ def main():
             delta,
             f"layers_{layer_range_str}_bsz_{bsz}",
             plot_root_dir,
-            attn_kernel_name,
+            "attn_kernel_v1210_fused_bsz_nvfp4fp8",
             skip_ratios=skip_ratios,
         )
-
-    print(
-        f"[Result] Layers {layer_range_str} | bsz={bsz} | T={to_k_str(T_full)} | "
-        f"BS={BS} SBS={SBS} delta={delta} | "
-        f"FP4={fp4_ms_list[-1]:.3f} ms, FP4_CG={fp4_cg_ms_list[-1]:.3f} ms"
-        + (f", Flash={flash_ms_list[-1]:.3f} ms" if flash_ms_list[-1] is not None else "")
-    )
-    if plot_path is not None:
         print(f"[Result] Saved plot to: {plot_path}")
+
+    if nvfp4_ms_list:
+        last_flash = flash_ms_list[-1]
+        flash_str = f"{last_flash:.3f} ms" if last_flash is not None else "N/A"
+        print(
+            f"[Result] Layers {layer_range_str} | bsz={bsz} | T={to_k_str(T_full)} | BS={BS} SBS={SBS} delta={delta} | "
+            f"NVFP4FP8={nvfp4_ms_list[-1]:.3f} ms, NVFP4FP8_CG={nvfp4_cg_ms_list[-1]:.3f} ms, Flash={flash_str}"
+        )
 
 
 if __name__ == "__main__":

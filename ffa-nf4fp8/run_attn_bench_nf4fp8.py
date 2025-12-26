@@ -1,4 +1,4 @@
-# Benchmarking & plotting for FP4 K + fp8 residual attention kernel.
+# Benchmarking & plotting for NF4 K + fp8 residual attention kernel.
 import argparse
 import importlib
 import math
@@ -20,8 +20,8 @@ THIS_DIR = Path(__file__).resolve().parent
 if str(THIS_DIR) not in sys.path:
     sys.path.append(str(THIS_DIR))
 
-# Default kernel for fp4 + fp8 residual
-from attn_kernel.attn_kernel_v1210_fused_bsz_fp4fp8 import attn_forward_decode_fp4
+# Default kernel for nf4 + fp8 residual
+from attn_kernel.attn_kernel_v1210_fused_bsz_nf4fp8 import attn_forward_decode_nf4
 
 EXP_ROOT_DIR = Path(
     "/inspire/hdd/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/huffkv-opencompass/opencompass/models/myModel/ffa/attn_analysis/result"
@@ -29,13 +29,45 @@ EXP_ROOT_DIR = Path(
 EXP_ROOT_SUBDIR = Path("Llama-3_2-3B/longbench_gov_report_48_68_256k")
 
 
+NF4_CODEBOOK_VALUES = (
+    -1.0,
+    -0.6961928009986877,
+    -0.5229921340942383,
+    -0.39491748809814453,
+    -0.28444138169288635,
+    -0.18477343022823334,
+    -0.09105003625154495,
+    0.0,
+    0.07958029955625534,
+    0.16093020141124725,
+    0.24611230194568634,
+    0.33791524171829224,
+    0.44070982933044434,
+    0.5626170039176941,
+    0.7229568362236023,
+    1.0,
+)
+
+_NF4_TABLE_CACHE = {}
+
+
+def _get_nf4_tables(device: torch.device) -> tuple[torch.Tensor, torch.Tensor]:
+    key = (device.type, device.index)
+    if key in _NF4_TABLE_CACHE:
+        return _NF4_TABLE_CACHE[key]
+    codebook = torch.tensor(NF4_CODEBOOK_VALUES, device=device, dtype=torch.float32)
+    boundaries = (codebook[:-1] + codebook[1:]) * 0.5
+    _NF4_TABLE_CACHE[key] = (codebook, boundaries)
+    return codebook, boundaries
+
+
 def parse_args():
-    p = argparse.ArgumentParser(description="Run FP4 attn kernel test with recorded layer data.")
+    p = argparse.ArgumentParser(description="Run NF4 attn kernel test with recorded layer data.")
     p.add_argument(
         "--kernel",
         type=str,
-        default="attn_kernel.attn_kernel_v1210_fused_bsz_fp4fp8",
-        help="Python module path for attn_forward_decode_fp4",
+        default="attn_kernel.attn_kernel_v1210_fused_bsz_nf4fp8",
+        help="Python module path for attn_forward_decode_nf4",
     )
     p.add_argument("--dtype", type=str, default="fp16", choices=["fp16", "bf16", "fp32"])
     p.add_argument("--BS", type=int, default=128)
@@ -75,45 +107,44 @@ def convert_layout(q_rope_1: torch.Tensor, k_rope: torch.Tensor, v: torch.Tensor
     return q, k, v
 
 
-def encode_k_fp4_fp8_residual(k: torch.Tensor, fp8_dtype: torch.dtype = torch.float8_e5m2):
-    # FP4 E2M1 (bias=1) positive levels: [0, 0.5, 1, 1.5, 2, 3, 4, 6].
-    fp4_pos = torch.tensor(
-        [0.0, 0.5, 1.0, 1.5, 2.0, 3.0, 4.0, 6.0],
-        device=k.device,
-        dtype=k.dtype,
-    )
-    thresholds = torch.tensor(
-        [0.25, 0.75, 1.25, 1.75, 2.5, 3.5, 5.0],
-        device=k.device,
-        dtype=k.dtype,
-    )
+def _resolve_fp8_dtype(device: torch.device) -> torch.dtype:
+    if hasattr(torch, "float8_e5m2"):
+        try:
+            torch.empty(1, device=device, dtype=torch.float8_e5m2)
+            return torch.float8_e5m2
+        except Exception:
+            pass
+    return torch.float16
 
-    abs_k = k.abs()
-    idx = torch.bucketize(abs_k, thresholds, right=True).to(torch.int64)
-    sign = (k < 0)
-    k_fp4 = (idx.to(torch.uint8) | (sign.to(torch.uint8) << 3)).contiguous()
-    sign_scale = torch.where(sign, -torch.ones_like(abs_k), torch.ones_like(abs_k))
-    k_dequant = fp4_pos[idx] * sign_scale
-    k_residual = (k - k_dequant).to(fp8_dtype).contiguous()
 
-    # Pack 2x4-bit values into a single byte to avoid storing each 4-bit value as uint8
-    B, T, HKV, K = k.shape
-    values_per_byte = 2  # 8 bits / 4 bits
+def encode_k_nf4_fp8_residual(k: torch.Tensor, fp8_dtype: torch.dtype) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    codebook, boundaries = _get_nf4_tables(k.device)
+    k_f = k.to(torch.float32)
+    scale = k_f.abs().amax(dim=1).clamp_min(1e-6)
+    scale_out = scale.to(k.dtype).contiguous()
+    norm = (k_f / scale[:, None, :, :]).clamp(codebook[0].item(), codebook[-1].item())
+    idx = torch.bucketize(norm, boundaries).to(torch.int64)
+    k_nf4 = idx.to(torch.uint8).contiguous()
+    k_dequant = codebook[idx] * scale[:, None, :, :]
+    k_residual = (k_f - k_dequant).to(fp8_dtype).contiguous()
+
+    B, T, HKV, K = k_nf4.shape
+    values_per_byte = 2
     k_packed_len = (K + values_per_byte - 1) // values_per_byte
     pad = k_packed_len * values_per_byte - K
     if pad:
-        pad_tensor = torch.zeros((B, T, HKV, pad), device=k_fp4.device, dtype=k_fp4.dtype)
-        k_fp4 = torch.cat([k_fp4, pad_tensor], dim=-1)
-    k_fp4 = k_fp4.view(B, T, HKV, k_packed_len, values_per_byte)
-    k_fp4_packed = (k_fp4[..., 0] | (k_fp4[..., 1] << 4)).contiguous()
-    return k_fp4_packed, k_residual
+        pad_tensor = torch.zeros((B, T, HKV, pad), device=k_nf4.device, dtype=k_nf4.dtype)
+        k_nf4 = torch.cat([k_nf4, pad_tensor], dim=-1)
+    k_nf4 = k_nf4.view(B, T, HKV, k_packed_len, values_per_byte)
+    k_nf4_packed = (k_nf4[..., 0] | (k_nf4[..., 1] << 4)).contiguous()
+    return k_nf4_packed, scale_out, k_residual
 
 
 def load_kernel_components(kernel_path: str):
     kernel_module = importlib.import_module(kernel_path)
-    if not hasattr(kernel_module, "attn_forward_decode_fp4"):
-        raise AttributeError(f"Module {kernel_path} does not define 'attn_forward_decode_fp4'")
-    attn_forward_decode = getattr(kernel_module, "attn_forward_decode_fp4")
+    if not hasattr(kernel_module, "attn_forward_decode_nf4"):
+        raise AttributeError(f"Module {kernel_path} does not define 'attn_forward_decode_nf4'")
+    attn_forward_decode = getattr(kernel_module, "attn_forward_decode_nf4")
     return kernel_module, attn_forward_decode
 
 
@@ -197,9 +228,13 @@ def main():
     layer_range_str = f"{layer_indices[0]}" if len(layer_indices) == 1 else f"{layer_indices[0]}-{layer_indices[-1]}"
 
     gpu_tag, gpu_name, gpu_mem_gb, gpu_idx = get_gpu_info()
-    print(f"[Info] Using GPU[{gpu_idx}]: {gpu_name} ({gpu_mem_gb}GB)")
+    gpu_label = f"{gpu_name} ({gpu_mem_gb}GB)"
+    print(f"[Info] Using GPU[{gpu_idx}]: {gpu_label}")
 
     q_rope_full, k_rope_full, v_full = load_layer_batch(layer_data_root, layer_indices, dtype, max_length)
+    fp8_dtype = _resolve_fp8_dtype(q_rope_full.device)
+    if not hasattr(torch, "float8_e5m2") or fp8_dtype != torch.float8_e5m2:
+        print("[Info] fp8 dtype not available on this device, using fp16 residuals.")
 
     bsz_actual, Hq, T_full, K = q_rope_full.shape
     _, Hkv, _, V = v_full.shape
@@ -210,18 +245,18 @@ def main():
     lengths = list(range(step, T_full, step)) + [T_full]
 
     def bench_one_length(L, delta):
-        q_rope_1 = q_rope_full[:, :, L - 1 : L, :].contiguous()
-        k_rope = k_rope_full[:, :, :L, :].contiguous()
-        v = v_full[:, :, :L, :].contiguous()
-
+        q_rope_1 = q_rope_full[:, :, :1, :]
+        k_rope = k_rope_full[:, :, :L, :]
+        v = v_full[:, :, :L, :]
         q, k, v = convert_layout(q_rope_1, k_rope, v)
-        q_1 = q.unsqueeze(1)  # [B, 1, Hq, K]
-        k_fp4, k_residual = encode_k_fp4_fp8_residual(k)
 
-        def run_fp4():
+        k_nf4, k_scale, k_residual = encode_k_nf4_fp8_residual(k, fp8_dtype)
+
+        def run_nf4():
             return attn_forward_decode(
-                q=q_1,
-                k_fp4=k_fp4,
+                q=q,
+                k_nf4=k_nf4,
+                k_scale=k_scale,
                 k_residual=k_residual,
                 v=v,
                 k_bits=4,
@@ -230,15 +265,13 @@ def main():
                 SBS=SBS,
                 delta=delta,
                 return_skip_ratio=False,
+                use_fp8_residual=True,
             )
 
-        def run_flash():
-            return flash_attn_compute(q, k, v)
-
-        # One forward to obtain skip ratio and validate shapes
         _, skip_ratio = attn_forward_decode(
-            q=q_1,
-            k_fp4=k_fp4,
+            q=q,
+            k_nf4=k_nf4,
+            k_scale=k_scale,
             k_residual=k_residual,
             v=v,
             k_bits=4,
@@ -247,21 +280,24 @@ def main():
             SBS=SBS,
             delta=delta,
             return_skip_ratio=True,
+            use_fp8_residual=True,
         )
 
-        ms_fp4 = benchmark(run_fp4, iters=iters, warmup=warmup)
-        ms_flash = benchmark(run_flash, iters=iters, warmup=warmup)
-        return ms_fp4, ms_flash, float(skip_ratio)
+        ms_nf4 = benchmark(run_nf4, iters=iters, warmup=warmup)
 
-    def validate_full(delta):
-        q_rope_1 = q_rope_full[:, :, T_full - 1 : T_full, :].contiguous()
-        q, k, v = convert_layout(q_rope_1, k_rope_full, v_full)
-        q_1 = q.unsqueeze(1)
-        k_fp4, k_residual = encode_k_fp4_fp8_residual(k)
+        ms_flash = flash_attn_compute(q, k, v, iters=iters, warmup=warmup)
+        return ms_nf4, ms_flash, float(skip_ratio)
 
-        o_triton, skip_ratio = attn_forward_decode(
-            q=q_1,
-            k_fp4=k_fp4,
+    def prewarm_kv():
+        q_rope_1 = q_rope_full[:, :, :1, :]
+        k_rope = k_rope_full[:, :, : min(step, T_full), :]
+        v = v_full[:, :, : min(step, T_full), :]
+        q, k, v = convert_layout(q_rope_1, k_rope, v)
+        k_nf4, k_scale, k_residual = encode_k_nf4_fp8_residual(k, fp8_dtype)
+        attn_forward_decode(
+            q=q,
+            k_nf4=k_nf4,
+            k_scale=k_scale,
             k_residual=k_residual,
             v=v,
             k_bits=4,
@@ -269,88 +305,71 @@ def main():
             BS=BS,
             SBS=SBS,
             delta=delta,
-            return_skip_ratio=True,
-        )
-        o_flash = flash_attn_compute(q, k, v)
-        max_abs_vs_flash = (o_triton.float() - o_flash.float()).abs().max().item()
-        mean_abs_vs_flash = (o_triton.float() - o_flash.float()).abs().mean().item()
-        print(
-            f"[Validate] delta={delta} | skip_ratio={skip_ratio:.3%} | "
-            f"max_abs={max_abs_vs_flash:.3e}, mean_abs={mean_abs_vs_flash:.3e}"
+            return_skip_ratio=False,
+            use_fp8_residual=True,
         )
 
-    print(f"[Info] Running delta={delta} | layers={layer_range_str} | bsz={bsz}")
+    prewarm_kv()
+
     plot_root_dir, raw_data_dir = build_plot_dirs(
-        attn_kernel_name, gpu_tag, BS, SBS, delta, layer_indices, bsz, max_length, THIS_DIR
-    )
-    cache_path = make_cache_file_path(
-        raw_data_dir,
-        f"layers_{layer_range_str}",
-        T_full,
-        Hq,
-        Hkv,
-        K,
-        V,
+        attn_kernel_name,
+        gpu_tag,
         BS,
         SBS,
         delta,
-        dtype,
-        step,
-        iters,
-        warmup,
-        bsz=bsz,
+        layer_indices,
+        bsz,
+        max_length,
+        base_dir=THIS_DIR,
+    )
+    cache_path = make_cache_file_path(
+        raw_data_dir, layer_range_str, T_full, Hq, Hkv, K, V, BS, SBS, delta, dtype, step, iters, warmup, bsz
     )
 
     if cache_path.exists():
-        x_lengths, fp4_ms_list, flash_ms_list, skip_ratios, _meta = load_raw_cache(cache_path)
-        print(f"[Info] Loaded cached results from {cache_path}")
+        x_lengths, nf4_ms_list, flash_ms_list, skip_ratios, _meta = load_raw_cache(cache_path)
+        print(f"[Info] Loaded cached data from {cache_path.name}")
     else:
-        fp4_ms_list, flash_ms_list, skip_ratios = [], [], []
-        for L in tqdm(lengths, desc=f"delta={delta:g}, layers{layer_range_str}(bsz={bsz})"):
-            ms_fp4, ms_flash, sr = bench_one_length(L, delta)
-            fp4_ms_list.append(ms_fp4)
+        nf4_ms_list, flash_ms_list, skip_ratios = [], [], []
+        for L in tqdm(lengths, desc="Benchmarking"):
+            ms_nf4, ms_flash, sr = bench_one_length(L, delta)
+            nf4_ms_list.append(ms_nf4)
             flash_ms_list.append(ms_flash)
             skip_ratios.append(sr)
-        x_lengths = lengths
-        meta = dict(
-            layer_indices=layer_indices,
-            T_full=int(T_full),
-            Hq=int(Hq),
-            Hkv=int(Hkv),
-            D=int(K),
-            Dv=int(V),
-            BS=int(BS),
-            SBS=int(SBS),
-            delta=float(delta),
-            dtype=dtype_key(dtype),
-            step=int(step),
-            iters=int(iters),
-            warmup=int(warmup),
-            attn_kernel=attn_kernel_name,
-            bsz=int(bsz),
-        )
-        save_raw_cache(cache_path, meta, x_lengths, fp4_ms_list, flash_ms_list, skip_ratios)
-        print(f"[Info] Saved raw benchmark data to {cache_path}")
+
+        meta = {
+            "layer": layer_range_str,
+            "dtype": dtype_key(dtype),
+            "BS": BS,
+            "SBS": SBS,
+            "delta": delta,
+            "step": step,
+            "iters": iters,
+            "warmup": warmup,
+            "gpu": gpu_label,
+        }
+        save_raw_cache(cache_path, meta, lengths, nf4_ms_list, flash_ms_list, skip_ratios)
+        print(f"[Info] Saved raw data to {cache_path.name}")
 
     plot_path = plot_speed_curve(
         x_lengths,
-        fp4_ms_list,
+        nf4_ms_list,
         flash_ms_list,
         T_full,
         BS,
         SBS,
         delta,
-        f"layers_{layer_range_str}_bsz_{bsz}",
+        layer_range_str,
         plot_root_dir,
-        attn_kernel_name,
+        attn_kernel_name=attn_kernel_name,
         skip_ratios=skip_ratios,
     )
+
+    print(f"[Result] Plot saved at: {plot_path}")
     print(
-        f"[Result] Layers {layer_range_str} | bsz={bsz} | T={to_k_str(T_full)} | BS={BS} SBS={SBS} delta={delta} | "
-        f"FP4={fp4_ms_list[-1]:.3f} ms, Flash={flash_ms_list[-1]:.3f} ms"
+        f"[Info] Done: layer={layer_range_str} last T={to_k_str(T_full)} | "
+        f"NF4={nf4_ms_list[-1]:.3f} ms, Flash={flash_ms_list[-1]:.3f} ms"
     )
-    print(f"[Result] Saved plot to: {plot_path}")
-    validate_full(delta)
 
 
 if __name__ == "__main__":

@@ -1,4 +1,4 @@
-# Benchmarking & plotting for FP4 K + fp8 residual attention kernel.
+# Benchmarking & plotting for 2-bit K + fp8 residual attention kernel.
 import argparse
 import importlib
 import math
@@ -20,8 +20,8 @@ THIS_DIR = Path(__file__).resolve().parent
 if str(THIS_DIR) not in sys.path:
     sys.path.append(str(THIS_DIR))
 
-# Default kernel for fp4 + fp8 residual
-from attn_kernel.attn_kernel_v1210_fused_bsz_fp4fp8 import attn_forward_decode_fp4
+# Default kernel for q2 + fp8 residual
+from attn_kernel.attn_kernel_v1210_fused_bsz_q2fp8 import attn_forward_decode_quantized
 
 EXP_ROOT_DIR = Path(
     "/inspire/hdd/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/huffkv-opencompass/opencompass/models/myModel/ffa/attn_analysis/result"
@@ -30,12 +30,12 @@ EXP_ROOT_SUBDIR = Path("Llama-3_2-3B/longbench_gov_report_48_68_256k")
 
 
 def parse_args():
-    p = argparse.ArgumentParser(description="Run FP4 attn kernel test with recorded layer data.")
+    p = argparse.ArgumentParser(description="Run quantized attn kernel test with recorded layer data.")
     p.add_argument(
         "--kernel",
         type=str,
-        default="attn_kernel.attn_kernel_v1210_fused_bsz_fp4fp8",
-        help="Python module path for attn_forward_decode_fp4",
+        default="attn_kernel.attn_kernel_v1210_fused_bsz_q2fp8",
+        help="Python module path for attn_forward_decode_quantized",
     )
     p.add_argument("--dtype", type=str, default="fp16", choices=["fp16", "bf16", "fp32"])
     p.add_argument("--BS", type=int, default=128)
@@ -75,45 +75,41 @@ def convert_layout(q_rope_1: torch.Tensor, k_rope: torch.Tensor, v: torch.Tensor
     return q, k, v
 
 
-def encode_k_fp4_fp8_residual(k: torch.Tensor, fp8_dtype: torch.dtype = torch.float8_e5m2):
-    # FP4 E2M1 (bias=1) positive levels: [0, 0.5, 1, 1.5, 2, 3, 4, 6].
-    fp4_pos = torch.tensor(
-        [0.0, 0.5, 1.0, 1.5, 2.0, 3.0, 4.0, 6.0],
-        device=k.device,
-        dtype=k.dtype,
+def quantize_k_2bit_fp8_residual(k: torch.Tensor, fp8_dtype: torch.dtype = torch.float8_e5m2):
+    # Scale/zero are per (B, HKV, K); token dimension is removed and broadcasted later.
+    k_min = k.amin(dim=1)
+    k_max = k.amax(dim=1)
+    scale = ((k_max - k_min).clamp_min(1e-6) / 3.0).contiguous()
+    zero = k_min.contiguous()
+    k_q = torch.round((k - zero[:, None, :, :]) / scale[:, None, :, :]).clamp(0, 3).to(torch.uint8)
+    k_dequant = (
+        k_q.to(torch.float32) * scale[:, None, :, :].to(torch.float32) + zero[:, None, :, :].to(torch.float32)
     )
-    thresholds = torch.tensor(
-        [0.25, 0.75, 1.25, 1.75, 2.5, 3.5, 5.0],
-        device=k.device,
-        dtype=k.dtype,
-    )
+    k_residual = (k.to(torch.float32) - k_dequant).to(fp8_dtype).contiguous()
 
-    abs_k = k.abs()
-    idx = torch.bucketize(abs_k, thresholds, right=True).to(torch.int64)
-    sign = (k < 0)
-    k_fp4 = (idx.to(torch.uint8) | (sign.to(torch.uint8) << 3)).contiguous()
-    sign_scale = torch.where(sign, -torch.ones_like(abs_k), torch.ones_like(abs_k))
-    k_dequant = fp4_pos[idx] * sign_scale
-    k_residual = (k - k_dequant).to(fp8_dtype).contiguous()
-
-    # Pack 2x4-bit values into a single byte to avoid storing each 4-bit value as uint8
-    B, T, HKV, K = k.shape
-    values_per_byte = 2  # 8 bits / 4 bits
+    # Pack 4x2-bit values into a single byte to avoid storing each 2-bit value as uint8
+    B, T, HKV, K = k_q.shape
+    values_per_byte = 4  # 8 bits / 2 bits
     k_packed_len = (K + values_per_byte - 1) // values_per_byte
     pad = k_packed_len * values_per_byte - K
     if pad:
-        pad_tensor = torch.zeros((B, T, HKV, pad), device=k_fp4.device, dtype=k_fp4.dtype)
-        k_fp4 = torch.cat([k_fp4, pad_tensor], dim=-1)
-    k_fp4 = k_fp4.view(B, T, HKV, k_packed_len, values_per_byte)
-    k_fp4_packed = (k_fp4[..., 0] | (k_fp4[..., 1] << 4)).contiguous()
-    return k_fp4_packed, k_residual
+        pad_tensor = torch.zeros((B, T, HKV, pad), device=k_q.device, dtype=k_q.dtype)
+        k_q = torch.cat([k_q, pad_tensor], dim=-1)
+    k_q = k_q.view(B, T, HKV, k_packed_len, values_per_byte)
+    k_q_packed = (
+        k_q[..., 0]
+        | (k_q[..., 1] << 2)
+        | (k_q[..., 2] << 4)
+        | (k_q[..., 3] << 6)
+    ).contiguous()
+    return k_q_packed, scale, zero, k_residual
 
 
 def load_kernel_components(kernel_path: str):
     kernel_module = importlib.import_module(kernel_path)
-    if not hasattr(kernel_module, "attn_forward_decode_fp4"):
-        raise AttributeError(f"Module {kernel_path} does not define 'attn_forward_decode_fp4'")
-    attn_forward_decode = getattr(kernel_module, "attn_forward_decode_fp4")
+    if not hasattr(kernel_module, "attn_forward_decode_quantized"):
+        raise AttributeError(f"Module {kernel_path} does not define 'attn_forward_decode_quantized'")
+    attn_forward_decode = getattr(kernel_module, "attn_forward_decode_quantized")
     return kernel_module, attn_forward_decode
 
 
@@ -216,15 +212,17 @@ def main():
 
         q, k, v = convert_layout(q_rope_1, k_rope, v)
         q_1 = q.unsqueeze(1)  # [B, 1, Hq, K]
-        k_fp4, k_residual = encode_k_fp4_fp8_residual(k)
+        k_q, k_scale, k_zero, k_residual = quantize_k_2bit_fp8_residual(k)
 
-        def run_fp4():
+        def run_q2():
             return attn_forward_decode(
                 q=q_1,
-                k_fp4=k_fp4,
+                k_q=k_q,
+                k_scale=k_scale,
+                k_zero=k_zero,
                 k_residual=k_residual,
                 v=v,
-                k_bits=4,
+                k_bits=2,
                 scale=scale,
                 BS=BS,
                 SBS=SBS,
@@ -238,10 +236,12 @@ def main():
         # One forward to obtain skip ratio and validate shapes
         _, skip_ratio = attn_forward_decode(
             q=q_1,
-            k_fp4=k_fp4,
+            k_q=k_q,
+            k_scale=k_scale,
+            k_zero=k_zero,
             k_residual=k_residual,
             v=v,
-            k_bits=4,
+            k_bits=2,
             scale=scale,
             BS=BS,
             SBS=SBS,
@@ -249,22 +249,24 @@ def main():
             return_skip_ratio=True,
         )
 
-        ms_fp4 = benchmark(run_fp4, iters=iters, warmup=warmup)
+        ms_q2 = benchmark(run_q2, iters=iters, warmup=warmup)
         ms_flash = benchmark(run_flash, iters=iters, warmup=warmup)
-        return ms_fp4, ms_flash, float(skip_ratio)
+        return ms_q2, ms_flash, float(skip_ratio)
 
     def validate_full(delta):
         q_rope_1 = q_rope_full[:, :, T_full - 1 : T_full, :].contiguous()
         q, k, v = convert_layout(q_rope_1, k_rope_full, v_full)
         q_1 = q.unsqueeze(1)
-        k_fp4, k_residual = encode_k_fp4_fp8_residual(k)
+        k_q, k_scale, k_zero, k_residual = quantize_k_2bit_fp8_residual(k)
 
         o_triton, skip_ratio = attn_forward_decode(
             q=q_1,
-            k_fp4=k_fp4,
+            k_q=k_q,
+            k_scale=k_scale,
+            k_zero=k_zero,
             k_residual=k_residual,
             v=v,
-            k_bits=4,
+            k_bits=2,
             scale=scale,
             BS=BS,
             SBS=SBS,
@@ -302,13 +304,13 @@ def main():
     )
 
     if cache_path.exists():
-        x_lengths, fp4_ms_list, flash_ms_list, skip_ratios, _meta = load_raw_cache(cache_path)
+        x_lengths, q2_ms_list, flash_ms_list, skip_ratios, _meta = load_raw_cache(cache_path)
         print(f"[Info] Loaded cached results from {cache_path}")
     else:
-        fp4_ms_list, flash_ms_list, skip_ratios = [], [], []
+        q2_ms_list, flash_ms_list, skip_ratios = [], [], []
         for L in tqdm(lengths, desc=f"delta={delta:g}, layers{layer_range_str}(bsz={bsz})"):
-            ms_fp4, ms_flash, sr = bench_one_length(L, delta)
-            fp4_ms_list.append(ms_fp4)
+            ms_q2, ms_flash, sr = bench_one_length(L, delta)
+            q2_ms_list.append(ms_q2)
             flash_ms_list.append(ms_flash)
             skip_ratios.append(sr)
         x_lengths = lengths
@@ -329,12 +331,12 @@ def main():
             attn_kernel=attn_kernel_name,
             bsz=int(bsz),
         )
-        save_raw_cache(cache_path, meta, x_lengths, fp4_ms_list, flash_ms_list, skip_ratios)
+        save_raw_cache(cache_path, meta, x_lengths, q2_ms_list, flash_ms_list, skip_ratios)
         print(f"[Info] Saved raw benchmark data to {cache_path}")
 
     plot_path = plot_speed_curve(
         x_lengths,
-        fp4_ms_list,
+        q2_ms_list,
         flash_ms_list,
         T_full,
         BS,
@@ -347,7 +349,7 @@ def main():
     )
     print(
         f"[Result] Layers {layer_range_str} | bsz={bsz} | T={to_k_str(T_full)} | BS={BS} SBS={SBS} delta={delta} | "
-        f"FP4={fp4_ms_list[-1]:.3f} ms, Flash={flash_ms_list[-1]:.3f} ms"
+        f"Q2={q2_ms_list[-1]:.3f} ms, Flash={flash_ms_list[-1]:.3f} ms"
     )
     print(f"[Result] Saved plot to: {plot_path}")
     validate_full(delta)
