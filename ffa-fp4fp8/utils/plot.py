@@ -21,13 +21,14 @@ def plot_speed_curve(
     out_dir,
     attn_kernel_name=None,
     skip_ratios=None,
+    gpu_label=None,
 ):
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     fig, ax1 = plt.subplots(figsize=(12, 8))
 
-    line_fused, = ax1.plot(x_lengths, fused_ms_list, label="Triton fused", marker="o", markersize=2)
-    line_flash, = ax1.plot(x_lengths, flash_ms_list, label="FlashAttn", marker="o", markersize=2)
+    line_fused, = ax1.plot(x_lengths, fused_ms_list, label="Triton fused", marker="o", markersize=2, color="tab:blue")
+    line_flash, = ax1.plot(x_lengths, flash_ms_list, label="FlashAttn", marker="o", markersize=2, color="tab:orange")
     ax1.set_xlabel("Sequence length (T)")
     ax1.set_ylabel("Latency per run (ms)")
     Tmax_k_str = to_k_str(T_full)
@@ -41,6 +42,18 @@ def plot_speed_curve(
 
     lines = [line_fused, line_flash]
     labels = ["Triton fused", "FlashAttn"]
+
+    if gpu_label:
+        ax1.text(
+            0.01,
+            0.99,
+            f"GPU: {gpu_label}",
+            transform=ax1.transAxes,
+            ha="left",
+            va="top",
+            fontsize=10,
+            bbox=dict(boxstyle="round,pad=0.2", facecolor="white", alpha=0.7, edgecolor="none"),
+        )
 
     if skip_ratios is not None:
         ax2 = ax1.twinx()

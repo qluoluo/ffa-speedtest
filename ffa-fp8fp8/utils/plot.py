@@ -27,8 +27,8 @@ def plot_speed_curve(
     out_dir.mkdir(parents=True, exist_ok=True)
     fig, ax1 = plt.subplots(figsize=(12, 8))
 
-    line_fused, = ax1.plot(x_lengths, fused_ms_list, label="Triton fused", marker="o", markersize=2)
-    line_flash, = ax1.plot(x_lengths, flash_ms_list, label="FlashAttn", marker="o", markersize=2)
+    line_fused, = ax1.plot(x_lengths, fused_ms_list, label="Triton fused", marker="o", markersize=2, color="tab:blue")
+    line_flash, = ax1.plot(x_lengths, flash_ms_list, label="FlashAttn", marker="o", markersize=2, color="tab:orange")
     ax1.set_xlabel("Sequence length (T)")
     ax1.set_ylabel("Latency per run (ms)")
     Tmax_k_str = to_k_str(T_full)

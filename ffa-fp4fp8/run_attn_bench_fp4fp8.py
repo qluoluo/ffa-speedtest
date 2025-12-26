@@ -197,7 +197,8 @@ def main():
     layer_range_str = f"{layer_indices[0]}" if len(layer_indices) == 1 else f"{layer_indices[0]}-{layer_indices[-1]}"
 
     gpu_tag, gpu_name, gpu_mem_gb, gpu_idx = get_gpu_info()
-    print(f"[Info] Using GPU[{gpu_idx}]: {gpu_name} ({gpu_mem_gb}GB)")
+    gpu_label = f"{gpu_name} ({gpu_mem_gb}GB)"
+    print(f"[Info] Using GPU[{gpu_idx}]: {gpu_label}")
 
     q_rope_full, k_rope_full, v_full = load_layer_batch(layer_data_root, layer_indices, dtype, max_length)
 
@@ -344,6 +345,7 @@ def main():
         plot_root_dir,
         attn_kernel_name,
         skip_ratios=skip_ratios,
+        gpu_label=gpu_label,
     )
     print(
         f"[Result] Layers {layer_range_str} | bsz={bsz} | T={to_k_str(T_full)} | BS={BS} SBS={SBS} delta={delta} | "

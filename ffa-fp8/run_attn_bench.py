@@ -195,7 +195,8 @@ def main():
     layer_data_root = exp_root / "layer_data"
 
     gpu_tag, gpu_name, gpu_mem_gb, gpu_idx = get_gpu_info()
-    print(f"[Info] Using GPU[{gpu_idx}]: {gpu_name} ({gpu_mem_gb}GB)")
+    gpu_label = f"{gpu_name} ({gpu_mem_gb}GB)"
+    print(f"[Info] Using GPU[{gpu_idx}]: {gpu_label}")
 
     this_file = Path(__file__).resolve()
     this_dir = this_file.parent
@@ -341,6 +342,7 @@ def main():
         plot_root_dir,
         attn_kernel_name,
         skip_ratios=skip_ratios,
+        gpu_label=gpu_label,
     )
 
     print(

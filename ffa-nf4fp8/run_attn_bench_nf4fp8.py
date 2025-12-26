@@ -363,6 +363,7 @@ def main():
         plot_root_dir,
         attn_kernel_name=attn_kernel_name,
         skip_ratios=skip_ratios,
+        gpu_label=gpu_label,
     )
 
     print(f"[Result] Plot saved at: {plot_path}")

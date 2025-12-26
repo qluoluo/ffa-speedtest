@@ -227,6 +227,7 @@ def plot_curve(
     out_dir,
     attn_kernel_name=None,
     skip_ratios=None,
+    gpu_label=None,
 ):
     try:
         import matplotlib
@@ -239,8 +240,22 @@ def plot_curve(
     out_dir.mkdir(parents=True, exist_ok=True)
     fig, ax1 = plt.subplots(figsize=(12, 8))
 
-    line_fp4, = ax1.plot(x_lengths, fp4_ms_list, label="FP4FP8", marker="o", markersize=2)
-    line_fp4_cg, = ax1.plot(x_lengths, fp4_cg_ms_list, label="FP4FP8 CUDAGraph", marker="o", markersize=2)
+    line_fp4, = ax1.plot(
+        x_lengths,
+        fp4_ms_list,
+        label="FP4FP8",
+        marker="o",
+        markersize=2,
+        color="tab:blue",
+    )
+    line_fp4_cg, = ax1.plot(
+        x_lengths,
+        fp4_cg_ms_list,
+        label="FP4FP8 CUDAGraph",
+        marker="o",
+        markersize=2,
+        color="tab:purple",
+    )
     lines = [line_fp4, line_fp4_cg]
     labels = ["FP4FP8", "FP4FP8 CUDAGraph"]
 
@@ -251,7 +266,7 @@ def plot_curve(
             label="FlashAttn",
             marker="o",
             markersize=2,
-            color="tab:purple",
+            color="tab:orange",
         )
         lines.append(line_flash)
         labels.append("FlashAttn")
@@ -264,6 +279,18 @@ def plot_curve(
         f"Layer {layer_idx} Speed vs Length (Tmax={Tmax_k_str}, BS={BS}, SBS={SBS}, delta={delta}{kernel_info})"
     )
     ax1.grid(True, linestyle="--", alpha=0.4)
+
+    if gpu_label:
+        ax1.text(
+            0.01,
+            0.99,
+            f"GPU: {gpu_label}",
+            transform=ax1.transAxes,
+            ha="left",
+            va="top",
+            fontsize=10,
+            bbox=dict(boxstyle="round,pad=0.2", facecolor="white", alpha=0.7, edgecolor="none"),
+        )
 
     if skip_ratios is not None:
         ax2 = ax1.twinx()
@@ -317,7 +344,8 @@ def main():
     layer_range_str = f"{layer_indices[0]}" if len(layer_indices) == 1 else f"{layer_indices[0]}-{layer_indices[-1]}"
 
     gpu_tag, gpu_name, gpu_mem_gb, gpu_idx = get_gpu_info()
-    print(f"[Info] Using GPU[{gpu_idx}]: {gpu_name} ({gpu_mem_gb}GB)")
+    gpu_label = f"{gpu_name} ({gpu_mem_gb}GB)"
+    print(f"[Info] Using GPU[{gpu_idx}]: {gpu_label}")
 
     q_rope_full, k_rope_full, v_full = load_layer_batch(layer_data_root, layer_indices, dtype, max_length)
 
@@ -474,6 +502,7 @@ def main():
             plot_root_dir,
             attn_kernel_name,
             skip_ratios=skip_ratios,
+            gpu_label=gpu_label,
         )
 
     print(

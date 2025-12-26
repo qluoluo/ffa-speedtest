@@ -224,8 +224,22 @@ def plot_curve(
     out_dir.mkdir(parents=True, exist_ok=True)
     fig, ax1 = plt.subplots(figsize=(12, 8))
 
-    line_fp8, = ax1.plot(x_lengths, fp8_ms_list, label="FP8FP8", marker="o", markersize=2)
-    line_fp8_cg, = ax1.plot(x_lengths, fp8_cg_ms_list, label="FP8FP8 CUDAGraph", marker="o", markersize=2)
+    line_fp8, = ax1.plot(
+        x_lengths,
+        fp8_ms_list,
+        label="FP8FP8",
+        marker="o",
+        markersize=2,
+        color="tab:blue",
+    )
+    line_fp8_cg, = ax1.plot(
+        x_lengths,
+        fp8_cg_ms_list,
+        label="FP8FP8 CUDAGraph",
+        marker="o",
+        markersize=2,
+        color="tab:purple",
+    )
     lines = [line_fp8, line_fp8_cg]
     labels = ["FP8FP8", "FP8FP8 CUDAGraph"]
 
@@ -236,7 +250,7 @@ def plot_curve(
             label="FlashAttn",
             marker="o",
             markersize=2,
-            color="tab:purple",
+            color="tab:orange",
         )
         lines.append(line_flash)
         labels.append("FlashAttn")

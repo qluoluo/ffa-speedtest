@@ -248,6 +248,7 @@ def plot_curve(
     layer_idx,
     out_dir,
     attn_kernel_name=None,
+    gpu_label=None,
 ):
     try:
         import matplotlib
@@ -261,8 +262,22 @@ def plot_curve(
     out_dir.mkdir(parents=True, exist_ok=True)
     fig, ax1 = plt.subplots(figsize=(12, 8))
 
-    line_nf4, = ax1.plot(x_lengths, nf4_ms_list, label="NF4FP8", marker="o", markersize=2)
-    line_nf4_cg, = ax1.plot(x_lengths, nf4_cg_ms_list, label="NF4FP8 CUDAGraph", marker="o", markersize=2)
+    line_nf4, = ax1.plot(
+        x_lengths,
+        nf4_ms_list,
+        label="NF4FP8",
+        marker="o",
+        markersize=2,
+        color="tab:blue",
+    )
+    line_nf4_cg, = ax1.plot(
+        x_lengths,
+        nf4_cg_ms_list,
+        label="NF4FP8 CUDAGraph",
+        marker="o",
+        markersize=2,
+        color="tab:purple",
+    )
     lines = [line_nf4, line_nf4_cg]
     labels = ["NF4FP8", "NF4FP8 CUDAGraph"]
 
@@ -273,6 +288,7 @@ def plot_curve(
             label="FlashAttn",
             marker="o",
             markersize=2,
+            color="tab:orange",
         )
         lines.append(line_flash)
         labels.append("FlashAttn")
@@ -287,6 +303,18 @@ def plot_curve(
     )
 
     ax1.grid(True, linestyle="--", alpha=0.4)
+
+    if gpu_label:
+        ax1.text(
+            0.01,
+            0.99,
+            f"GPU: {gpu_label}",
+            transform=ax1.transAxes,
+            ha="left",
+            va="top",
+            fontsize=10,
+            bbox=dict(boxstyle="round,pad=0.2", facecolor="white", alpha=0.7, edgecolor="none"),
+        )
 
     if skip_ratios is not None:
         ax2 = ax1.twinx()
@@ -487,6 +515,7 @@ def main():
             layer_range_str,
             plot_root_dir,
             attn_kernel_name="attn_kernel_v1210_fused_bsz_nf4fp8",
+            gpu_label=gpu_label,
         )
 
     if plot_path is not None:
