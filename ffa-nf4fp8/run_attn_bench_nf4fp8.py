@@ -101,7 +101,7 @@ def convert_layout(q_rope_1: torch.Tensor, k_rope: torch.Tensor, v: torch.Tensor
     Bk, Hkv, T, Dk = k_rope.shape
     Bv, Hvv, Tv, Dv = v.shape
     assert B == Bk == Bv and qlen == 1 and Tv == T and Hvv == Hkv
-    q = q_rope_1[:, :, 0, :].contiguous()
+    q = q_rope_1.permute(0, 2, 1, 3).contiguous()
     k = k_rope.permute(0, 2, 1, 3).contiguous()
     v = v.permute(0, 2, 1, 3).contiguous()
     return q, k, v

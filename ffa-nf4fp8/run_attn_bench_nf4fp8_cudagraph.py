@@ -82,6 +82,7 @@ def parse_args():
     p.add_argument(
         "--cg-replay-only",
         action="store_true",
+        default=True,
         help="Measure CUDAGraph replay time only (exclude input copies).",
     )
     p.add_argument("--no-flash", action="store_true", help="Skip FlashAttention baseline")
@@ -98,7 +99,7 @@ def convert_layout(q_rope_1: torch.Tensor, k_rope: torch.Tensor, v: torch.Tensor
     Bk, Hkv, T, Dk = k_rope.shape
     Bv, Hvv, Tv, Dv = v.shape
     assert B == Bk == Bv and qlen == 1 and Tv == T and Hvv == Hkv
-    q = q_rope_1[:, :, 0, :].contiguous()
+    q = q_rope_1.permute(0, 2, 1, 3).contiguous()
     k = k_rope.permute(0, 2, 1, 3).contiguous()
     v = v.permute(0, 2, 1, 3).contiguous()
     return q, k, v
@@ -477,6 +478,7 @@ def main():
         x_lengths, nf4_ms_list, nf4_cg_ms_list, flash_ms_list, skip_ratios, _meta = load_raw_cache(cache_path)
         print(f"[Info] Loaded cached data from {cache_path.name}")
     else:
+        x_lengths = lengths
         nf4_ms_list, nf4_cg_ms_list, flash_ms_list, skip_ratios = [], [], [], []
         for L in tqdm(lengths, desc="Benchmarking"):
             ms_nf4, ms_nf4_cg, ms_flash, sr = bench_one_length(L)

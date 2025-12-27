@@ -53,6 +53,7 @@ def parse_args():
     p.add_argument(
         "--cg-replay-only",
         action="store_true",
+        default=True,
         help="Measure CUDAGraph replay time only (exclude input copies).",
     )
     p.add_argument("--no-flash", action="store_true", help="Skip FlashAttention baseline")
