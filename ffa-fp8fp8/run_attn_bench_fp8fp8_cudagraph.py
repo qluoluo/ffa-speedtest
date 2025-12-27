@@ -3,6 +3,7 @@ import argparse
 import json
 import math
 import re
+import shutil
 import sys
 from pathlib import Path
 
@@ -114,9 +115,7 @@ def build_plot_dirs(attn_kernel_name, gpu_tag, BS, SBS, delta, layer_indices, bs
         / gpu_tag
         / (f"delta{delta}_layers{layer_range}_BS{BS}_SBS{SBS}_bsz{bsz}" + (f"_{lmax_name}" if max_length is not None else ""))
     )
-    plot_root_dir.mkdir(parents=True, exist_ok=True)
     raw_data_dir = plot_root_dir / "raw"
-    raw_data_dir.mkdir(parents=True, exist_ok=True)
     return plot_root_dir, raw_data_dir
 
 
@@ -371,49 +370,40 @@ def main():
         replay_only=args.cg_replay_only,
     )
 
-    if cache_path.exists():
-        x_lengths, fp8_ms_list, fp8_cg_ms_list, flash_ms_list, skip_ratios, _meta = load_raw_cache(cache_path)
-        print(f"[Info] Loaded cached results from {cache_path}")
-    else:
-        fp8_ms_list, fp8_cg_ms_list, flash_ms_list, skip_ratios = [], [], [], []
+    created_plot_dir = False
+    created_raw_dir = False
 
-        for L in tqdm(lengths, desc=f"delta={delta:g}, layers{layer_range_str}(bsz={bsz})"):
-            q_rope_1 = q_rope_full[:, :, L - 1 : L, :].contiguous()
-            k_rope = k_rope_full[:, :, :L, :].contiguous()
-            v = v_full[:, :, :L, :].contiguous()
+    def ensure_plot_dir():
+        nonlocal created_plot_dir
+        if not plot_root_dir.exists():
+            plot_root_dir.mkdir(parents=True, exist_ok=True)
+            created_plot_dir = True
 
-            q, k, v = convert_layout(q_rope_1, k_rope, v)
-            q_1 = q.unsqueeze(1)  # [B, 1, Hq, K]
-            k_fp8, k_residual, _fp8_dtype = quantize_k_fp8_fp8_residual(k, fp8_dtype=fp8_dtype)
+    def ensure_raw_dir():
+        nonlocal created_raw_dir
+        ensure_plot_dir()
+        if not raw_data_dir.exists():
+            raw_data_dir.mkdir(parents=True, exist_ok=True)
+            created_raw_dir = True
 
-            # One forward to obtain skip ratio and validate shapes
-            _, skip_ratio = attn_forward_decode_fp8fp8(
-                q=q_1,
-                k_fp8=k_fp8,
-                k_residual=k_residual,
-                v=v,
-                scale=scale,
-                BS=BS,
-                SBS=SBS,
-                delta=delta,
-                return_skip_ratio=True,
-            )
+    try:
+        if cache_path.exists():
+            x_lengths, fp8_ms_list, fp8_cg_ms_list, flash_ms_list, skip_ratios, _meta = load_raw_cache(cache_path)
+            print(f"[Info] Loaded cached results from {cache_path}")
+        else:
+            fp8_ms_list, fp8_cg_ms_list, flash_ms_list, skip_ratios = [], [], [], []
 
-            runner = CUDAGraphDecodeRunnerFP8FP8(
-                q_1,
-                k_fp8,
-                v,
-                k_residual=k_residual,
-                scale=scale,
-                BS=BS,
-                SBS=SBS,
-                delta=delta,
-                use_fp8_residual=True,
-                warmup=args.cg_warmup,
-            )
+            for L in tqdm(lengths, desc=f"delta={delta:g}, layers{layer_range_str}(bsz={bsz})"):
+                q_rope_1 = q_rope_full[:, :, L - 1 : L, :].contiguous()
+                k_rope = k_rope_full[:, :, :L, :].contiguous()
+                v = v_full[:, :, :L, :].contiguous()
 
-            def run_fp8fp8():
-                return attn_forward_decode_fp8fp8(
+                q, k, v = convert_layout(q_rope_1, k_rope, v)
+                q_1 = q.unsqueeze(1)  # [B, 1, Hq, K]
+                k_fp8, k_residual, _fp8_dtype = quantize_k_fp8_fp8_residual(k, fp8_dtype=fp8_dtype)
+
+                # One forward to obtain skip ratio and validate shapes
+                _, skip_ratio = attn_forward_decode_fp8fp8(
                     q=q_1,
                     k_fp8=k_fp8,
                     k_residual=k_residual,
@@ -422,82 +412,116 @@ def main():
                     BS=BS,
                     SBS=SBS,
                     delta=delta,
-                    return_skip_ratio=False,
+                    return_skip_ratio=True,
                 )
 
-            def run_fp8fp8_cg():
-                if args.cg_replay_only:
-                    return runner.replay_only()
-                return runner(
+                runner = CUDAGraphDecodeRunnerFP8FP8(
                     q_1,
                     k_fp8,
                     v,
                     k_residual=k_residual,
+                    scale=scale,
+                    BS=BS,
+                    SBS=SBS,
+                    delta=delta,
+                    use_fp8_residual=True,
+                    warmup=args.cg_warmup,
                 )
 
-            def run_flash():
-                return flash_attn_compute(q, k, v)
+                def run_fp8fp8():
+                    return attn_forward_decode_fp8fp8(
+                        q=q_1,
+                        k_fp8=k_fp8,
+                        k_residual=k_residual,
+                        v=v,
+                        scale=scale,
+                        BS=BS,
+                        SBS=SBS,
+                        delta=delta,
+                        return_skip_ratio=False,
+                    )
 
-            ms_fp8 = benchmark(run_fp8fp8, iters=iters, warmup=warmup)
-            ms_fp8_cg = benchmark(run_fp8fp8_cg, iters=iters, warmup=warmup)
-            ms_flash = None
-            if flash_attn_compute is not None:
-                ms_flash = benchmark(run_flash, iters=iters, warmup=warmup)
+                def run_fp8fp8_cg():
+                    if args.cg_replay_only:
+                        return runner.replay_only()
+                    return runner(
+                        q_1,
+                        k_fp8,
+                        v,
+                        k_residual=k_residual,
+                    )
 
-            fp8_ms_list.append(ms_fp8)
-            fp8_cg_ms_list.append(ms_fp8_cg)
-            flash_ms_list.append(ms_flash)
-            skip_ratios.append(float(skip_ratio))
+                def run_flash():
+                    return flash_attn_compute(q, k, v)
 
-        x_lengths = lengths
-        meta = dict(
-            layer_indices=layer_indices,
-            T_full=int(T_full),
-            Hq=int(Hq),
-            Hkv=int(Hkv),
-            D=int(K),
-            Dv=int(V),
-            BS=int(BS),
-            SBS=int(SBS),
-            delta=float(delta),
-            dtype=dtype_key(dtype),
-            step=int(step),
-            iters=int(iters),
-            warmup=int(warmup),
-            attn_kernel=attn_kernel_name,
-            bsz=int(bsz),
-            cudagraph=True,
-            cudagraph_replay_only=bool(args.cg_replay_only),
+                ms_fp8 = benchmark(run_fp8fp8, iters=iters, warmup=warmup)
+                ms_fp8_cg = benchmark(run_fp8fp8_cg, iters=iters, warmup=warmup)
+                ms_flash = None
+                if flash_attn_compute is not None:
+                    ms_flash = benchmark(run_flash, iters=iters, warmup=warmup)
+
+                fp8_ms_list.append(ms_fp8)
+                fp8_cg_ms_list.append(ms_fp8_cg)
+                flash_ms_list.append(ms_flash)
+                skip_ratios.append(float(skip_ratio))
+
+            x_lengths = lengths
+            meta = dict(
+                layer_indices=layer_indices,
+                T_full=int(T_full),
+                Hq=int(Hq),
+                Hkv=int(Hkv),
+                D=int(K),
+                Dv=int(V),
+                BS=int(BS),
+                SBS=int(SBS),
+                delta=float(delta),
+                dtype=dtype_key(dtype),
+                step=int(step),
+                iters=int(iters),
+                warmup=int(warmup),
+                attn_kernel=attn_kernel_name,
+                bsz=int(bsz),
+                cudagraph=True,
+                cudagraph_replay_only=bool(args.cg_replay_only),
+            )
+            ensure_raw_dir()
+            save_raw_cache(cache_path, meta, x_lengths, fp8_ms_list, fp8_cg_ms_list, flash_ms_list, skip_ratios)
+            print(f"[Info] Saved raw benchmark data to {cache_path}")
+
+        plot_path = None
+        if not args.no_plot:
+            ensure_plot_dir()
+            plot_path = plot_curve(
+                x_lengths,
+                fp8_ms_list,
+                fp8_cg_ms_list,
+                flash_ms_list,
+                T_full,
+                BS,
+                SBS,
+                delta,
+                f"layers_{layer_range_str}_bsz_{bsz}",
+                plot_root_dir,
+                attn_kernel_name,
+                skip_ratios=skip_ratios,
+                gpu_label=gpu_label,
+            )
+
+        print(
+            f"[Result] Layers {layer_range_str} | bsz={bsz} | T={to_k_str(T_full)} | "
+            f"BS={BS} SBS={SBS} delta={delta} | "
+            f"FP8FP8={fp8_ms_list[-1]:.3f} ms, FP8FP8_CG={fp8_cg_ms_list[-1]:.3f} ms"
+            + (f", Flash={flash_ms_list[-1]:.3f} ms" if flash_ms_list[-1] is not None else "")
         )
-        save_raw_cache(cache_path, meta, x_lengths, fp8_ms_list, fp8_cg_ms_list, flash_ms_list, skip_ratios)
-        print(f"[Info] Saved raw benchmark data to {cache_path}")
-
-    plot_path = None
-    if not args.no_plot:
-        plot_path = plot_curve(
-            x_lengths,
-            fp8_ms_list,
-            fp8_cg_ms_list,
-            flash_ms_list,
-            T_full,
-            BS,
-            SBS,
-            delta,
-            f"layers_{layer_range_str}_bsz_{bsz}",
-            plot_root_dir,
-            attn_kernel_name,
-            skip_ratios=skip_ratios,
-            gpu_label=gpu_label,
-        )
-
-    print(
-        f"[Result] Layers {layer_range_str} | bsz={bsz} | T={to_k_str(T_full)} | "
-        f"BS={BS} SBS={SBS} delta={delta} | "
-        f"FP8FP8={fp8_ms_list[-1]:.3f} ms, FP8FP8_CG={fp8_cg_ms_list[-1]:.3f} ms"
-        + (f", Flash={flash_ms_list[-1]:.3f} ms" if flash_ms_list[-1] is not None else "")
-    )
-    if plot_path is not None:
-        print(f"[Result] Saved plot to: {plot_path}")
+        if plot_path is not None:
+            print(f"[Result] Saved plot to: {plot_path}")
+    except Exception:
+        if created_plot_dir and plot_root_dir.exists():
+            shutil.rmtree(plot_root_dir, ignore_errors=True)
+        elif created_raw_dir and raw_data_dir.exists():
+            shutil.rmtree(raw_data_dir, ignore_errors=True)
+        raise
 
 
 if __name__ == "__main__":

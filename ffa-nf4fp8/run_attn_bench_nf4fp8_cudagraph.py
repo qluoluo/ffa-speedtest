@@ -3,6 +3,7 @@ import argparse
 import json
 import math
 import re
+import shutil
 import sys
 from pathlib import Path
 
@@ -161,9 +162,7 @@ def build_plot_dirs(attn_kernel_name, gpu_tag, BS, SBS, delta, layer_indices, bs
         / gpu_tag
         / (f"delta{delta}_layers{layer_range}_BS{BS}_SBS{SBS}_bsz{bsz}" + (f"_{lmax_name}" if max_length is not None else ""))
     )
-    plot_root_dir.mkdir(parents=True, exist_ok=True)
     raw_data_dir = plot_root_dir / "raw"
-    raw_data_dir.mkdir(parents=True, exist_ok=True)
     return plot_root_dir, raw_data_dir
 
 
@@ -474,60 +473,85 @@ def main():
 
         return ms_nf4, ms_nf4_cg, ms_flash, float(skip_ratio)
 
-    if cache_path.exists():
-        x_lengths, nf4_ms_list, nf4_cg_ms_list, flash_ms_list, skip_ratios, _meta = load_raw_cache(cache_path)
-        print(f"[Info] Loaded cached data from {cache_path.name}")
-    else:
-        x_lengths = lengths
-        nf4_ms_list, nf4_cg_ms_list, flash_ms_list, skip_ratios = [], [], [], []
-        for L in tqdm(lengths, desc="Benchmarking"):
-            ms_nf4, ms_nf4_cg, ms_flash, sr = bench_one_length(L)
-            nf4_ms_list.append(ms_nf4)
-            nf4_cg_ms_list.append(ms_nf4_cg)
-            flash_ms_list.append(ms_flash)
-            skip_ratios.append(sr)
+    created_plot_dir = False
+    created_raw_dir = False
 
-        meta = {
-            "layer": layer_range_str,
-            "dtype": dtype_key(dtype),
-            "BS": BS,
-            "SBS": SBS,
-            "delta": delta,
-            "step": step,
-            "iters": iters,
-            "warmup": warmup,
-            "gpu": gpu_label,
-            "cg_replay_only": args.cg_replay_only,
-        }
-        save_raw_cache(cache_path, meta, lengths, nf4_ms_list, nf4_cg_ms_list, flash_ms_list, skip_ratios)
-        print(f"[Info] Saved raw data to {cache_path.name}")
+    def ensure_plot_dir():
+        nonlocal created_plot_dir
+        if not plot_root_dir.exists():
+            plot_root_dir.mkdir(parents=True, exist_ok=True)
+            created_plot_dir = True
 
-    plot_path = None
-    if not args.no_plot:
-        plot_path = plot_curve(
-            x_lengths,
-            nf4_ms_list,
-            nf4_cg_ms_list,
-            flash_ms_list,
-            skip_ratios,
-            T_full,
-            BS,
-            SBS,
-            delta,
-            layer_range_str,
-            plot_root_dir,
-            attn_kernel_name="attn_kernel_v1210_fused_bsz_nf4fp8",
-            gpu_label=gpu_label,
+    def ensure_raw_dir():
+        nonlocal created_raw_dir
+        ensure_plot_dir()
+        if not raw_data_dir.exists():
+            raw_data_dir.mkdir(parents=True, exist_ok=True)
+            created_raw_dir = True
+
+    try:
+        if cache_path.exists():
+            x_lengths, nf4_ms_list, nf4_cg_ms_list, flash_ms_list, skip_ratios, _meta = load_raw_cache(cache_path)
+            print(f"[Info] Loaded cached data from {cache_path.name}")
+        else:
+            x_lengths = lengths
+            nf4_ms_list, nf4_cg_ms_list, flash_ms_list, skip_ratios = [], [], [], []
+            for L in tqdm(lengths, desc="Benchmarking"):
+                ms_nf4, ms_nf4_cg, ms_flash, sr = bench_one_length(L)
+                nf4_ms_list.append(ms_nf4)
+                nf4_cg_ms_list.append(ms_nf4_cg)
+                flash_ms_list.append(ms_flash)
+                skip_ratios.append(sr)
+
+            meta = {
+                "layer": layer_range_str,
+                "dtype": dtype_key(dtype),
+                "BS": BS,
+                "SBS": SBS,
+                "delta": delta,
+                "step": step,
+                "iters": iters,
+                "warmup": warmup,
+                "gpu": gpu_label,
+                "cg_replay_only": args.cg_replay_only,
+            }
+            ensure_raw_dir()
+            save_raw_cache(cache_path, meta, lengths, nf4_ms_list, nf4_cg_ms_list, flash_ms_list, skip_ratios)
+            print(f"[Info] Saved raw data to {cache_path.name}")
+
+        plot_path = None
+        if not args.no_plot:
+            ensure_plot_dir()
+            plot_path = plot_curve(
+                x_lengths,
+                nf4_ms_list,
+                nf4_cg_ms_list,
+                flash_ms_list,
+                skip_ratios,
+                T_full,
+                BS,
+                SBS,
+                delta,
+                layer_range_str,
+                plot_root_dir,
+                attn_kernel_name="attn_kernel_v1210_fused_bsz_nf4fp8",
+                gpu_label=gpu_label,
+            )
+
+        if plot_path is not None:
+            print(f"[Result] Saved plot to: {plot_path}")
+
+        last_flash = flash_ms_list[-1] if flash_ms_list and flash_ms_list[-1] is not None else float("nan")
+        print(
+            f"[Info] Done: layer={layer_range_str} last T={to_k_str(T_full)} | "
+            f"NF4={nf4_ms_list[-1]:.3f} ms, NF4_CG={nf4_cg_ms_list[-1]:.3f} ms, Flash={last_flash:.3f} ms"
         )
-
-    if plot_path is not None:
-        print(f"[Result] Saved plot to: {plot_path}")
-
-    last_flash = flash_ms_list[-1] if flash_ms_list and flash_ms_list[-1] is not None else float("nan")
-    print(
-        f"[Info] Done: layer={layer_range_str} last T={to_k_str(T_full)} | "
-        f"NF4={nf4_ms_list[-1]:.3f} ms, NF4_CG={nf4_cg_ms_list[-1]:.3f} ms, Flash={last_flash:.3f} ms"
-    )
+    except Exception:
+        if created_plot_dir and plot_root_dir.exists():
+            shutil.rmtree(plot_root_dir, ignore_errors=True)
+        elif created_raw_dir and raw_data_dir.exists():
+            shutil.rmtree(raw_data_dir, ignore_errors=True)
+        raise
 
 
 if __name__ == "__main__":

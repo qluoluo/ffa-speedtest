@@ -3,6 +3,7 @@ import argparse
 import json
 import math
 import re
+import shutil
 import sys
 from pathlib import Path
 
@@ -164,9 +165,7 @@ def build_plot_dirs(attn_kernel_name, gpu_tag, BS, SBS, delta, layer_indices, bs
         / gpu_tag
         / (f"delta{delta}_layers{layer_range}_BS{BS}_SBS{SBS}_bsz{bsz}" + (f"_{lmax_name}" if max_length is not None else ""))
     )
-    plot_root_dir.mkdir(parents=True, exist_ok=True)
     raw_data_dir = plot_root_dir / "raw"
-    raw_data_dir.mkdir(parents=True, exist_ok=True)
     return plot_root_dir, raw_data_dir
 
 
@@ -430,60 +429,47 @@ def main():
         replay_only=replay_only,
     )
 
-    if cache_path.exists():
-        (
-            x_lengths,
-            nvfp4_ms_list,
-            nvfp4_cg_ms_list,
-            flash_ms_list,
-            skip_ratios,
-            _meta,
-        ) = load_raw_cache(cache_path)
-        print(f"[Info] Loaded cached results from {cache_path}")
-    else:
-        nvfp4_ms_list, nvfp4_cg_ms_list, flash_ms_list, skip_ratios = [], [], [], []
-        for L in tqdm(lengths, desc=f"delta={delta:g}, layers{layer_range_str}(bsz={bsz})"):
-            q_rope_1 = q_rope_full[:, :, L - 1 : L, :].contiguous()
-            k_rope = k_rope_full[:, :, :L, :].contiguous()
-            v = v_full[:, :, :L, :].contiguous()
+    created_plot_dir = False
+    created_raw_dir = False
 
-            q, k, v = convert_layout(q_rope_1, k_rope, v)
-            q_1 = q.unsqueeze(1)
-            k_fp4, k_scale, k_residual, _fp8_dtype = encode_k_nvfp4_fp8_residual(
-                k, page_size=page_size, fp8_dtype=fp8_dtype
-            )
+    def ensure_plot_dir():
+        nonlocal created_plot_dir
+        if not plot_root_dir.exists():
+            plot_root_dir.mkdir(parents=True, exist_ok=True)
+            created_plot_dir = True
 
-            _, skip_ratio = attn_forward_decode_nvfp4fp8(
-                q=q_1,
-                k_fp4=k_fp4,
-                k_scale=k_scale,
-                k_residual=k_residual,
-                v=v,
-                k_bits=4,
-                scale=scale,
-                BS=BS,
-                SBS=SBS,
-                delta=delta,
-                return_skip_ratio=True,
-            )
+    def ensure_raw_dir():
+        nonlocal created_raw_dir
+        ensure_plot_dir()
+        if not raw_data_dir.exists():
+            raw_data_dir.mkdir(parents=True, exist_ok=True)
+            created_raw_dir = True
 
-            runner = CUDAGraphDecodeRunnerNVFP4FP8(
-                q_1,
-                k_fp4,
-                k_scale,
-                v,
-                k_residual=k_residual,
-                k_bits=4,
-                scale=scale,
-                BS=BS,
-                SBS=SBS,
-                delta=delta,
-                use_fp8_residual=True,
-                warmup=cg_warmup,
-            )
+    try:
+        if cache_path.exists():
+            (
+                x_lengths,
+                nvfp4_ms_list,
+                nvfp4_cg_ms_list,
+                flash_ms_list,
+                skip_ratios,
+                _meta,
+            ) = load_raw_cache(cache_path)
+            print(f"[Info] Loaded cached results from {cache_path}")
+        else:
+            nvfp4_ms_list, nvfp4_cg_ms_list, flash_ms_list, skip_ratios = [], [], [], []
+            for L in tqdm(lengths, desc=f"delta={delta:g}, layers{layer_range_str}(bsz={bsz})"):
+                q_rope_1 = q_rope_full[:, :, L - 1 : L, :].contiguous()
+                k_rope = k_rope_full[:, :, :L, :].contiguous()
+                v = v_full[:, :, :L, :].contiguous()
 
-            def run_nvfp4():
-                return attn_forward_decode_nvfp4fp8(
+                q, k, v = convert_layout(q_rope_1, k_rope, v)
+                q_1 = q.unsqueeze(1)
+                k_fp4, k_scale, k_residual, _fp8_dtype = encode_k_nvfp4_fp8_residual(
+                    k, page_size=page_size, fp8_dtype=fp8_dtype
+                )
+
+                _, skip_ratio = attn_forward_decode_nvfp4fp8(
                     q=q_1,
                     k_fp4=k_fp4,
                     k_scale=k_scale,
@@ -494,78 +480,116 @@ def main():
                     BS=BS,
                     SBS=SBS,
                     delta=delta,
-                    return_skip_ratio=False,
+                    return_skip_ratio=True,
                 )
 
-            def run_nvfp4_cg():
-                if replay_only:
-                    return runner.replay_only()
-                return runner(
+                runner = CUDAGraphDecodeRunnerNVFP4FP8(
                     q_1,
                     k_fp4,
                     k_scale,
                     v,
                     k_residual=k_residual,
+                    k_bits=4,
+                    scale=scale,
+                    BS=BS,
+                    SBS=SBS,
+                    delta=delta,
+                    use_fp8_residual=True,
+                    warmup=cg_warmup,
                 )
 
-            ms_nvfp4 = benchmark(run_nvfp4, iters=iters, warmup=warmup)
-            ms_nvfp4_cg = benchmark(run_nvfp4_cg, iters=iters, warmup=warmup)
-            nvfp4_ms_list.append(ms_nvfp4)
-            nvfp4_cg_ms_list.append(ms_nvfp4_cg)
-            skip_ratios.append(float(skip_ratio))
+                def run_nvfp4():
+                    return attn_forward_decode_nvfp4fp8(
+                        q=q_1,
+                        k_fp4=k_fp4,
+                        k_scale=k_scale,
+                        k_residual=k_residual,
+                        v=v,
+                        k_bits=4,
+                        scale=scale,
+                        BS=BS,
+                        SBS=SBS,
+                        delta=delta,
+                        return_skip_ratio=False,
+                    )
 
-            if flash_attn_compute is None:
-                flash_ms_list.append(None)
-            else:
-                flash_ms_list.append(benchmark(lambda: flash_attn_compute(q, k, v), iters=iters, warmup=warmup))
+                def run_nvfp4_cg():
+                    if replay_only:
+                        return runner.replay_only()
+                    return runner(
+                        q_1,
+                        k_fp4,
+                        k_scale,
+                        v,
+                        k_residual=k_residual,
+                    )
 
-        x_lengths = lengths
-        meta = dict(
-            layer_indices=layer_indices,
-            T_full=int(T_full),
-            Hq=int(Hq),
-            Hkv=int(Hkv),
-            D=int(K),
-            Dv=int(V),
-            BS=int(BS),
-            SBS=int(SBS),
-            delta=float(delta),
-            dtype=dtype_key(dtype),
-            step=int(step),
-            iters=int(iters),
-            warmup=int(warmup),
-            attn_kernel="attn_kernel_v1210_fused_bsz_nvfp4fp8",
-            bsz=int(bsz),
-            replay_only=replay_only,
-        )
-        save_raw_cache(cache_path, meta, x_lengths, nvfp4_ms_list, nvfp4_cg_ms_list, flash_ms_list, skip_ratios)
-        print(f"[Info] Saved raw benchmark data to {cache_path}")
+                ms_nvfp4 = benchmark(run_nvfp4, iters=iters, warmup=warmup)
+                ms_nvfp4_cg = benchmark(run_nvfp4_cg, iters=iters, warmup=warmup)
+                nvfp4_ms_list.append(ms_nvfp4)
+                nvfp4_cg_ms_list.append(ms_nvfp4_cg)
+                skip_ratios.append(float(skip_ratio))
 
-    if not args.no_plot:
-        plot_path = plot_curve(
-            x_lengths,
-            nvfp4_ms_list,
-            nvfp4_cg_ms_list,
-            flash_ms_list,
-            T_full,
-            BS,
-            SBS,
-            delta,
-            f"layers_{layer_range_str}_bsz_{bsz}",
-            plot_root_dir,
-            "attn_kernel_v1210_fused_bsz_nvfp4fp8",
-            skip_ratios=skip_ratios,
-            gpu_label=gpu_label,
-        )
-        print(f"[Result] Saved plot to: {plot_path}")
+                if flash_attn_compute is None:
+                    flash_ms_list.append(None)
+                else:
+                    flash_ms_list.append(benchmark(lambda: flash_attn_compute(q, k, v), iters=iters, warmup=warmup))
 
-    if nvfp4_ms_list:
-        last_flash = flash_ms_list[-1]
-        flash_str = f"{last_flash:.3f} ms" if last_flash is not None else "N/A"
-        print(
-            f"[Result] Layers {layer_range_str} | bsz={bsz} | T={to_k_str(T_full)} | BS={BS} SBS={SBS} delta={delta} | "
-            f"NVFP4FP8={nvfp4_ms_list[-1]:.3f} ms, NVFP4FP8_CG={nvfp4_cg_ms_list[-1]:.3f} ms, Flash={flash_str}"
-        )
+            x_lengths = lengths
+            meta = dict(
+                layer_indices=layer_indices,
+                T_full=int(T_full),
+                Hq=int(Hq),
+                Hkv=int(Hkv),
+                D=int(K),
+                Dv=int(V),
+                BS=int(BS),
+                SBS=int(SBS),
+                delta=float(delta),
+                dtype=dtype_key(dtype),
+                step=int(step),
+                iters=int(iters),
+                warmup=int(warmup),
+                attn_kernel="attn_kernel_v1210_fused_bsz_nvfp4fp8",
+                bsz=int(bsz),
+                replay_only=replay_only,
+            )
+            ensure_raw_dir()
+            save_raw_cache(cache_path, meta, x_lengths, nvfp4_ms_list, nvfp4_cg_ms_list, flash_ms_list, skip_ratios)
+            print(f"[Info] Saved raw benchmark data to {cache_path}")
+
+        if not args.no_plot:
+            ensure_plot_dir()
+            plot_path = plot_curve(
+                x_lengths,
+                nvfp4_ms_list,
+                nvfp4_cg_ms_list,
+                flash_ms_list,
+                T_full,
+                BS,
+                SBS,
+                delta,
+                f"layers_{layer_range_str}_bsz_{bsz}",
+                plot_root_dir,
+                "attn_kernel_v1210_fused_bsz_nvfp4fp8",
+                skip_ratios=skip_ratios,
+                gpu_label=gpu_label,
+            )
+            print(f"[Result] Saved plot to: {plot_path}")
+
+        if nvfp4_ms_list:
+            last_flash = flash_ms_list[-1]
+            flash_str = f"{last_flash:.3f} ms" if last_flash is not None else "N/A"
+            print(
+                f"[Result] Layers {layer_range_str} | bsz={bsz} | T={to_k_str(T_full)} | BS={BS} SBS={SBS} delta={delta} | "
+                f"NVFP4FP8={nvfp4_ms_list[-1]:.3f} ms, NVFP4FP8_CG={nvfp4_cg_ms_list[-1]:.3f} ms, Flash={flash_str}"
+            )
+    except Exception:
+        if created_plot_dir and plot_root_dir.exists():
+            shutil.rmtree(plot_root_dir, ignore_errors=True)
+        elif created_raw_dir and raw_data_dir.exists():
+            shutil.rmtree(raw_data_dir, ignore_errors=True)
+        raise
 
 
 if __name__ == "__main__":
