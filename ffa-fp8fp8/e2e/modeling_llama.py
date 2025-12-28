@@ -245,6 +245,11 @@ class LlamaAttention(nn.Module):
         attn_settings: dict = dict(getattr(self.config, "attn_settings", {}))
         use_ffa_prefill = attn_settings.get("use_ffa_prefill", False)
         use_ffa_decode = attn_settings.get("use_ffa_decode", False)
+        use_kernel_cudagraph = attn_settings.get("use_kernel_cudagraph", False)
+        use_full_kv = attn_settings.get("use_full_kv", False)
+        decode_runners = attn_settings.get("decode_runner_store")
+        decode_workspaces = attn_settings.get("decode_workspace")
+        decode_seqlen = attn_settings.get("decode_seqlen")
 
         cos, sin = position_embeddings
         query_states, key_states = apply_rotary_pos_emb(query_states, key_states, cos, sin)
@@ -310,22 +315,72 @@ class LlamaAttention(nn.Module):
                         "use_ffa_decode",
                         "pattern_layers",
                         "skip_ratio_store",
+                        "use_kernel_cudagraph",
+                        "use_full_kv",
+                        "decode_runner_store",
+                        "decode_workspace",
+                        "decode_seqlen",
                     )
                 }
                 skip_ratio_store = attn_settings.get("skip_ratio_store")
                 use_fp8_residual = decode_kwargs.get("use_fp8_residual", True)
+
+                v_full = None
+                seqlen_arg = None
+                if use_full_kv and isinstance(past_key_values, FP8Fp8StaticCache):
+                    k_fp8_full = cache_layer.key_base_full
+                    k_residual_full = cache_layer.key_residual_full
+                    v_full = cache_layer.value_full
+                    if k_fp8_full is not None and v_full is not None:
+                        k_fp8 = k_fp8_full
+                        if use_fp8_residual:
+                            k_residual = k_residual_full
+                        seqlen_arg = decode_seqlen if decode_seqlen is not None else cache_layer.get_seq_length()
+                if v_full is None:
+                    v_full = value_states.transpose(1, 2)
+
                 if use_fp8_residual and k_residual is None:
                     raise RuntimeError("FP8Fp8Cache is missing fp8 residual keys for decode.")
 
+                workspace = None
+                if isinstance(decode_workspaces, (list, tuple)):
+                    if self.layer_idx < len(decode_workspaces):
+                        workspace = decode_workspaces[self.layer_idx]
+                elif decode_workspaces is not None:
+                    workspace = decode_workspaces
+
                 from ffa_fwd_decode_fp8fp8 import attn_forward_decode_fp8fp8
 
-                decode_result = attn_forward_decode_fp8fp8(
-                    q=query_states.transpose(1, 2),
-                    k_fp8=k_fp8,
-                    k_residual=k_residual if use_fp8_residual else None,
-                    v=value_states.transpose(1, 2),
-                    **decode_kwargs,
-                )
+                runner = None
+                if use_kernel_cudagraph and decode_runners is not None and not torch.cuda.is_current_stream_capturing():
+                    if isinstance(decode_runners, (list, tuple)):
+                        if self.layer_idx < len(decode_runners):
+                            runner = decode_runners[self.layer_idx]
+                    elif isinstance(decode_runners, dict):
+                        runner = decode_runners.get(self.layer_idx)
+
+                if runner is not None:
+                    decode_result = runner.replay(
+                        q=query_states.transpose(1, 2),
+                        k_fp8=k_fp8,
+                        v=v_full,
+                        k_residual=k_residual if use_fp8_residual else None,
+                        seqlen=seqlen_arg,
+                        precomputed_threshold=decode_kwargs.get("precomputed_threshold"),
+                        return_skip_ratio=decode_kwargs.get("return_skip_ratio", False),
+                    )
+                else:
+                    if workspace is not None:
+                        decode_kwargs["workspace"] = workspace
+                    if seqlen_arg is not None:
+                        decode_kwargs["seqlen"] = seqlen_arg
+                    decode_result = attn_forward_decode_fp8fp8(
+                        q=query_states.transpose(1, 2),
+                        k_fp8=k_fp8,
+                        k_residual=k_residual if use_fp8_residual else None,
+                        v=v_full,
+                        **decode_kwargs,
+                    )
                 if decode_kwargs.get("return_skip_ratio", False):
                     attn_output, skip_ratio = decode_result
                     if isinstance(skip_ratio_store, list):

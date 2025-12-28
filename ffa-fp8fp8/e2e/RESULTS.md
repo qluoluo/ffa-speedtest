@@ -39,11 +39,32 @@ Results:
 ```
 variant   prefill_ms/iter  prefill_tok/s  decode_ms/iter  ms/token  tok/s  total_ms/iter
 Baseline  2879.358         11380.3        3307.197        12.919    77.4   6186.555
-FP8FP8    2896.077         11314.6        2613.682        10.210    97.9   5509.759
+FP8FP8    2896.077         11314.6        2613.682        10.210    97.9   5509.7592
 ```
 
 Note: FP8FP8 decode skip ratio avg=0.9665 (samples=6912).
 Note: token indices length warning during run (267552 > 131072).
+
+## Compare (prefill + decode, decode-kernel-cudagraph)
+
+Commands:
+```bash
+python e2e/bench_llama_fp8fp8.py --mode both --compare --seq-len 32768 --decode-tokens 256 --decode-kernel-cudagraph --greedy-decode --warmup 5 --iters 20
+```
+
+Config:
+- batch=1, seq_len=32768, decode_tokens=256, dtype=fp16, fp8_dtype=e5m2
+- hidden=3072, heads=24, kv_heads=8, layers=28
+- decode_kernel_cudagraph=True, decode_cudagraph=False, greedy=True, model_path=/inspire/hdd/global_user/liuzhigeng-253108120105/models/Llama-3_2-3B
+
+Results:
+```
+variant   prefill_ms/iter  prefill_tok/s  decode_ms/iter  ms/token  tok/s  total_ms/iter
+Baseline  2889.244         11341.4        13376.530       52.252    19.1   16265.773
+FP8FP8    2903.996         11283.8        5210.443        20.353    49.1   8114.439
+```
+
+Note: FP8FP8 decode skip ratio avg=0.9664 (samples=6912).
 
 ## Decode + CUDA Graphs (static cache)
 

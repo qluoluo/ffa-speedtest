@@ -7,6 +7,37 @@ import triton
 import triton.language as tl
 
 
+class FP8FP8DecodeWorkspace:
+    def __init__(self, B, HQ, HKV, V, ntbs, device, dtype):
+        self.reset(B, HQ, HKV, V, ntbs, device, dtype)
+
+    def reset(self, B, HQ, HKV, V, ntbs, device, dtype):
+        self.B = B
+        self.HQ = HQ
+        self.HKV = HKV
+        self.V = V
+        self.ntbs = ntbs
+        self.device = device
+        self.dtype = dtype
+        self.o = torch.empty((B, HQ, V), device=device, dtype=dtype)
+        self.m_buf = torch.empty((B, HQ, ntbs), device=device, dtype=torch.float32)
+        self.l_buf = torch.empty((B, HQ, ntbs), device=device, dtype=torch.float32)
+        self.o_buf = torch.empty((B, HQ, ntbs, V), device=device, dtype=torch.float32)
+        self.mask_buf = torch.empty((B, HKV, ntbs), device=device, dtype=torch.int8)
+
+    def ensure(self, B, HQ, HKV, V, ntbs, device, dtype):
+        if (
+            self.B != B
+            or self.HQ != HQ
+            or self.HKV != HKV
+            or self.V != V
+            or self.ntbs != ntbs
+            or self.device != device
+            or self.dtype != dtype
+        ):
+            self.reset(B, HQ, HKV, V, ntbs, device, dtype)
+
+
 @triton.jit
 def attn_forward_stage1_fused_threshold_fp8(
     q,
@@ -21,6 +52,8 @@ def attn_forward_stage1_fused_threshold_fp8(
     stride_bv,
     scale,
     T,
+    T_act,
+    seqlen_ptr,
     NTB,
     NTBS,
     delta,
@@ -37,6 +70,7 @@ def attn_forward_stage1_fused_threshold_fp8(
     T_BS: tl.constexpr = 16,
     USE_EXT_TH: tl.constexpr = False,
     USE_FP8_RESIDUAL: tl.constexpr = False,
+    USE_SEQLEN_PTR: tl.constexpr = False,
 ):
     # 3D grid = (NTB, B, HKV)
     pid_tb = tl.program_id(0)
@@ -58,12 +92,17 @@ def attn_forward_stage1_fused_threshold_fp8(
     q_ptrs = q + pid_b * (HQ * K) + (base_hq + rows)[:, None] * K + offs_k[None, :]
     q_tile = tl.load(q_ptrs, mask=row_mask[:, None], other=0.0).to(tl.float16)
 
+    if USE_SEQLEN_PTR:
+        T_mask = tl.load(seqlen_ptr).to(tl.int32)
+    else:
+        T_mask = T_act
+
     if USE_EXT_TH:
         th_rows = tl.load(th_in + pid_b * HQ + (base_hq + rows), mask=row_mask, other=0.0)
     else:
         tb0 = 0
         offs_t0 = tb0 * T_BS + tl.arange(0, T_BS)
-        t_mask0 = offs_t0 < T
+        t_mask0 = offs_t0 < T_mask
         base_tok0 = pid_b * stride_bk + (offs_t0[None, :] * (HKV * K)) + (pid_hkv * K)
         k_ptrs0 = k_base + base_tok0 + offs_k[:, None]
         k_tile0 = tl.load(k_ptrs0, mask=(TRUE_K[:, None] & t_mask0[None, :]), other=0.0).to(tl.float16)
@@ -73,7 +112,7 @@ def attn_forward_stage1_fused_threshold_fp8(
 
         tb1 = NTB - 1
         offs_t1 = tb1 * T_BS + tl.arange(0, T_BS)
-        t_mask1 = offs_t1 < T
+        t_mask1 = offs_t1 < T_mask
         base_tok1 = pid_b * stride_bk + (offs_t1[None, :] * (HKV * K)) + (pid_hkv * K)
         k_ptrs1 = k_base + base_tok1 + offs_k[:, None]
         k_tile1 = tl.load(k_ptrs1, mask=(TRUE_K[:, None] & t_mask1[None, :]), other=0.0).to(tl.float16)
@@ -85,7 +124,7 @@ def attn_forward_stage1_fused_threshold_fp8(
 
     for sb in tl.static_range(NSB):
         offs_t_sb = s0 + sb * SBS + tl.arange(0, SBS)
-        t_mask_sb = offs_t_sb < T
+        t_mask_sb = offs_t_sb < T_mask
 
         base_toksb = pid_b * stride_bk + (offs_t_sb[None, :] * (HKV * K)) + (pid_hkv * K)
         k_ptrssb = k_base + base_toksb + offs_k[:, None]
@@ -192,6 +231,8 @@ def attn_forward_decode_fp8fp8(
     return_skip_ratio: bool = False,
     precomputed_threshold: torch.Tensor | None = None,
     use_fp8_residual: bool = True,
+    seqlen: int | torch.Tensor | None = None,
+    workspace: FP8FP8DecodeWorkspace | None = None,
     **kwargs,
 ):
     assert q.is_cuda and k_fp8.is_cuda and v.is_cuda
@@ -203,14 +244,14 @@ def attn_forward_decode_fp8fp8(
         raise ValueError("k_residual must be a floating point tensor (fp8/fp16/bf16)")
 
     B, Tq, HQ, K = q.shape
-    Bk, T, HKV, Kk = k_fp8.shape
+    Bk, T_full, HKV, Kk = k_fp8.shape
     Bv, Tv, HKVv, V = v.shape
     if k_residual is not None:
         Bk_r, T_r, HKV_r, K_r = k_residual.shape
         assert (
             B == Bk == Bv == Bk_r
             and Tq == 1
-            and Tv == T == T_r
+            and Tv == T_full == T_r
             and HKVv == HKV == HKV_r
             and K == Kk == K_r
         ), "K/V layouts must be [B, T, HKV, D]"
@@ -218,7 +259,7 @@ def attn_forward_decode_fp8fp8(
         assert (
             B == Bk == Bv
             and Tq == 1
-            and Tv == T
+            and Tv == T_full
             and HKVv == HKV
             and K == Kk
         ), "K/V layouts must be [B, T, HKV, D]"
@@ -232,7 +273,28 @@ def attn_forward_decode_fp8fp8(
     if SBS is None:
         SBS = BS
 
-    NTB = triton.cdiv(T, BS)
+    if seqlen is None:
+        T_act = T_full
+        use_seqlen_ptr = False
+        seqlen_ptr = None
+    elif isinstance(seqlen, torch.Tensor):
+        if seqlen.numel() != 1:
+            raise ValueError("seqlen tensor must be a scalar")
+        if seqlen.device != q.device:
+            raise ValueError("seqlen tensor must be on the same device as q")
+        if seqlen.dtype not in (torch.int32, torch.int64):
+            raise ValueError("seqlen tensor must be int32 or int64")
+        use_seqlen_ptr = True
+        seqlen_ptr = seqlen
+        T_act = 0
+    else:
+        T_act = int(seqlen)
+        if T_act <= 0 or T_act > T_full:
+            raise ValueError(f"seqlen ({T_act}) must be in [1, {T_full}]")
+        use_seqlen_ptr = False
+        seqlen_ptr = None
+
+    NTB = triton.cdiv(T_full, BS)
     NSB = triton.cdiv(BS, SBS)
     NTBS = NTB * NSB
 
@@ -253,11 +315,20 @@ def attn_forward_decode_fp8fp8(
     use_fp8_residual = use_fp8_residual and (k_residual is not None)
     k_res = k_residual if use_fp8_residual else k_fp8
 
-    o = torch.empty((B, HQ, V), device=q.device, dtype=q.dtype)
-    m_buf = torch.empty((B, HQ, NTBS), device=q.device, dtype=torch.float32)
-    l_buf = torch.empty((B, HQ, NTBS), device=q.device, dtype=torch.float32)
-    o_buf = torch.empty((B, HQ, NTBS, V), device=q.device, dtype=torch.float32)
-    mask_buf = torch.zeros((B, HKV, NTBS), device=q.device, dtype=torch.int8)
+    if workspace is None:
+        o = torch.empty((B, HQ, V), device=q.device, dtype=q.dtype)
+        m_buf = torch.empty((B, HQ, NTBS), device=q.device, dtype=torch.float32)
+        l_buf = torch.empty((B, HQ, NTBS), device=q.device, dtype=torch.float32)
+        o_buf = torch.empty((B, HQ, NTBS, V), device=q.device, dtype=torch.float32)
+        mask_buf = torch.zeros((B, HKV, NTBS), device=q.device, dtype=torch.int8)
+    else:
+        workspace.ensure(B, HQ, HKV, V, NTBS, q.device, q.dtype)
+        o = workspace.o
+        m_buf = workspace.m_buf
+        l_buf = workspace.l_buf
+        o_buf = workspace.o_buf
+        mask_buf = workspace.mask_buf
+        mask_buf.zero_()
 
     if precomputed_threshold is not None:
         assert precomputed_threshold.is_cuda and precomputed_threshold.shape == (B, HQ)
@@ -279,7 +350,9 @@ def attn_forward_decode_fp8fp8(
         stride_bk,
         stride_bv,
         scale,
-        T,
+        T_full,
+        T_act,
+        seqlen_ptr if use_seqlen_ptr else k_fp8,
         NTB,
         NTBS,
         delta,
@@ -294,13 +367,26 @@ def attn_forward_decode_fp8fp8(
         SBS=SBS,
         USE_EXT_TH=use_ext_th,
         USE_FP8_RESIDUAL=use_fp8_residual,
+        USE_SEQLEN_PTR=use_seqlen_ptr,
     )
 
     skip_ratio = None
     if return_skip_ratio:
-        kept = mask_buf.to(torch.int32).sum()
-        total = mask_buf.numel()
-        skip_ratio = float((1.0 - (kept.float() / float(total))).item())
+        if use_seqlen_ptr:
+            if isinstance(seqlen, torch.Tensor):
+                active_T = int(seqlen.item())
+            else:
+                active_T = T_full
+        else:
+            active_T = T_act
+        if active_T <= 0:
+            skip_ratio = 1.0
+        else:
+            NTB_act = triton.cdiv(active_T, BS)
+            NTBS_act = NTB_act * NSB
+            kept = mask_buf[:, :, :NTBS_act].to(torch.int32).sum()
+            total = B * HKV * NTBS_act
+            skip_ratio = float((1.0 - (kept.float() / float(total))).item())
 
     attn_forward_stage2_masked[(B, HKV, G)](
         m_buf,

@@ -9,6 +9,9 @@ import torch
 THIS_DIR = Path(__file__).resolve().parent
 if str(THIS_DIR) not in sys.path:
     sys.path.append(str(THIS_DIR))
+KERNEL_ROOT = THIS_DIR.parent
+if str(KERNEL_ROOT) not in sys.path:
+    sys.path.append(str(KERNEL_ROOT))
 
 from transformers import AutoTokenizer
 
@@ -46,6 +49,11 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--delta", type=float, default=5.0, help="Delta threshold for fp8+fp8 decode kernel.")
     p.add_argument("--cudagraph", action="store_true", help="Use CUDA Graphs for prefill (cache disabled).")
     p.add_argument("--decode-cudagraph", action="store_true", help="Use CUDA Graphs for decode (static cache).")
+    p.add_argument(
+        "--decode-kernel-cudagraph",
+        action="store_true",
+        help="Use kernel-level CUDA Graphs for fp8+fp8 decode (static cache).",
+    )
     p.add_argument("--no-residual", action="store_true")
     p.add_argument("--seed", type=int, default=0)
     return p.parse_args()
@@ -255,13 +263,17 @@ def main() -> None:
         f"use_residual={use_residual} compare={args.compare} ffa_decode={args.ffa_decode} "
         f"decode_tokens={decode_steps} greedy={args.greedy_decode} "
         f"cudagraph={args.cudagraph} decode_cudagraph={args.decode_cudagraph} "
+        f"decode_kernel_cudagraph={args.decode_kernel_cudagraph} "
         f"model_path={args.model_path}"
     )
 
     if args.cudagraph and args.mode in ("decode", "both") and not args.decode_cudagraph:
         print("[Warn] cudagraph only applies to prefill; use --decode-cudagraph for decode.")
+    if args.decode_cudagraph and args.decode_kernel_cudagraph:
+        raise ValueError("--decode-cudagraph and --decode-kernel-cudagraph cannot be used together.")
 
     pattern_layers = list(range(1, config.num_hidden_layers)) if config.num_hidden_layers > 1 else []
+    head_dim = config.hidden_size // config.num_attention_heads
 
     def set_attn_settings(use_ffa_decode: bool) -> None:
         if use_ffa_decode:
@@ -273,6 +285,9 @@ def main() -> None:
                 "use_fp8_residual": use_residual,
                 "pattern_layers": pattern_layers,
             }
+            if args.decode_kernel_cudagraph:
+                config.attn_settings["use_kernel_cudagraph"] = True
+                config.attn_settings["use_full_kv"] = True
         else:
             config.attn_settings = {}
 
@@ -297,11 +312,94 @@ def main() -> None:
                     use_cache=False,
                 )
 
-    def build_prefill_dynamic():
-        cache = FP8Fp8Cache(
-            use_fp8_residual=use_residual,
-            fp8_dtype=fp8_dtype,
+    def init_decode_runtime(cache) -> None:
+        if not config.attn_settings.get("use_ffa_decode", False):
+            return
+        if args.mode not in ("decode", "both"):
+            return
+        BS = args.bs
+        SBS = args.sbs if args.sbs is not None else args.bs
+        if config.attn_settings.get("use_full_kv", False):
+            if isinstance(cache, FP8Fp8StaticCache):
+                t_full = cache.max_seq_len
+            else:
+                t_full = cache.get_seq_length()
+        else:
+            t_full = cache.get_seq_length()
+        ntb = (t_full + BS - 1) // BS
+        nsb = (BS + SBS - 1) // SBS
+        ntbs = ntb * nsb
+        from attn_kernel.attn_kernel_v1210_fused_bsz_fp8fp8 import FP8FP8DecodeWorkspace
+
+        workspaces = [
+            FP8FP8DecodeWorkspace(
+                args.batch,
+                config.num_attention_heads,
+                config.num_key_value_heads,
+                head_dim,
+                ntbs,
+                device,
+                dtype,
+            )
+            for _ in range(config.num_hidden_layers)
+        ]
+        config.attn_settings["decode_workspace"] = workspaces
+
+        if not args.decode_kernel_cudagraph:
+            config.attn_settings.pop("decode_runner_store", None)
+            config.attn_settings.pop("decode_seqlen", None)
+            return
+        if not isinstance(cache, FP8Fp8StaticCache):
+            raise ValueError("decode-kernel-cudagraph requires FP8Fp8StaticCache.")
+        if cache.get_seq_length() <= 0:
+            raise ValueError("decode-kernel-cudagraph requires seq_len > 0 prefill.")
+
+        decode_seqlen = torch.tensor(cache.get_seq_length(), device=device, dtype=torch.int32)
+        config.attn_settings["decode_seqlen"] = decode_seqlen
+
+        from attn_kernel.attn_kernel_v1210_fused_bsz_fp8fp8_cudagraph import (
+            CUDAGraphDecodeRunnerFP8FP8,
         )
+
+        q_dummy = torch.empty((args.batch, 1, config.num_attention_heads, head_dim), device=device, dtype=dtype)
+        runner_store = []
+        for layer_idx in range(config.num_hidden_layers):
+            if layer_idx not in pattern_layers:
+                runner_store.append(None)
+                continue
+            layer = cache.layers[layer_idx]
+            if layer.key_base_full is None or layer.value_full is None:
+                raise RuntimeError("Static cache is missing full K/V buffers for decode runner.")
+            runner_store.append(
+                CUDAGraphDecodeRunnerFP8FP8(
+                    q=q_dummy,
+                    k_fp8=layer.key_base_full,
+                    k_residual=layer.key_residual_full if use_residual else None,
+                    v=layer.value_full,
+                    BS=args.bs,
+                    SBS=args.sbs,
+                    delta=args.delta,
+                    use_fp8_residual=use_residual,
+                    seqlen=decode_seqlen,
+                    copy_kv=False,
+                    workspace=workspaces[layer_idx],
+                )
+            )
+        config.attn_settings["decode_runner_store"] = runner_store
+
+    def build_prefill_dynamic():
+        use_kernel_cg = args.decode_kernel_cudagraph and config.attn_settings.get("use_ffa_decode", False)
+        if use_kernel_cg:
+            cache = FP8Fp8StaticCache(
+                max_seq_len=args.seq_len + decode_steps,
+                use_fp8_residual=use_residual,
+                fp8_dtype=fp8_dtype,
+            )
+        else:
+            cache = FP8Fp8Cache(
+                use_fp8_residual=use_residual,
+                fp8_dtype=fp8_dtype,
+            )
         token_buf = None
         if args.greedy_decode:
             token_buf = torch.empty((args.batch, 1), device=device, dtype=torch.long)
@@ -316,27 +414,38 @@ def main() -> None:
                     torch.argmax(outputs.logits[:, -1, :], dim=-1, keepdim=True, out=token_buf)
             elif args.greedy_decode:
                 token_buf.copy_(input_ids[:, :1])
+        init_decode_runtime(cache)
         return cache, token_buf
 
     def run_decode_steps(cache, token_buf) -> None:
         if decode_steps <= 0:
             return
+        decode_seqlen = config.attn_settings.get("decode_seqlen")
+        cur_len = cache.get_seq_length() if decode_seqlen is not None else None
         with torch.no_grad():
             if args.greedy_decode:
                 for _ in range(decode_steps):
+                    if decode_seqlen is not None:
+                        decode_seqlen.fill_(cur_len + 1)
                     outputs = model(
                         token_buf,
                         past_key_values=cache,
                         use_cache=True,
                     )
                     torch.argmax(outputs.logits[:, -1, :], dim=-1, keepdim=True, out=token_buf)
+                    if decode_seqlen is not None:
+                        cur_len += 1
             else:
                 for t in range(decode_steps):
+                    if decode_seqlen is not None:
+                        decode_seqlen.fill_(cur_len + 1)
                     model(
                         decode_ids[:, t : t + 1],
                         past_key_values=cache,
                         use_cache=True,
                     )
+                    if decode_seqlen is not None:
+                        cur_len += 1
 
     def make_decode_static():
         cache = FP8Fp8StaticCache(
@@ -358,6 +467,7 @@ def main() -> None:
                     torch.argmax(outputs.logits[:, -1, :], dim=-1, keepdim=True, out=token_buf)
             elif args.greedy_decode:
                 token_buf.copy_(input_ids[:, :1])
+        init_decode_runtime(cache)
 
         def run_decode_static() -> None:
             run_decode_steps(cache, token_buf)
