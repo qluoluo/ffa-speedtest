@@ -8,17 +8,20 @@ from transformers.cache_utils import Cache, CacheLayerMixin
 
 def _default_fp8_dtype() -> torch.dtype:
     fp8_dtype = getattr(torch, "float8_e5m2", None)
-    return fp8_dtype or torch.float16
+    if fp8_dtype is None:
+        raise RuntimeError(
+            "torch.float8_e5m2 is not available in this PyTorch build; fp8 is unsupported."
+        )
+    return fp8_dtype
 
 
 def resolve_fp8_dtype(device: torch.device) -> torch.dtype:
-    if hasattr(torch, "float8_e5m2"):
-        try:
-            torch.empty(1, device=device, dtype=torch.float8_e5m2)
-            return torch.float8_e5m2
-        except Exception:
-            pass
-    return torch.float16
+    fp8_dtype = _default_fp8_dtype()
+    try:
+        torch.empty(1, device=device, dtype=fp8_dtype)
+    except Exception as exc:
+        raise RuntimeError(f"torch.float8_e5m2 is not supported on device {device}.") from exc
+    return fp8_dtype
 
 
 def quantize_k_fp8_fp8_residual(
@@ -39,7 +42,7 @@ class FP8Fp8DynamicLayer(CacheLayerMixin):
     def __init__(self, use_fp8_residual: bool = True, fp8_dtype: torch.dtype | None = None):
         super().__init__()
         self.use_fp8_residual = use_fp8_residual
-        self.fp8_dtype = fp8_dtype or _default_fp8_dtype()
+        self.fp8_dtype = fp8_dtype
         self.seq_dim = 1
 
         self.key_base: Optional[torch.Tensor] = None
@@ -50,6 +53,8 @@ class FP8Fp8DynamicLayer(CacheLayerMixin):
 
     def lazy_initialization(self, key_states: torch.Tensor):
         self.dtype, self.device = key_states.dtype, key_states.device
+        if self.fp8_dtype is None:
+            self.fp8_dtype = resolve_fp8_dtype(self.device)
         self.is_initialized = True
 
     def _append(self, stored: Optional[torch.Tensor], new: torch.Tensor) -> torch.Tensor:
@@ -190,7 +195,7 @@ class FP8Fp8Cache(Cache):
     ):
         super().__init__(layers=[], offloading=offloading, offload_only_non_sliding=offload_only_non_sliding)
         self.use_fp8_residual = use_fp8_residual
-        self.fp8_dtype = fp8_dtype or _default_fp8_dtype()
+        self.fp8_dtype = fp8_dtype
 
     def _ensure_layer(self, layer_idx: int) -> None:
         while len(self.layers) <= layer_idx:
@@ -222,3 +227,253 @@ class FP8Fp8Cache(Cache):
         if not self.layers:
             return 0
         return self.layers[0].get_seq_length()
+
+
+class FP8Fp8StaticLayer(CacheLayerMixin):
+    is_sliding = False
+
+    def __init__(self, max_seq_len: int, use_fp8_residual: bool = True, fp8_dtype: torch.dtype | None = None):
+        super().__init__()
+        if max_seq_len <= 0:
+            raise ValueError("max_seq_len must be positive")
+        self.max_seq_len = max_seq_len
+        self.use_fp8_residual = use_fp8_residual
+        self.fp8_dtype = fp8_dtype
+        self.seq_dim = 1
+        self.seq_len = 0
+
+        self.key_base_full: Optional[torch.Tensor] = None
+        self.key_residual_full: Optional[torch.Tensor] = None
+        self.key_full: Optional[torch.Tensor] = None
+        self.value_full: Optional[torch.Tensor] = None
+
+        self.key_base: Optional[torch.Tensor] = None
+        self.key_residual: Optional[torch.Tensor] = None
+        self.value: Optional[torch.Tensor] = None
+        self.keys: Optional[torch.Tensor] = None
+        self.values: Optional[torch.Tensor] = None
+
+    def lazy_initialization(self, key_states: torch.Tensor, value_states: torch.Tensor):
+        self.dtype, self.device = key_states.dtype, key_states.device
+        if self.fp8_dtype is None:
+            self.fp8_dtype = resolve_fp8_dtype(self.device)
+        self.is_initialized = True
+
+        batch_size, seq_len, hkv, k_dim = key_states.shape
+        _, _, _, v_dim = value_states.shape
+        if self.max_seq_len < seq_len:
+            raise ValueError(
+                f"max_seq_len ({self.max_seq_len}) must be >= incoming seq_len ({seq_len})."
+            )
+
+        self.key_full = torch.empty(
+            (batch_size, self.max_seq_len, hkv, k_dim),
+            device=self.device,
+            dtype=self.dtype,
+        )
+        self.value_full = torch.empty(
+            (batch_size, self.max_seq_len, hkv, v_dim),
+            device=self.device,
+            dtype=self.dtype,
+        )
+        self.key_base_full = torch.empty(
+            (batch_size, self.max_seq_len, hkv, k_dim),
+            device=self.device,
+            dtype=self.fp8_dtype,
+        )
+        if self.use_fp8_residual:
+            self.key_residual_full = torch.empty(
+                (batch_size, self.max_seq_len, hkv, k_dim),
+                device=self.device,
+                dtype=self.fp8_dtype,
+            )
+        self.value = self.value_full
+        self._refresh_views()
+
+    def _refresh_views(self) -> None:
+        if self.key_full is None:
+            self.keys = None
+            self.values = None
+            self.key_base = None
+            self.key_residual = None
+            return
+        self.keys = self.key_full.narrow(self.seq_dim, 0, self.seq_len)
+        self.values = self.value_full.narrow(self.seq_dim, 0, self.seq_len)
+        self.key_base = self.key_base_full.narrow(self.seq_dim, 0, self.seq_len)
+        if self.use_fp8_residual and self.key_residual_full is not None:
+            self.key_residual = self.key_residual_full.narrow(self.seq_dim, 0, self.seq_len)
+        else:
+            self.key_residual = None
+
+    def update(
+        self,
+        key_states: torch.Tensor,
+        value_states: torch.Tensor,
+        cache_kwargs: Optional[dict[str, Any]] = None,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        if not self.is_initialized:
+            self.lazy_initialization(key_states, value_states)
+
+        if cache_kwargs is None or cache_kwargs.get("cache_position") is None:
+            raise ValueError("cache_position is required for FP8Fp8StaticLayer updates.")
+        cache_position = cache_kwargs["cache_position"]
+        positions = cache_position.to(device=key_states.device, dtype=torch.long)
+
+        if positions.numel() != key_states.shape[1]:
+            raise ValueError("cache_position length must match input sequence length.")
+
+        self.key_full[:, positions] = key_states
+        self.value_full[:, positions] = value_states
+
+        k_base, k_residual = quantize_k_fp8_fp8_residual(
+            key_states, self.fp8_dtype, use_residual=self.use_fp8_residual
+        )
+        self.key_base_full[:, positions] = k_base
+        if self.use_fp8_residual and self.key_residual_full is not None:
+            self.key_residual_full[:, positions] = k_residual
+
+        if torch.cuda.is_current_stream_capturing():
+            self.seq_len += key_states.shape[1]
+        else:
+            new_len = int(positions.max().item()) + 1
+            if new_len > self.seq_len:
+                self.seq_len = new_len
+        self._refresh_views()
+        return self.keys, self.values
+
+    def get_mask_sizes(self, cache_position: torch.Tensor) -> tuple[int, int]:
+        kv_offset = 0
+        query_length = cache_position.shape[0]
+        kv_length = self.get_seq_length() + query_length
+        return kv_length, kv_offset
+
+    def get_seq_length(self) -> int:
+        return self.seq_len
+
+    def get_max_cache_shape(self) -> int:
+        return self.max_seq_len
+
+    def crop(self, max_length: int) -> None:
+        if max_length < 0:
+            max_length = self.seq_len - abs(max_length)
+        if self.seq_len <= max_length:
+            return
+        self.seq_len = max_length
+        self._refresh_views()
+
+    def batch_repeat_interleave(self, repeats: int) -> None:
+        if self.seq_len == 0:
+            return
+        self.key_full = self.key_full.repeat_interleave(repeats, dim=0)
+        self.value_full = self.value_full.repeat_interleave(repeats, dim=0)
+        self.key_base_full = self.key_base_full.repeat_interleave(repeats, dim=0)
+        if self.key_residual_full is not None:
+            self.key_residual_full = self.key_residual_full.repeat_interleave(repeats, dim=0)
+        self.value = self.value_full
+        self._refresh_views()
+
+    def batch_select_indices(self, indices: torch.Tensor) -> None:
+        if self.seq_len == 0:
+            return
+        indices = indices.to(self.key_full.device)
+        self.key_full = self.key_full.index_select(0, indices)
+        self.value_full = self.value_full.index_select(0, indices)
+        self.key_base_full = self.key_base_full.index_select(0, indices)
+        if self.key_residual_full is not None:
+            self.key_residual_full = self.key_residual_full.index_select(0, indices)
+        self.value = self.value_full
+        self._refresh_views()
+
+    def reorder_cache(self, beam_idx: torch.LongTensor) -> None:
+        if self.seq_len == 0:
+            return
+        beam_idx = beam_idx.to(self.key_full.device)
+        self.key_full = self.key_full.index_select(0, beam_idx)
+        self.value_full = self.value_full.index_select(0, beam_idx)
+        self.key_base_full = self.key_base_full.index_select(0, beam_idx)
+        if self.key_residual_full is not None:
+            self.key_residual_full = self.key_residual_full.index_select(0, beam_idx)
+        self.value = self.value_full
+        self._refresh_views()
+
+    def reset(self) -> None:
+        if not self.is_initialized:
+            return
+        self.seq_len = 0
+        self._refresh_views()
+
+    def offload(self):
+        if self.is_initialized:
+            self.key_full = self.key_full.to("cpu", non_blocking=True)
+            self.value_full = self.value_full.to("cpu", non_blocking=True)
+            self.key_base_full = self.key_base_full.to("cpu", non_blocking=True)
+            if self.key_residual_full is not None:
+                self.key_residual_full = self.key_residual_full.to("cpu", non_blocking=True)
+        super().offload()
+
+    def prefetch(self):
+        if self.is_initialized and self.key_full.device != self.device:
+            self.key_full = self.key_full.to(self.device, non_blocking=True)
+            self.value_full = self.value_full.to(self.device, non_blocking=True)
+            self.key_base_full = self.key_base_full.to(self.device, non_blocking=True)
+            if self.key_residual_full is not None:
+                self.key_residual_full = self.key_residual_full.to(self.device, non_blocking=True)
+        super().prefetch()
+
+
+class FP8Fp8StaticCache(Cache):
+    def __init__(
+        self,
+        max_seq_len: int,
+        use_fp8_residual: bool = True,
+        fp8_dtype: torch.dtype | None = None,
+        offloading: bool = False,
+        offload_only_non_sliding: bool = True,
+    ):
+        super().__init__(layers=[], offloading=offloading, offload_only_non_sliding=offload_only_non_sliding)
+        if max_seq_len <= 0:
+            raise ValueError("max_seq_len must be positive")
+        self.max_seq_len = max_seq_len
+        self.use_fp8_residual = use_fp8_residual
+        self.fp8_dtype = fp8_dtype
+
+    def _ensure_layer(self, layer_idx: int) -> None:
+        while len(self.layers) <= layer_idx:
+            self.layers.append(
+                FP8Fp8StaticLayer(
+                    max_seq_len=self.max_seq_len,
+                    use_fp8_residual=self.use_fp8_residual,
+                    fp8_dtype=self.fp8_dtype,
+                )
+            )
+
+    def update(
+        self,
+        key_states: torch.Tensor,
+        value_states: torch.Tensor,
+        layer_idx: int,
+        cache_kwargs: Optional[dict[str, Any]] = None,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        self._ensure_layer(layer_idx)
+
+        if self.offloading:
+            torch.cuda.default_stream(key_states.device).wait_stream(self.prefetch_stream)
+            self.prefetch(layer_idx + 1, self.only_non_sliding)
+
+        keys, values = self.layers[layer_idx].update(key_states, value_states, cache_kwargs)
+
+        if self.offloading:
+            self.offload(layer_idx, self.only_non_sliding)
+
+        return keys, values
+
+    def get_seq_length(self) -> int:
+        if not self.layers:
+            return 0
+        return self.layers[0].get_seq_length()
+
+    def reset(self) -> None:
+        if not self.layers:
+            return
+        for layer in self.layers:
+            layer.reset()

@@ -17,6 +17,8 @@ def attn_forward_stage1_fused_threshold_fp8(
     l_buf,
     o_buf,
     mask_buf,
+    stride_bk,
+    stride_bv,
     scale,
     T,
     NTB,
@@ -62,7 +64,7 @@ def attn_forward_stage1_fused_threshold_fp8(
         tb0 = 0
         offs_t0 = tb0 * T_BS + tl.arange(0, T_BS)
         t_mask0 = offs_t0 < T
-        base_tok0 = pid_b * (T * HKV * K) + (offs_t0[None, :] * (HKV * K)) + (pid_hkv * K)
+        base_tok0 = pid_b * stride_bk + (offs_t0[None, :] * (HKV * K)) + (pid_hkv * K)
         k_ptrs0 = k_base + base_tok0 + offs_k[:, None]
         k_tile0 = tl.load(k_ptrs0, mask=(TRUE_K[:, None] & t_mask0[None, :]), other=0.0).to(tl.float16)
         b_s0 = tl.dot(q_tile, k_tile0, out_dtype=tl.float32) * scale * RCP_LN2
@@ -72,7 +74,7 @@ def attn_forward_stage1_fused_threshold_fp8(
         tb1 = NTB - 1
         offs_t1 = tb1 * T_BS + tl.arange(0, T_BS)
         t_mask1 = offs_t1 < T
-        base_tok1 = pid_b * (T * HKV * K) + (offs_t1[None, :] * (HKV * K)) + (pid_hkv * K)
+        base_tok1 = pid_b * stride_bk + (offs_t1[None, :] * (HKV * K)) + (pid_hkv * K)
         k_ptrs1 = k_base + base_tok1 + offs_k[:, None]
         k_tile1 = tl.load(k_ptrs1, mask=(TRUE_K[:, None] & t_mask1[None, :]), other=0.0).to(tl.float16)
         b_s1 = tl.dot(q_tile, k_tile1, out_dtype=tl.float32) * scale * RCP_LN2
@@ -85,7 +87,7 @@ def attn_forward_stage1_fused_threshold_fp8(
         offs_t_sb = s0 + sb * SBS + tl.arange(0, SBS)
         t_mask_sb = offs_t_sb < T
 
-        base_toksb = pid_b * (T * HKV * K) + (offs_t_sb[None, :] * (HKV * K)) + (pid_hkv * K)
+        base_toksb = pid_b * stride_bk + (offs_t_sb[None, :] * (HKV * K)) + (pid_hkv * K)
         k_ptrssb = k_base + base_toksb + offs_k[:, None]
         k_tile_base = tl.load(k_ptrssb, mask=(TRUE_K[:, None] & t_mask_sb[None, :]), other=0.0).to(tl.float16)
         b_s_base = tl.dot(q_tile, k_tile_base, out_dtype=tl.float32) * scale * RCP_LN2
@@ -123,7 +125,7 @@ def attn_forward_stage1_fused_threshold_fp8(
             need_v = tl.sum(t_mask_sb.to(tl.int32), axis=0) > 0
             o_tile = tl.zeros([BM_DOT, V], tl.float32)
             if need_v:
-                v_ptrs = v + pid_b * (T * HKV * V) + (offs_t_sb[:, None] * (HKV * V)) + (pid_hkv * V) + v_offs[None, :]
+                v_ptrs = v + pid_b * stride_bv + (offs_t_sb[:, None] * (HKV * V)) + (pid_hkv * V) + v_offs[None, :]
                 b_v = tl.load(v_ptrs, mask=t_mask_sb[:, None], other=0.0).to(tl.float16)
                 o_tile = tl.dot(b_p.to(tl.float16), b_v, out_dtype=tl.float32)
 
@@ -234,17 +236,22 @@ def attn_forward_decode_fp8fp8(
     NSB = triton.cdiv(BS, SBS)
     NTBS = NTB * NSB
 
-    assert q.is_contiguous() and k_fp8.is_contiguous() and v.is_contiguous()
+    if not q.is_contiguous():
+        q = q.contiguous()
+    if k_fp8.stride(-1) != 1 or k_fp8.stride(-2) != K or k_fp8.stride(1) != HKV * K:
+        raise ValueError("k_fp8 must be contiguous in the last two dims and packed along sequence.")
+    if v.stride(-1) != 1 or v.stride(-2) != V or v.stride(1) != HKV * V:
+        raise ValueError("v must be contiguous in the last two dims and packed along sequence.")
+    stride_bk = k_fp8.stride(0)
+    stride_bv = v.stride(0)
     if use_fp8_residual and k_residual is None:
         raise ValueError("use_fp8_residual=True requires k_residual")
     if k_residual is not None:
-        assert k_residual.is_contiguous()
+        if k_residual.stride(0) != stride_bk or k_residual.stride(1) != k_fp8.stride(1):
+            raise ValueError("k_residual must match k_fp8 strides for static cache usage.")
 
-    q = q.contiguous()
-    k_fp8 = k_fp8.contiguous()
     use_fp8_residual = use_fp8_residual and (k_residual is not None)
-    k_res = k_residual.contiguous() if use_fp8_residual else k_fp8
-    v = v.contiguous()
+    k_res = k_residual if use_fp8_residual else k_fp8
 
     o = torch.empty((B, HQ, V), device=q.device, dtype=q.dtype)
     m_buf = torch.empty((B, HQ, NTBS), device=q.device, dtype=torch.float32)
@@ -269,6 +276,8 @@ def attn_forward_decode_fp8fp8(
         l_buf,
         o_buf,
         mask_buf,
+        stride_bk,
+        stride_bv,
         scale,
         T,
         NTB,

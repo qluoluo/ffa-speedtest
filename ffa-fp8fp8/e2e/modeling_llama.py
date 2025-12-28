@@ -49,7 +49,7 @@ from transformers.utils.deprecation import deprecate_kwarg
 from transformers.utils.generic import check_model_inputs
 from transformers.models.llama.configuration_llama import LlamaConfig
 
-from fp8fp8_cache import FP8Fp8Cache
+from fp8fp8_cache import FP8Fp8Cache, FP8Fp8StaticCache
 
 logger = logging.get_logger(__name__)
 
@@ -251,9 +251,9 @@ class LlamaAttention(nn.Module):
         
         q_len = query_states.shape[-2]
         
-        if past_key_values is not None and not isinstance(past_key_values, FP8Fp8Cache):
+        if past_key_values is not None and not isinstance(past_key_values, (FP8Fp8Cache, FP8Fp8StaticCache)):
             raise TypeError(
-                "past_key_values must be a FP8Fp8Cache in LlamaAttention.forward, "
+                "past_key_values must be a FP8Fp8Cache or FP8Fp8StaticCache in LlamaAttention.forward, "
                 f"got {type(past_key_values).__name__}."
             )
 
@@ -261,7 +261,7 @@ class LlamaAttention(nn.Module):
         if past_key_values is not None:
             # sin and cos are specific to RoPE models; cache_position needed for the static cache
             cache_kwargs = {"sin": sin, "cos": cos, "cache_position": cache_position}
-            if isinstance(past_key_values, FP8Fp8Cache):
+            if isinstance(past_key_values, (FP8Fp8Cache, FP8Fp8StaticCache)):
                 # FP8Fp8Cache expects [B, T, HKV, K] to store fp8 base/residual keys per token.
                 key_states_cache = key_states.transpose(1, 2)
                 value_states_cache = value_states.transpose(1, 2)
@@ -293,7 +293,7 @@ class LlamaAttention(nn.Module):
         elif q_len == 1 and use_ffa_decode and self.layer_idx in pattern_layers:
             # print(f"[DECODE] Using FFA in {self.layer_idx}")
             # print(f"{query_states.shape=} {key_states.shape=} {value_states.shape=} {query_states.dtype=} {key_states.dtype=}")
-            if isinstance(past_key_values, FP8Fp8Cache):
+            if isinstance(past_key_values, (FP8Fp8Cache, FP8Fp8StaticCache)):
                 # Pull fp8 base/residual keys from cache for the custom decode kernel.
                 cache_layer = cache_layer or past_key_values.layers[self.layer_idx]
                 k_fp8 = cache_layer.key_base
@@ -304,21 +304,34 @@ class LlamaAttention(nn.Module):
                 decode_kwargs = {
                     k: v
                     for k, v in attn_settings.items()
-                    if k not in ("use_ffa_prefill", "use_ffa_decode", "pattern_layers")
+                    if k
+                    not in (
+                        "use_ffa_prefill",
+                        "use_ffa_decode",
+                        "pattern_layers",
+                        "skip_ratio_store",
+                    )
                 }
+                skip_ratio_store = attn_settings.get("skip_ratio_store")
                 use_fp8_residual = decode_kwargs.get("use_fp8_residual", True)
                 if use_fp8_residual and k_residual is None:
                     raise RuntimeError("FP8Fp8Cache is missing fp8 residual keys for decode.")
 
                 from ffa_fwd_decode_fp8fp8 import attn_forward_decode_fp8fp8
 
-                attn_output = attn_forward_decode_fp8fp8(
+                decode_result = attn_forward_decode_fp8fp8(
                     q=query_states.transpose(1, 2),
                     k_fp8=k_fp8,
                     k_residual=k_residual if use_fp8_residual else None,
                     v=value_states.transpose(1, 2),
                     **decode_kwargs,
                 )
+                if decode_kwargs.get("return_skip_ratio", False):
+                    attn_output, skip_ratio = decode_result
+                    if isinstance(skip_ratio_store, list):
+                        skip_ratio_store.append(float(skip_ratio))
+                else:
+                    attn_output = decode_result
             else:
                 # Fallback to regular attention if an unexpected cache type is provided.
                 attn_output = flash_attn_func(
