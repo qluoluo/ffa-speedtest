@@ -392,9 +392,10 @@ def main():
         skip_ratios=skip_ratios,
         gpu_label=gpu_label,
     )
+    speedup = flash_ms_list[-1] / nvfp4_ms_list[-1] if nvfp4_ms_list[-1] > 0 else float("inf")
     print(
         f"[Result] Layers {layer_range_str} | bsz={bsz} | T={to_k_str(T_full)} | BS={BS} SBS={SBS} delta={delta} | "
-        f"NVFP4FP8={nvfp4_ms_list[-1]:.3f} ms, Flash={flash_ms_list[-1]:.3f} ms"
+        f"NVFP4FP8={nvfp4_ms_list[-1]:.3f} ms, Flash={flash_ms_list[-1]:.3f} ms, Speedup={speedup:.2f}x"
     )
     print(f"[Result] Saved plot to: {plot_path}")
     validate_full(delta)

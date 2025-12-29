@@ -528,11 +528,17 @@ def main():
                 gpu_label=gpu_label,
             )
 
+        speedup_str = ""
+        if flash_ms_list[-1] is not None:
+            speedup = flash_ms_list[-1] / q2_ms_list[-1] if q2_ms_list[-1] > 0 else float("inf")
+            speedup_cg = flash_ms_list[-1] / q2_cg_ms_list[-1] if q2_cg_ms_list[-1] > 0 else float("inf")
+            speedup_str = f", Speedup={speedup:.2f}x, Speedup_CG={speedup_cg:.2f}x"
         print(
             f"[Result] Layers {layer_range_str} | bsz={bsz} | T={to_k_str(T_full)} | "
             f"BS={BS} SBS={SBS} delta={delta} | "
             f"Q2={q2_ms_list[-1]:.3f} ms, Q2_CG={q2_cg_ms_list[-1]:.3f} ms"
             + (f", Flash={flash_ms_list[-1]:.3f} ms" if flash_ms_list[-1] is not None else "")
+            + speedup_str
         )
         if plot_path is not None:
             print(f"[Result] Saved plot to: {plot_path}")

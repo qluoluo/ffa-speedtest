@@ -57,7 +57,7 @@ from transformers.utils.deprecation import deprecate_kwarg
 from transformers.utils.generic import check_model_inputs
 from transformers.models.llama.configuration_llama import LlamaConfig
 
-from fp8fp8_cache import FP8Fp8Cache, FP8Fp8StaticCache
+from nf4fp8_cache import NF4Fp8Cache, NF4Fp8StaticCache
 
 logger = logging.get_logger(__name__)
 
@@ -266,7 +266,7 @@ class LlamaAttention(nn.Module):
         
         if past_key_values is not None and not isinstance(past_key_values, Cache):
             raise TypeError(
-                "past_key_values must be a Cache (e.g. FP8Fp8Cache/FP8Fp8StaticCache) in "
+                "past_key_values must be a Cache (e.g. NF4Fp8Cache/NF4Fp8StaticCache) in "
                 f"LlamaAttention.forward, got {type(past_key_values).__name__}."
             )
 
@@ -274,8 +274,8 @@ class LlamaAttention(nn.Module):
         if past_key_values is not None:
             # sin and cos are specific to RoPE models; cache_position needed for the static cache
             cache_kwargs = {"sin": sin, "cos": cos, "cache_position": cache_position}
-            if isinstance(past_key_values, (FP8Fp8Cache, FP8Fp8StaticCache)):
-                # FP8Fp8Cache expects [B, T, HKV, K] to store fp8 base/residual keys per token.
+            if isinstance(past_key_values, (NF4Fp8Cache, NF4Fp8StaticCache)):
+                # NF4Fp8Cache expects [B, T, HKV, K] to store quantized keys per token.
                 key_states_cache = key_states.transpose(1, 2)
                 value_states_cache = value_states.transpose(1, 2)
                 key_states_cache, value_states_cache = past_key_values.update(
@@ -306,13 +306,14 @@ class LlamaAttention(nn.Module):
         elif q_len == 1 and use_ffa_decode and self.layer_idx in pattern_layers:
             # print(f"[DECODE] Using FFA in {self.layer_idx}")
             # print(f"{query_states.shape=} {key_states.shape=} {value_states.shape=} {query_states.dtype=} {key_states.dtype=}")
-            if isinstance(past_key_values, (FP8Fp8Cache, FP8Fp8StaticCache)):
-                # Pull fp8 base/residual keys from cache for the custom decode kernel.
+            if isinstance(past_key_values, (NF4Fp8Cache, NF4Fp8StaticCache)):
+                # Pull NF4 keys + scales (+ residuals) from cache for the custom decode kernel.
                 cache_layer = cache_layer or past_key_values.layers[self.layer_idx]
-                k_fp8 = cache_layer.key_base
+                k_nf4 = cache_layer.key_nf4
+                k_scale = cache_layer.key_scale
                 k_residual = cache_layer.key_residual
-                if k_fp8 is None:
-                    raise RuntimeError("FP8Fp8Cache is missing fp8 base keys for decode.")
+                if k_nf4 is None or k_scale is None:
+                    raise RuntimeError("NF4Fp8Cache is missing quantized keys for decode.")
 
                 decode_kwargs = {
                     k: v
@@ -333,31 +334,16 @@ class LlamaAttention(nn.Module):
                 skip_ratio_store = attn_settings.get("skip_ratio_store")
                 use_fp8_residual = decode_kwargs.get("use_fp8_residual", True)
 
-                v_full = None
-                seqlen_arg = None
-                if use_full_kv and isinstance(past_key_values, FP8Fp8StaticCache):
-                    k_fp8_full = cache_layer.key_base_full
-                    k_residual_full = cache_layer.key_residual_full
-                    v_full = cache_layer.value_full
-                    if k_fp8_full is not None and v_full is not None:
-                        k_fp8 = k_fp8_full
-                        if use_fp8_residual:
-                            k_residual = k_residual_full
-                        seqlen_arg = decode_seqlen if decode_seqlen is not None else cache_layer.get_seq_length()
-                if v_full is None:
-                    v_full = value_states.transpose(1, 2)
+                if use_full_kv:
+                    raise RuntimeError(
+                        "NF4Fp8 decode does not support use_full_kv; kernel expects T to match sequence length."
+                    )
+                v_full = value_states.transpose(1, 2)
 
                 if use_fp8_residual and k_residual is None:
-                    raise RuntimeError("FP8Fp8Cache is missing fp8 residual keys for decode.")
+                    raise RuntimeError("NF4Fp8Cache is missing fp8 residual keys for decode.")
 
-                workspace = None
-                if isinstance(decode_workspaces, (list, tuple)):
-                    if self.layer_idx < len(decode_workspaces):
-                        workspace = decode_workspaces[self.layer_idx]
-                elif decode_workspaces is not None:
-                    workspace = decode_workspaces
-
-                from ffa_fwd_decode_fp8fp8 import attn_forward_decode_fp8fp8
+                from ffa_fwd_decode_nf4fp8 import attn_forward_decode_nf4fp8
 
                 runner = None
                 if use_kernel_cudagraph and decode_runners is not None and not torch.cuda.is_current_stream_capturing():
@@ -370,21 +356,18 @@ class LlamaAttention(nn.Module):
                 if runner is not None:
                     decode_result = runner.replay(
                         q=query_states.transpose(1, 2),
-                        k_fp8=k_fp8,
+                        k_nf4=k_nf4,
+                        k_scale=k_scale,
                         v=v_full,
                         k_residual=k_residual if use_fp8_residual else None,
-                        seqlen=seqlen_arg,
                         precomputed_threshold=decode_kwargs.get("precomputed_threshold"),
                         return_skip_ratio=decode_kwargs.get("return_skip_ratio", False),
                     )
                 else:
-                    if workspace is not None:
-                        decode_kwargs["workspace"] = workspace
-                    if seqlen_arg is not None:
-                        decode_kwargs["seqlen"] = seqlen_arg
-                    decode_result = attn_forward_decode_fp8fp8(
+                    decode_result = attn_forward_decode_nf4fp8(
                         q=query_states.transpose(1, 2),
-                        k_fp8=k_fp8,
+                        k_nf4=k_nf4,
+                        k_scale=k_scale,
                         k_residual=k_residual if use_fp8_residual else None,
                         v=v_full,
                         **decode_kwargs,
@@ -537,9 +520,9 @@ class LlamaModel(LlamaPreTrainedModel):
             inputs_embeds: torch.Tensor = self.embed_tokens(input_ids)
 
         attn_settings = getattr(self.config, "attn_settings", {}) or {}
-        # past_key_values = FP8Fp8Cache()
+        # past_key_values = NF4Fp8Cache()
         # if use_cache and past_key_values is None:
-        #     past_key_values = FP8Fp8Cache()
+        #     past_key_values = NF4Fp8Cache()
         # elif use_cache and not isinstance(past_key_values, Cache):
         #     past_key_values = DynamicCache.from_legacy_cache(past_key_values)
 

@@ -580,9 +580,15 @@ def main():
         if nvfp4_ms_list:
             last_flash = flash_ms_list[-1]
             flash_str = f"{last_flash:.3f} ms" if last_flash is not None else "N/A"
+            speedup_str = ""
+            if last_flash is not None:
+                speedup = last_flash / nvfp4_ms_list[-1] if nvfp4_ms_list[-1] > 0 else float("inf")
+                speedup_cg = last_flash / nvfp4_cg_ms_list[-1] if nvfp4_cg_ms_list[-1] > 0 else float("inf")
+                speedup_str = f", Speedup={speedup:.2f}x, Speedup_CG={speedup_cg:.2f}x"
             print(
                 f"[Result] Layers {layer_range_str} | bsz={bsz} | T={to_k_str(T_full)} | BS={BS} SBS={SBS} delta={delta} | "
                 f"NVFP4FP8={nvfp4_ms_list[-1]:.3f} ms, NVFP4FP8_CG={nvfp4_cg_ms_list[-1]:.3f} ms, Flash={flash_str}"
+                + speedup_str
             )
     except Exception:
         if created_plot_dir and plot_root_dir.exists():

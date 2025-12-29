@@ -367,9 +367,10 @@ def main():
     )
 
     print(f"[Result] Plot saved at: {plot_path}")
+    speedup = flash_ms_list[-1] / nf4_ms_list[-1] if nf4_ms_list[-1] > 0 else float("inf")
     print(
         f"[Info] Done: layer={layer_range_str} last T={to_k_str(T_full)} | "
-        f"NF4={nf4_ms_list[-1]:.3f} ms, Flash={flash_ms_list[-1]:.3f} ms"
+        f"NF4={nf4_ms_list[-1]:.3f} ms, Flash={flash_ms_list[-1]:.3f} ms, Speedup={speedup:.2f}x"
     )
 
 

@@ -541,10 +541,17 @@ def main():
         if plot_path is not None:
             print(f"[Result] Saved plot to: {plot_path}")
 
-        last_flash = flash_ms_list[-1] if flash_ms_list and flash_ms_list[-1] is not None else float("nan")
+        last_flash = flash_ms_list[-1] if flash_ms_list and flash_ms_list[-1] is not None else None
+        speedup_str = ""
+        if last_flash is not None:
+            speedup = last_flash / nf4_ms_list[-1] if nf4_ms_list[-1] > 0 else float("inf")
+            speedup_cg = last_flash / nf4_cg_ms_list[-1] if nf4_cg_ms_list[-1] > 0 else float("inf")
+            speedup_str = f", Speedup={speedup:.2f}x, Speedup_CG={speedup_cg:.2f}x"
+        flash_str = f"{last_flash:.3f} ms" if last_flash is not None else "N/A"
         print(
             f"[Info] Done: layer={layer_range_str} last T={to_k_str(T_full)} | "
-            f"NF4={nf4_ms_list[-1]:.3f} ms, NF4_CG={nf4_cg_ms_list[-1]:.3f} ms, Flash={last_flash:.3f} ms"
+            f"NF4={nf4_ms_list[-1]:.3f} ms, NF4_CG={nf4_cg_ms_list[-1]:.3f} ms, Flash={flash_str}"
+            + speedup_str
         )
     except Exception:
         if created_plot_dir and plot_root_dir.exists():

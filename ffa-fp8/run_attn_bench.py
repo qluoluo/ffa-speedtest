@@ -345,10 +345,11 @@ def main():
         gpu_label=gpu_label,
     )
 
+    speedup = flash_ms_list[-1] / fused_ms_list[-1] if fused_ms_list[-1] > 0 else float("inf")
     print(
         f"Layers {layer_indices} | bsz={bsz} | T={to_k_str(T_full)} Hq={Hq} Hkv={Hkv} D={D} Dv={Dv} "
         f"| BS={BS} SBS={SBS} delta={delta} | Kernel={attn_kernel_name} | "
-        f"Fused={fused_ms_list[-1]:.3f} ms Flash={flash_ms_list[-1]:.3f} ms"
+        f"Fused={fused_ms_list[-1]:.3f} ms Flash={flash_ms_list[-1]:.3f} ms Speedup={speedup:.2f}x"
     )
     print(f"Saved plot to: {plot_path}")
 
