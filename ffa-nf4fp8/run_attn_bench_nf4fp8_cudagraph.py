@@ -166,16 +166,35 @@ def build_plot_dirs(attn_kernel_name, gpu_tag, BS, SBS, delta, layer_indices, bs
     return plot_root_dir, raw_data_dir
 
 
-def make_cache_file_path(raw_data_dir, layer_idx, T_full, Hq, Hkv, D, Dv, BS, SBS, delta, dtype, step, iters, warmup, bsz=1, replay_only=False):
+def make_cache_file_path(
+    raw_data_dir,
+    layer_idx,
+    T_full,
+    Hq,
+    Hkv,
+    D,
+    Dv,
+    BS,
+    SBS,
+    delta,
+    dtype,
+    step,
+    iters,
+    warmup,
+    bsz=1,
+    replay_only=False,
+    q_pos: str | None = None,
+):
     def _to_k(n: int) -> str:
         val = n / 1024.0
         return f"{int(val)}k" if abs(val - int(val)) < 1e-9 else f"{val:.1f}k"
     raw_dir = Path(raw_data_dir)
+    q_pos_tag = f"_qpos{q_pos}" if q_pos else ""
     suffix = "_cudagraph_replay" if replay_only else "_cudagraph"
     fname = (
         f"layer_{layer_idx}_Tmax{_to_k(T_full)}_Hq{Hq}_Hkv{Hkv}_D{D}_Dv{Dv}"
         f"_BS{BS}_SBS{SBS}_delta{delta:g}_{dtype_key(dtype)}"
-        f"_step{step}_it{iters}_wu{warmup}_bsz{bsz}{suffix}.json"
+        f"_step{step}_it{iters}_wu{warmup}_bsz{bsz}{q_pos_tag}{suffix}.json"
     )
     return raw_dir / fname
 
@@ -393,14 +412,31 @@ def main():
         max_length,
         base_dir=THIS_DIR,
     )
+    q_pos = "last"
     cache_path = make_cache_file_path(
-        raw_data_dir, layer_range_str, T_full, Hq, Hkv, K, V, BS, SBS, delta, dtype, step, iters, warmup, bsz, args.cg_replay_only
+        raw_data_dir,
+        layer_range_str,
+        T_full,
+        Hq,
+        Hkv,
+        K,
+        V,
+        BS,
+        SBS,
+        delta,
+        dtype,
+        step,
+        iters,
+        warmup,
+        bsz,
+        args.cg_replay_only,
+        q_pos=q_pos,
     )
 
     def bench_one_length(L):
-        q_rope_1 = q_rope_full[:, :, :1, :]
-        k_rope = k_rope_full[:, :, :L, :]
-        v = v_full[:, :, :L, :]
+        q_rope_1 = q_rope_full[:, :, L - 1 : L, :].contiguous()
+        k_rope = k_rope_full[:, :, :L, :].contiguous()
+        v = v_full[:, :, :L, :].contiguous()
         q, k, v = convert_layout(q_rope_1, k_rope, v)
 
         k_nf4, k_scale, k_residual = encode_k_nf4_fp8_residual(k, fp8_dtype)
@@ -514,6 +550,7 @@ def main():
                 "warmup": warmup,
                 "gpu": gpu_label,
                 "cg_replay_only": args.cg_replay_only,
+                "q_pos": q_pos,
             }
             ensure_raw_dir()
             save_raw_cache(cache_path, meta, lengths, nf4_ms_list, nf4_cg_ms_list, flash_ms_list, skip_ratios)

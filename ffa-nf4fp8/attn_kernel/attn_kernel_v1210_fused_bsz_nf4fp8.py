@@ -203,8 +203,9 @@ def attn_forward_stage1_fused_threshold_nf4(
                     mask=(TRUE_K[:, None] & t_mask_sb[None, :]),
                     other=0.0,
                 ).to(tl.float16)
-                k_tile_refined = k_tile_q + k_res_tile
-                b_s = tl.dot(q_tile, k_tile_refined, out_dtype=tl.float32) * scale * RCP_LN2
+                # Reuse selector b_s_q and add residual dot to avoid recomputing q·k_tile_q.
+                b_s_res = tl.dot(q_tile, k_res_tile, out_dtype=tl.float32) * scale * RCP_LN2
+                b_s = b_s_q + b_s_res
                 b_s = tl.where(t_mask_sb[None, :], b_s, NEG_INF)
                 m_rows = tl.max(b_s, axis=1)
             else:

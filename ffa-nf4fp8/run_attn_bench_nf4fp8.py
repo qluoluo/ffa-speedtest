@@ -244,10 +244,12 @@ def main():
 
     lengths = list(range(step, T_full, step)) + [T_full]
 
+    q_pos = "last"
+
     def bench_one_length(L, delta):
-        q_rope_1 = q_rope_full[:, :, :1, :]
-        k_rope = k_rope_full[:, :, :L, :]
-        v = v_full[:, :, :L, :]
+        q_rope_1 = q_rope_full[:, :, L - 1 : L, :].contiguous()
+        k_rope = k_rope_full[:, :, :L, :].contiguous()
+        v = v_full[:, :, :L, :].contiguous()
         q, k, v = convert_layout(q_rope_1, k_rope, v)
 
         k_nf4, k_scale, k_residual = encode_k_nf4_fp8_residual(k, fp8_dtype)
@@ -289,9 +291,10 @@ def main():
         return ms_nf4, ms_flash, float(skip_ratio)
 
     def prewarm_kv():
-        q_rope_1 = q_rope_full[:, :, :1, :]
-        k_rope = k_rope_full[:, :, : min(step, T_full), :]
-        v = v_full[:, :, : min(step, T_full), :]
+        warm_len = min(step, T_full)
+        q_rope_1 = q_rope_full[:, :, warm_len - 1 : warm_len, :].contiguous()
+        k_rope = k_rope_full[:, :, :warm_len, :].contiguous()
+        v = v_full[:, :, :warm_len, :].contiguous()
         q, k, v = convert_layout(q_rope_1, k_rope, v)
         k_nf4, k_scale, k_residual = encode_k_nf4_fp8_residual(k, fp8_dtype)
         attn_forward_decode(
@@ -323,7 +326,22 @@ def main():
         base_dir=THIS_DIR,
     )
     cache_path = make_cache_file_path(
-        raw_data_dir, layer_range_str, T_full, Hq, Hkv, K, V, BS, SBS, delta, dtype, step, iters, warmup, bsz
+        raw_data_dir,
+        layer_range_str,
+        T_full,
+        Hq,
+        Hkv,
+        K,
+        V,
+        BS,
+        SBS,
+        delta,
+        dtype,
+        step,
+        iters,
+        warmup,
+        bsz,
+        q_pos=q_pos,
     )
 
     if cache_path.exists():
@@ -347,6 +365,7 @@ def main():
             "iters": iters,
             "warmup": warmup,
             "gpu": gpu_label,
+            "q_pos": q_pos,
         }
         save_raw_cache(cache_path, meta, lengths, nf4_ms_list, flash_ms_list, skip_ratios)
         print(f"[Info] Saved raw data to {cache_path.name}")
