@@ -1,0 +1,145 @@
+==========================================
+H100 Layer 1 Test Summary
+==========================================
+Timestamp: 20251231_101448
+GPU: NVIDIA H100 80GB HBM3
+Data: Llama-3.2-3B longbench_gov_report
+Layer: 1 (Should show high skip ratio!)
+
+
+==========================================
+Sequence Length: 65536
+==========================================
+  BS=128, SBS=128, delta=5.0
+  Time: 0.3398 ms
+  Skip ratio: 99.44%
+  Speedup vs FlashAttn: 0.783x
+
+[BS=256, SBS=256, delta=5.0]
+  BS=256, SBS=256, delta=5.0
+  Time: 0.1577 ms
+  Skip ratio: 98.93%
+  Speedup vs FlashAttn: 1.687x
+  Speedup vs Original: 2.155x
+
+--
+  BS=512, SBS=256, delta=5.0
+  Time: 0.1696 ms
+  Skip ratio: 98.93%
+  Speedup vs FlashAttn: 1.569x
+  Speedup vs Original: 2.004x
+
+--
+  BS=512, SBS=256, delta=6.5
+  Time: 0.1697 ms
+  Skip ratio: 97.75%
+  Speedup vs FlashAttn: 1.567x
+  Speedup vs Original: 2.002x
+
+--
+  BS=512, SBS=256, delta=7.0
+  Time: 0.1724 ms
+  Skip ratio: 96.73%
+  Speedup vs FlashAttn: 1.543x
+  Speedup vs Original: 1.971x
+
+
+==========================================
+Sequence Length: 131072
+==========================================
+  BS=128, SBS=128, delta=5.0
+  Time: 0.3815 ms
+  Skip ratio: 99.57%
+  Speedup vs FlashAttn: 1.358x
+
+[BS=256, SBS=256, delta=5.0]
+  BS=256, SBS=256, delta=5.0
+  Time: 0.2076 ms
+  Skip ratio: 99.24%
+  Speedup vs FlashAttn: 2.496x
+  Speedup vs Original: 1.838x
+
+--
+  BS=512, SBS=256, delta=5.0
+  Time: 0.2142 ms
+  Skip ratio: 99.24%
+  Speedup vs FlashAttn: 2.418x
+  Speedup vs Original: 1.781x
+
+--
+  BS=512, SBS=256, delta=6.5
+  Time: 0.2312 ms
+  Skip ratio: 98.10%
+  Speedup vs FlashAttn: 2.241x
+  Speedup vs Original: 1.650x
+
+--
+  BS=512, SBS=256, delta=7.0
+  Time: 0.2276 ms
+  Skip ratio: 97.53%
+  Speedup vs FlashAttn: 2.277x
+  Speedup vs Original: 1.676x
+
+
+==========================================
+Sequence Length: 262144
+==========================================
+  BS=128, SBS=128, delta=5.0
+  Time: 0.5344 ms
+  Skip ratio: 98.84%
+  Speedup vs FlashAttn: 1.913x
+
+[BS=256, SBS=256, delta=5.0]
+  BS=256, SBS=256, delta=5.0
+  Time: 0.3157 ms
+  Skip ratio: 98.29%
+  Speedup vs FlashAttn: 3.238x
+  Speedup vs Original: 1.693x
+
+--
+  BS=512, SBS=256, delta=5.0
+  Time: 0.3312 ms
+  Skip ratio: 98.29%
+  Speedup vs FlashAttn: 3.087x
+  Speedup vs Original: 1.614x
+
+--
+  BS=512, SBS=256, delta=6.5
+  Time: 0.3594 ms
+  Skip ratio: 96.41%
+  Speedup vs FlashAttn: 2.845x
+  Speedup vs Original: 1.487x
+
+--
+  BS=512, SBS=256, delta=7.0
+  Time: 0.3727 ms
+  Skip ratio: 95.40%
+  Speedup vs FlashAttn: 2.743x
+  Speedup vs Original: 1.434x
+
+
+==========================================
+Key Findings
+==========================================
+Layer 1 vs Layer 0 comparison:
+
+Layer 0 @ 256k:
+  - Skip ratio: ~48%
+  - Speedup: ~1.6x
+
+Layer 1 @ 256k (expected):
+  - Skip ratio: > 98%  ⭐
+  - Speedup: > 3.0x    ⭐⭐
+
+
+==========================================
+Files Generated
+==========================================
+-rw-r--r-- 1 root root 1.7K Dec 31 10:15 /inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-speedtest/ffa-q2fp8-threshold/optimizations/benchmarks/h100_layer1_logs/layer1_T131072_20251231_101448.json
+-rw-r--r-- 1 root root 3.4K Dec 31 10:15 /inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-speedtest/ffa-q2fp8-threshold/optimizations/benchmarks/h100_layer1_logs/layer1_T131072_20251231_101448.log
+-rw-r--r-- 1 root root 1.7K Dec 31 10:15 /inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-speedtest/ffa-q2fp8-threshold/optimizations/benchmarks/h100_layer1_logs/layer1_T262144_20251231_101448.json
+-rw-r--r-- 1 root root 3.4K Dec 31 10:15 /inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-speedtest/ffa-q2fp8-threshold/optimizations/benchmarks/h100_layer1_logs/layer1_T262144_20251231_101448.log
+-rw-r--r-- 1 root root 1.7K Dec 31 10:15 /inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-speedtest/ffa-q2fp8-threshold/optimizations/benchmarks/h100_layer1_logs/layer1_T65536_20251231_101448.json
+-rw-r--r-- 1 root root 3.4K Dec 31 10:15 /inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-speedtest/ffa-q2fp8-threshold/optimizations/benchmarks/h100_layer1_logs/layer1_T65536_20251231_101448.log
+-rw-r--r-- 1 root root 2.9K Dec 31 10:15 /inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-speedtest/ffa-q2fp8-threshold/optimizations/benchmarks/h100_layer1_logs/SUMMARY_LAYER1_20251231_101448.log
+

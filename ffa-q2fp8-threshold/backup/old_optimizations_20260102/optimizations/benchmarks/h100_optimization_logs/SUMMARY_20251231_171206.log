@@ -1,0 +1,48 @@
+==========================================
+H100 Optimization Test Summary
+==========================================
+Timestamp: 20251231_171206
+
+==========================================
+Test 4: Combined Optimization Results
+==========================================
+  Speedup vs FlashAttn: 0.147x
+
+[Optimized BS only]
+  BS=512, SBS=256, delta=5.0
+  Time: 0.2186 ms
+--
+  Speedup vs FlashAttn: 1.047x
+  Speedup vs Original Q2FP8: 7.120x
+
+[Optimized BS + Delta]
+  BS=512, SBS=256, delta=6.0
+  Time: 0.2012 ms
+--
+  Speedup vs FlashAttn: 1.137x
+  Speedup vs Original Q2FP8: 7.736x
+
+[Optimized BS + Aggressive Delta]
+  BS=512, SBS=256, delta=7.0
+  Time: 0.1993 ms
+--
+  Speedup vs FlashAttn: 1.149x
+  Speedup vs Original Q2FP8: 7.812x
+
+[Very Large BS + Delta]
+  BS=1024, SBS=256, delta=6.0
+  Time: 0.2095 ms
+--
+  Speedup vs FlashAttn: 1.092x
+  Speedup vs Original Q2FP8: 7.430x
+
+Results saved to: /inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-speedtest/ffa-q2fp8-threshold/optimizations/benchmarks/h100_optimization_logs/test4_combined_20251231_171206.json
+
+================================================================================
+
+==========================================
+Files Generated
+==========================================
+-rw-r--r-- 1 root root 1.5K Dec 31 17:12 /inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-speedtest/ffa-q2fp8-threshold/optimizations/benchmarks/h100_optimization_logs/test4_combined_20251231_171206.json
+-rw-r--r-- 1 root root 2.1K Dec 31 17:12 /inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-speedtest/ffa-q2fp8-threshold/optimizations/benchmarks/h100_optimization_logs/test4_combined_20251231_171206.log
+

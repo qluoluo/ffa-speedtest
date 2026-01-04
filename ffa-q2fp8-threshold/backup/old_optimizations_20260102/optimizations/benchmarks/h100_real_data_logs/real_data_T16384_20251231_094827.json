@@ -1,0 +1,59 @@
+{
+  "gpu": "NVIDIA H100 80GB HBM3",
+  "layer_data_dir": "/inspire/hdd/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/huffkv-opencompass/opencompass/models/myModel/ffa/attn_analysis/result/Llama-3_2-3B/longbench_gov_report_48_68_256k/layer_data",
+  "layer": 0,
+  "seq_len": 16384,
+  "flash_baseline": 0.07833792209625244,
+  "results": [
+    {
+      "name": "Original (BS=128, delta=5.0)",
+      "BS": 128,
+      "SBS": 128,
+      "delta": 5.0,
+      "time": 0.4907315063476563,
+      "skip_ratio": 0.6376953125,
+      "speedup_vs_flash": 0.159634996088379,
+      "speedup_vs_original": 1.0
+    },
+    {
+      "name": "BS=256, SBS=256, delta=5.0",
+      "BS": 256,
+      "SBS": 256,
+      "delta": 5.0,
+      "time": 0.23196928024291993,
+      "skip_ratio": 0.595703125,
+      "speedup_vs_flash": 0.33770817417813426,
+      "speedup_vs_original": 2.115502129565426
+    },
+    {
+      "name": "BS=512, SBS=256, delta=5.0",
+      "BS": 512,
+      "SBS": 256,
+      "delta": 5.0,
+      "time": 0.2316204833984375,
+      "skip_ratio": 0.595703125,
+      "speedup_vs_flash": 0.3382167282739593,
+      "speedup_vs_original": 2.1186878601902044
+    },
+    {
+      "name": "BS=512, SBS=256, delta=6.5",
+      "BS": 512,
+      "SBS": 256,
+      "delta": 6.5,
+      "time": 0.2200761604309082,
+      "skip_ratio": 0.486328125,
+      "speedup_vs_flash": 0.35595823710695024,
+      "speedup_vs_original": 2.2298258265993285
+    },
+    {
+      "name": "BS=512, SBS=256, delta=7.0",
+      "BS": 512,
+      "SBS": 256,
+      "delta": 7.0,
+      "time": 0.21852672576904297,
+      "skip_ratio": 0.44921875,
+      "speedup_vs_flash": 0.3584821116070096,
+      "speedup_vs_original": 2.24563610981982
+    }
+  ]
+}

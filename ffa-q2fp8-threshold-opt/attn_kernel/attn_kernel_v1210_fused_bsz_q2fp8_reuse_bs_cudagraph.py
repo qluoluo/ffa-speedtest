@@ -1,15 +1,15 @@
-# CUDAGraph wrapper for Q2FP8 decode kernel (no changes to the original kernel).
+# CUDAGraph wrapper for Q2FP8 decode kernel (reuse selector b_s_q).
 from __future__ import annotations
 
 from typing import Optional
 
 import torch
 
-from .attn_kernel_v1210_fused_bsz_q2fp8 import attn_forward_decode_quantized
+from .attn_kernel_v1210_fused_bsz_q2fp8_reuse_bs import attn_forward_decode_quantized
 
 
-class CUDAGraphDecodeRunnerQ2FP8:
-    """Capture and replay the Q2FP8 decode kernel with static buffers.
+class CUDAGraphDecodeRunnerQ2FP8ReuseBS:
+    """Capture and replay the Q2FP8 decode kernel with static buffers (reuse b_s_q).
 
     This wrapper avoids per-step kernel launches by using torch.cuda.CUDAGraph.
     Output is written into a persistent tensor; callers should not assume it
@@ -33,12 +33,6 @@ class CUDAGraphDecodeRunnerQ2FP8:
         delta: float = 5.0,
         use_fp8_residual: bool = True,
         warmup: int = 2,
-        num_warps_th: Optional[int] = None,
-        num_stages_th: Optional[int] = None,
-        num_warps_s1: Optional[int] = None,
-        num_stages_s1: Optional[int] = None,
-        num_warps_s2: Optional[int] = None,
-        num_stages_s2: Optional[int] = None,
     ) -> None:
         if not torch.cuda.is_available():
             raise RuntimeError("CUDA is required for CUDAGraph capture.")
@@ -53,12 +47,6 @@ class CUDAGraphDecodeRunnerQ2FP8:
         self._delta = delta
         self._use_fp8_residual = use_fp8_residual
         self._use_ext_th = precomputed_threshold is not None
-        self._num_warps_th = num_warps_th
-        self._num_stages_th = num_stages_th
-        self._num_warps_s1 = num_warps_s1
-        self._num_stages_s1 = num_stages_s1
-        self._num_warps_s2 = num_warps_s2
-        self._num_stages_s2 = num_stages_s2
 
         if self._use_fp8_residual and k_residual is None:
             raise ValueError("use_fp8_residual=True requires k_residual")
@@ -108,12 +96,6 @@ class CUDAGraphDecodeRunnerQ2FP8:
                 return_skip_ratio=False,
                 precomputed_threshold=self._static_threshold,
                 use_fp8_residual=self._use_fp8_residual,
-                num_warps_th=self._num_warps_th,
-                num_stages_th=self._num_stages_th,
-                num_warps_s1=self._num_warps_s1,
-                num_stages_s1=self._num_stages_s1,
-                num_warps_s2=self._num_warps_s2,
-                num_stages_s2=self._num_stages_s2,
             )
         torch.cuda.synchronize(self._device)
 
@@ -135,12 +117,6 @@ class CUDAGraphDecodeRunnerQ2FP8:
                 return_skip_ratio=False,
                 precomputed_threshold=self._static_threshold,
                 use_fp8_residual=self._use_fp8_residual,
-                num_warps_th=self._num_warps_th,
-                num_stages_th=self._num_stages_th,
-                num_warps_s1=self._num_warps_s1,
-                num_stages_s1=self._num_stages_s1,
-                num_warps_s2=self._num_warps_s2,
-                num_stages_s2=self._num_stages_s2,
             )
 
     @property
@@ -196,12 +172,6 @@ class CUDAGraphDecodeRunnerQ2FP8:
             return_skip_ratio=True,
             precomputed_threshold=self._static_threshold,
             use_fp8_residual=self._use_fp8_residual,
-            num_warps_th=self._num_warps_th,
-            num_stages_th=self._num_stages_th,
-            num_warps_s1=self._num_warps_s1,
-            num_stages_s1=self._num_stages_s1,
-            num_warps_s2=self._num_warps_s2,
-            num_stages_s2=self._num_stages_s2,
         )
         return self._static_out, skip_ratio
 

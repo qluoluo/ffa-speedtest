@@ -1,0 +1,7 @@
+{
+  "threshold": {
+    "time_without": 0.43461246490478517,
+    "threshold_compute_time": 0.6582736968994141,
+    "theoretical_speedup": 1.0153791583606586
+  }
+}

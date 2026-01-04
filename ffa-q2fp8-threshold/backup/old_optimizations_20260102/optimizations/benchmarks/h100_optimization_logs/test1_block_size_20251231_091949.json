@@ -1,0 +1,61 @@
+{
+  "block_size": {
+    "results": [
+      {
+        "name": "Original (128/128)",
+        "BS": 128,
+        "SBS": 128,
+        "time": 0.4761782455444336,
+        "skip_ratio": 0.0,
+        "speedup_vs_flash": 0.560064559611053,
+        "speedup_vs_original": 1.0
+      },
+      {
+        "name": "Larger BS (256/128)",
+        "BS": 256,
+        "SBS": 128,
+        "time": 0.30546016693115235,
+        "skip_ratio": 0.0,
+        "speedup_vs_flash": 0.8730780254150663,
+        "speedup_vs_original": 1.5588881860716046
+      },
+      {
+        "name": "Larger Both (256/256)",
+        "BS": 256,
+        "SBS": 256,
+        "time": 0.29527456283569337,
+        "skip_ratio": 0.0,
+        "speedup_vs_flash": 0.9031951713890369,
+        "speedup_vs_original": 1.6126626044973769
+      },
+      {
+        "name": "Large BS (512/256)",
+        "BS": 512,
+        "SBS": 256,
+        "time": 0.32240097045898436,
+        "skip_ratio": 0.0,
+        "speedup_vs_flash": 0.8272014783563911,
+        "speedup_vs_original": 1.4769752239471396
+      },
+      {
+        "name": "Very Large BS (1024/256)",
+        "BS": 1024,
+        "SBS": 256,
+        "time": 0.4248508834838867,
+        "skip_ratio": 0.0,
+        "speedup_vs_flash": 0.6277274445101202,
+        "speedup_vs_original": 1.1208126522879023
+      },
+      {
+        "name": "Large Both (512/512)",
+        "BS": 512,
+        "SBS": 512,
+        "time": 0.5677734375,
+        "skip_ratio": 0.0,
+        "speedup_vs_flash": 0.46971299073357414,
+        "speedup_vs_original": 0.8386765109004128
+      }
+    ],
+    "flash_baseline": 0.26669055938720704
+  }
+}

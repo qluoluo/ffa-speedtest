@@ -1,0 +1,38 @@
+{
+  "x_lengths": [
+    8192,
+    16384,
+    24576,
+    32768
+  ],
+  "paged_ms_list": [
+    45.719052478671074,
+    91.82132631540298,
+    137.96656262129545,
+    183.1647714599967
+  ],
+  "flash_ms_list": null,
+  "skip_ratios": [
+    0.0,
+    0.0,
+    0.0,
+    0.0
+  ],
+  "config": {
+    "max_length": 32768,
+    "step": 8192,
+    "page_size": 128,
+    "delta": 5.0,
+    "num_heads_q": 32,
+    "num_heads_kv": 8,
+    "head_dim": 128,
+    "warmup": 3,
+    "iters": 10,
+    "dtype": "torch.float16"
+  },
+  "gpu": {
+    "tag": "NVIDIA-GeForce-RTX-4090_48GB",
+    "name": "NVIDIA GeForce RTX 4090",
+    "memory_gb": 48
+  }
+}

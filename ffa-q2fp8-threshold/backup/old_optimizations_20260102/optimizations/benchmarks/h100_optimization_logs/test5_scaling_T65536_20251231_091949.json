@@ -1,0 +1,57 @@
+{
+  "combined": {
+    "results": [
+      {
+        "name": "Original (baseline Q2FP8)",
+        "BS": 128,
+        "SBS": 128,
+        "delta": 5.0,
+        "time": 0.3643638229370117,
+        "skip_ratio": 0.0,
+        "speedup_vs_flash": 0.7289724557583621,
+        "speedup_vs_original": 1.0
+      },
+      {
+        "name": "Optimized BS only",
+        "BS": 512,
+        "SBS": 256,
+        "delta": 5.0,
+        "time": 0.26057952880859375,
+        "skip_ratio": 0.0,
+        "speedup_vs_flash": 1.0193095060471948,
+        "speedup_vs_original": 1.3982826072444536
+      },
+      {
+        "name": "Optimized BS + Delta",
+        "BS": 512,
+        "SBS": 256,
+        "delta": 6.0,
+        "time": 0.25815391540527344,
+        "skip_ratio": 0.0,
+        "speedup_vs_flash": 1.028886935063208,
+        "speedup_vs_original": 1.4114208663657117
+      },
+      {
+        "name": "Optimized BS + Aggressive Delta",
+        "BS": 512,
+        "SBS": 256,
+        "delta": 7.0,
+        "time": 0.2582208061218262,
+        "skip_ratio": 0.0,
+        "speedup_vs_flash": 1.0286204074143643,
+        "speedup_vs_original": 1.411055245351175
+      },
+      {
+        "name": "Very Large BS + Delta",
+        "BS": 1024,
+        "SBS": 256,
+        "delta": 6.0,
+        "time": 0.35751102447509764,
+        "skip_ratio": 0.0,
+        "speedup_vs_flash": 0.7429454551391032,
+        "speedup_vs_original": 1.0191680759271002
+      }
+    ],
+    "flash_baseline": 0.26561119079589846
+  }
+}

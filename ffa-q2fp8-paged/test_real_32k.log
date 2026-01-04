@@ -1,0 +1,30 @@
+[Info] Using GPU[0]: NVIDIA GeForce RTX 4090 (48GB)
+[Info] Loading layer 1 from /inspire/hdd/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/huffkv-opencompass/opencompass/models/myModel/ffa/attn_analysis/result/Llama-3_2-3B/longbench_gov_report_48_68_256k/layer_data
+[Info] Loaded: B=1, Hq=24, Hkv=8, T=32768, K=128, V=128
+[Info] Populating cache with full sequence (T=32768)...
+[Info] Cache populated: 256 pages
+[Info] Testing 4 lengths: 8K to 32K
+
+================================================================================
+Running Benchmarks
+================================================================================
+
+Layer 1, delta=5.0:   0%|          | 0/4 [00:00<?, ?it/s]Layer 1, delta=5.0:  25%|██▌       | 1/4 [00:08<00:24,  8.06s/it]Layer 1, delta=5.0:  50%|█████     | 2/4 [00:10<00:09,  4.71s/it]Layer 1, delta=5.0:  75%|███████▌  | 3/4 [00:14<00:04,  4.32s/it]Layer 1, delta=5.0: 100%|██████████| 4/4 [00:20<00:00,  5.17s/it]Layer 1, delta=5.0: 100%|██████████| 4/4 [00:20<00:00,  5.19s/it]
+
+      8K: Paged= 89.677ms, Flash=       N/A, Speedup=   N/A, Prune= 92.2%
+
+     32K: Paged=514.223ms, Flash=       N/A, Speedup=   N/A, Prune= 94.9%
+
+[Info] Saved results to /inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-speedtest/ffa-q2fp8-paged/plot/paged_real_data/NVIDIA-GeForce-RTX-4090_48GB/layer_1/results_layer1_page128_delta5.0.json
+[Info] Saved plot to /inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-speedtest/ffa-q2fp8-paged/plot/paged_real_data/NVIDIA-GeForce-RTX-4090_48GB/layer_1/performance_layer1_page128_delta5.0.png
+
+================================================================================
+Benchmark Summary
+================================================================================
+  Layer: 1
+  Sequence length: 32768 (32K)
+  Paged Q2FP8 avg: 272.327 ms
+  Avg prune ratio: 92.02%
+  Peak prune ratio: 94.92%
+================================================================================
+

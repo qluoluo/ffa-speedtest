@@ -1,19 +1,22 @@
-# CUDAGraph wrapper for Q2FP8 decode kernel (no changes to the original kernel).
+# CUDAGraph wrapper for optimized Q2FP8 decode kernel
+
 from __future__ import annotations
-
 from typing import Optional
-
 import torch
+from .attn_kernel_v1210_fused_bsz_q2fp8_optimized import (
+    attn_forward_decode_quantized_optimized,
+    create_dequant_lut,
+)
 
-from .attn_kernel_v1210_fused_bsz_q2fp8 import attn_forward_decode_quantized
 
+class CUDAGraphDecodeRunnerQ2FP8Optimized:
+    """
+    Capture and replay the optimized Q2FP8 decode kernel with static buffers.
 
-class CUDAGraphDecodeRunnerQ2FP8:
-    """Capture and replay the Q2FP8 decode kernel with static buffers.
-
-    This wrapper avoids per-step kernel launches by using torch.cuda.CUDAGraph.
-    Output is written into a persistent tensor; callers should not assume it
-    survives across replays.
+    Features:
+    - LUT-based dequantization
+    - Optional FP8 tensor core computation
+    - Optional async memory copy (TMA on H100)
     """
 
     def __init__(
@@ -32,13 +35,9 @@ class CUDAGraphDecodeRunnerQ2FP8:
         SBS: Optional[int] = None,
         delta: float = 5.0,
         use_fp8_residual: bool = True,
+        use_fp8_compute: bool = False,
+        use_async_copy: bool = False,
         warmup: int = 2,
-        num_warps_th: Optional[int] = None,
-        num_stages_th: Optional[int] = None,
-        num_warps_s1: Optional[int] = None,
-        num_stages_s1: Optional[int] = None,
-        num_warps_s2: Optional[int] = None,
-        num_stages_s2: Optional[int] = None,
     ) -> None:
         if not torch.cuda.is_available():
             raise RuntimeError("CUDA is required for CUDAGraph capture.")
@@ -52,19 +51,16 @@ class CUDAGraphDecodeRunnerQ2FP8:
         self._SBS = SBS
         self._delta = delta
         self._use_fp8_residual = use_fp8_residual
+        self._use_fp8_compute = use_fp8_compute
+        self._use_async_copy = use_async_copy
         self._use_ext_th = precomputed_threshold is not None
-        self._num_warps_th = num_warps_th
-        self._num_stages_th = num_stages_th
-        self._num_warps_s1 = num_warps_s1
-        self._num_stages_s1 = num_stages_s1
-        self._num_warps_s2 = num_warps_s2
-        self._num_stages_s2 = num_stages_s2
 
         if self._use_fp8_residual and k_residual is None:
             raise ValueError("use_fp8_residual=True requires k_residual")
         if self._use_ext_th and precomputed_threshold is None:
             raise ValueError("precomputed_threshold is required when use_ext_th=True")
 
+        # Create static buffers
         self._static_q = torch.empty_like(q, device=self._device)
         self._static_k_q = torch.empty_like(k_q, device=self._device)
         self._static_k_scale = torch.empty_like(k_scale, device=self._device)
@@ -80,7 +76,7 @@ class CUDAGraphDecodeRunnerQ2FP8:
                 precomputed_threshold, device=self._device
             )
 
-        # Seed static buffers once to avoid uninitialized data in capture.
+        # Seed static buffers
         self._static_q.copy_(q)
         self._static_k_q.copy_(k_q)
         self._static_k_scale.copy_(k_scale)
@@ -91,9 +87,9 @@ class CUDAGraphDecodeRunnerQ2FP8:
         if self._use_ext_th:
             self._static_threshold.copy_(precomputed_threshold)
 
-        # Warmup to trigger Triton JIT before graph capture.
+        # Warmup to trigger Triton JIT before graph capture
         for _ in range(max(1, warmup)):
-            attn_forward_decode_quantized(
+            _ = attn_forward_decode_quantized_optimized(
                 q=self._static_q,
                 k_q=self._static_k_q,
                 k_scale=self._static_k_scale,
@@ -108,19 +104,16 @@ class CUDAGraphDecodeRunnerQ2FP8:
                 return_skip_ratio=False,
                 precomputed_threshold=self._static_threshold,
                 use_fp8_residual=self._use_fp8_residual,
-                num_warps_th=self._num_warps_th,
-                num_stages_th=self._num_stages_th,
-                num_warps_s1=self._num_warps_s1,
-                num_stages_s1=self._num_stages_s1,
-                num_warps_s2=self._num_warps_s2,
-                num_stages_s2=self._num_stages_s2,
+                use_fp8_compute=self._use_fp8_compute,
+                use_async_copy=self._use_async_copy,
             )
         torch.cuda.synchronize(self._device)
 
+        # Capture graph
         self._graph = torch.cuda.CUDAGraph()
         self._pool = torch.cuda.graphs.graph_pool_handle()
         with torch.cuda.graph(self._graph, pool=self._pool):
-            self._static_out = attn_forward_decode_quantized(
+            self._static_out = attn_forward_decode_quantized_optimized(
                 q=self._static_q,
                 k_q=self._static_k_q,
                 k_scale=self._static_k_scale,
@@ -135,12 +128,8 @@ class CUDAGraphDecodeRunnerQ2FP8:
                 return_skip_ratio=False,
                 precomputed_threshold=self._static_threshold,
                 use_fp8_residual=self._use_fp8_residual,
-                num_warps_th=self._num_warps_th,
-                num_stages_th=self._num_stages_th,
-                num_warps_s1=self._num_warps_s1,
-                num_stages_s1=self._num_stages_s1,
-                num_warps_s2=self._num_warps_s2,
-                num_stages_s2=self._num_stages_s2,
+                use_fp8_compute=self._use_fp8_compute,
+                use_async_copy=self._use_async_copy,
             )
 
     @property
@@ -166,6 +155,7 @@ class CUDAGraphDecodeRunnerQ2FP8:
         if self._use_ext_th and precomputed_threshold is None:
             raise ValueError("precomputed_threshold is required for this captured graph.")
 
+        # Copy inputs to static buffers
         self._static_q.copy_(q)
         self._static_k_q.copy_(k_q)
         self._static_k_scale.copy_(k_scale)
@@ -176,38 +166,7 @@ class CUDAGraphDecodeRunnerQ2FP8:
         if self._use_ext_th:
             self._static_threshold.copy_(precomputed_threshold)
 
+        # Replay graph
         self._graph.replay()
-        if not return_skip_ratio:
-            return self._static_out
 
-        # NOTE: Skip ratio computation is not captured; it re-runs the kernel once.
-        _, skip_ratio = attn_forward_decode_quantized(
-            q=self._static_q,
-            k_q=self._static_k_q,
-            k_scale=self._static_k_scale,
-            k_zero=self._static_k_zero,
-            k_residual=self._static_k_residual,
-            v=self._static_v,
-            k_bits=self._k_bits,
-            scale=self._scale,
-            BS=self._BS,
-            SBS=self._SBS,
-            delta=self._delta,
-            return_skip_ratio=True,
-            precomputed_threshold=self._static_threshold,
-            use_fp8_residual=self._use_fp8_residual,
-            num_warps_th=self._num_warps_th,
-            num_stages_th=self._num_stages_th,
-            num_warps_s1=self._num_warps_s1,
-            num_stages_s1=self._num_stages_s1,
-            num_warps_s2=self._num_warps_s2,
-            num_stages_s2=self._num_stages_s2,
-        )
-        return self._static_out, skip_ratio
-
-    __call__ = replay
-
-    def replay_only(self) -> torch.Tensor:
-        """Replay without updating static inputs."""
-        self._graph.replay()
-        return self._static_out
+        return self._static_out.clone()

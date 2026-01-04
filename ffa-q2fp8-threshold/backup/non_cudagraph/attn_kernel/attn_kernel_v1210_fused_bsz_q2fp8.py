@@ -254,20 +254,6 @@ def _normalize_scale_zero(k_scale: torch.Tensor, k_zero: torch.Tensor, expect_sh
     return k_scale.contiguous(), k_zero.contiguous()
 
 
-
-def _kernel_kwargs(num_warps: int | None, num_stages: int | None) -> dict:
-    kwargs = {}
-    if num_warps is not None:
-        if num_warps <= 0:
-            raise ValueError(f"num_warps must be positive, got {num_warps}")
-        kwargs["num_warps"] = int(num_warps)
-    if num_stages is not None:
-        if num_stages <= 0:
-            raise ValueError(f"num_stages must be positive, got {num_stages}")
-        kwargs["num_stages"] = int(num_stages)
-    return kwargs
-
-
 def attn_forward_decode_quantized(
     q: torch.Tensor,           # [B, 1, HQ, K]
     k_q: torch.Tensor,         # [B, T, HKV, ceil(K / (8 / k_bits))], packed quantized ints
@@ -283,12 +269,6 @@ def attn_forward_decode_quantized(
     return_skip_ratio: bool = False,
     precomputed_threshold: torch.Tensor | None = None,
     use_fp8_residual: bool = True,
-    num_warps_th: int | None = None,
-    num_stages_th: int | None = None,
-    num_warps_s1: int | None = None,
-    num_stages_s1: int | None = None,
-    num_warps_s2: int | None = None,
-    num_stages_s2: int | None = None,
     **kwargs,
 ):
     # import os
@@ -364,18 +344,15 @@ def attn_forward_decode_quantized(
         use_ext_th = True
     else:
         threshold_buf = torch.empty((B, HQ), device=q.device, dtype=torch.float32)
-        th_kwargs = _kernel_kwargs(num_warps_th, num_stages_th)
         attn_compute_threshold_qbits[(B, HKV)](
             q, k_q, k_scale, k_zero,
             threshold_buf,
             scale, T, NTB, delta,
             B=B, HKV=HKV, HQ=HQ, K=K, K_PACKED=K_packed, G=G,
             K_BITS=k_bits,
-            **th_kwargs,
         )
         use_ext_th = True
 
-    s1_kwargs = _kernel_kwargs(num_warps_s1, num_stages_s1)
     attn_forward_stage1_fused_threshold_qbits[(NTB, B, HKV)](
         q, k_q, k_scale, k_zero, k_res, v,
         m_buf, l_buf, o_buf,
@@ -384,7 +361,6 @@ def attn_forward_decode_quantized(
         threshold_buf,
         B=B, HKV=HKV, HQ=HQ, K=K, K_PACKED=K_packed, V=V, G=G, BS=BS, SBS=SBS,
         K_BITS=k_bits, USE_EXT_TH=use_ext_th, USE_FP8_RESIDUAL=use_fp8_residual,
-        **s1_kwargs,
     )
 
     skip_ratio = None
@@ -393,13 +369,11 @@ def attn_forward_decode_quantized(
         total = mask_buf.numel()
         skip_ratio = float((1.0 - (kept.float() / float(total))).item())
 
-    s2_kwargs = _kernel_kwargs(num_warps_s2, num_stages_s2)
     attn_forward_stage2_masked[(B, HKV, G)](
         m_buf, l_buf, o_buf,
         mask_buf,
         o, NTBS,
         B=B, HKV=HKV, G=G, HQ=HQ, V=V,
-        **s2_kwargs,
     )
 
     if return_skip_ratio:

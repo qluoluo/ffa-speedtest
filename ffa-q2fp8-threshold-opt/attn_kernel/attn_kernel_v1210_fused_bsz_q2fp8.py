@@ -31,28 +31,67 @@ def attn_compute_threshold_qbits(
     base_hq = pid_hkv * G
     rows = tl.arange(0, BM_DOT)
     row_mask = rows < G
-    offs_k = tl.arange(0, K)
-    pack_idx = offs_k // VALS_PER_BYTE
-    pack_shifts = (offs_k % VALS_PER_BYTE) * K_BITS
+    offs_kp = tl.arange(0, K_PACKED)
+    offs_k0 = offs_kp * VALS_PER_BYTE + 0
+    offs_k1 = offs_kp * VALS_PER_BYTE + 1
+    offs_k2 = offs_kp * VALS_PER_BYTE + 2
+    offs_k3 = offs_kp * VALS_PER_BYTE + 3
+    mask_k0 = offs_k0 < K
+    mask_k1 = offs_k1 < K
+    mask_k2 = offs_k2 < K
+    mask_k3 = offs_k3 < K
 
-    q_ptrs = q + pid_b * (HQ * K) + (base_hq + rows)[:, None] * K + offs_k[None, :]
-    q_tile = tl.load(q_ptrs, mask=row_mask[:, None], other=0.0).to(tl.float16)
+    q_ptrs0 = q + pid_b * (HQ * K) + (base_hq + rows)[:, None] * K + offs_k0[None, :]
+    q_ptrs1 = q + pid_b * (HQ * K) + (base_hq + rows)[:, None] * K + offs_k1[None, :]
+    q_ptrs2 = q + pid_b * (HQ * K) + (base_hq + rows)[:, None] * K + offs_k2[None, :]
+    q_ptrs3 = q + pid_b * (HQ * K) + (base_hq + rows)[:, None] * K + offs_k3[None, :]
+    q0 = tl.load(q_ptrs0, mask=row_mask[:, None] & mask_k0[None, :], other=0.0).to(tl.float16)
+    q1 = tl.load(q_ptrs1, mask=row_mask[:, None] & mask_k1[None, :], other=0.0).to(tl.float16)
+    q2 = tl.load(q_ptrs2, mask=row_mask[:, None] & mask_k2[None, :], other=0.0).to(tl.float16)
+    q3 = tl.load(q_ptrs3, mask=row_mask[:, None] & mask_k3[None, :], other=0.0).to(tl.float16)
 
-    # Scale / zero do not depend on token; load once per (B, HKV)
-    scale_ptrs = k_scale + pid_b * (HKV * K) + pid_hkv * K + offs_k
-    zp_ptrs = k_zp + pid_b * (HKV * K) + pid_hkv * K + offs_k
-    scale_tile = tl.load(scale_ptrs, mask=TRUE_K, other=0.0).to(tl.float32)
-    zp_tile = tl.load(zp_ptrs, mask=TRUE_K, other=0.0).to(tl.float32)
+    scale_ptrs0 = k_scale + pid_b * (HKV * K) + pid_hkv * K + offs_k0
+    scale_ptrs1 = k_scale + pid_b * (HKV * K) + pid_hkv * K + offs_k1
+    scale_ptrs2 = k_scale + pid_b * (HKV * K) + pid_hkv * K + offs_k2
+    scale_ptrs3 = k_scale + pid_b * (HKV * K) + pid_hkv * K + offs_k3
+    zp_ptrs0 = k_zp + pid_b * (HKV * K) + pid_hkv * K + offs_k0
+    zp_ptrs1 = k_zp + pid_b * (HKV * K) + pid_hkv * K + offs_k1
+    zp_ptrs2 = k_zp + pid_b * (HKV * K) + pid_hkv * K + offs_k2
+    zp_ptrs3 = k_zp + pid_b * (HKV * K) + pid_hkv * K + offs_k3
+    scale0 = tl.load(scale_ptrs0, mask=mask_k0, other=0.0).to(tl.float32)
+    scale1 = tl.load(scale_ptrs1, mask=mask_k1, other=0.0).to(tl.float32)
+    scale2 = tl.load(scale_ptrs2, mask=mask_k2, other=0.0).to(tl.float32)
+    scale3 = tl.load(scale_ptrs3, mask=mask_k3, other=0.0).to(tl.float32)
+    zp0 = tl.load(zp_ptrs0, mask=mask_k0, other=0.0).to(tl.float32)
+    zp1 = tl.load(zp_ptrs1, mask=mask_k1, other=0.0).to(tl.float32)
+    zp2 = tl.load(zp_ptrs2, mask=mask_k2, other=0.0).to(tl.float32)
+    zp3 = tl.load(zp_ptrs3, mask=mask_k3, other=0.0).to(tl.float32)
+
+    q_scaled0 = q0 * scale0[None, :].to(tl.float16)
+    q_scaled1 = q1 * scale1[None, :].to(tl.float16)
+    q_scaled2 = q2 * scale2[None, :].to(tl.float16)
+    q_scaled3 = q3 * scale3[None, :].to(tl.float16)
+    q_zero_sum = tl.sum(q0.to(tl.float32) * zp0[None, :], axis=1)
+    q_zero_sum += tl.sum(q1.to(tl.float32) * zp1[None, :], axis=1)
+    q_zero_sum += tl.sum(q2.to(tl.float32) * zp2[None, :], axis=1)
+    q_zero_sum += tl.sum(q3.to(tl.float32) * zp3[None, :], axis=1)
 
     tb0 = 0
     offs_t0 = tb0 * T_BS + tl.arange(0, T_BS)
     t_mask0 = offs_t0 < T
     base_tok0_q = pid_b * (T * HKV * K_PACKED) + (offs_t0[None, :] * (HKV * K_PACKED)) + (pid_hkv * K_PACKED)
-    kq_ptrs0 = k_q + base_tok0_q + pack_idx[:, None]
-    kq_tile0 = tl.load(kq_ptrs0, mask=(TRUE_K[:, None] & t_mask0[None, :]), other=0).to(tl.int32)
-    kq_tile0 = ((kq_tile0 >> pack_shifts[:, None]) & tl.full((), QMAX, tl.int32)).to(tl.float32)
-    k_tile0 = (kq_tile0 * scale_tile[:, None] + zp_tile[:, None]).to(tl.float16)
-    b_s0 = tl.dot(q_tile, k_tile0, out_dtype=tl.float32) * scale * RCP_LN2
+    tl.multiple_of(base_tok0_q, K_PACKED)
+    kq_ptrs0 = k_q + base_tok0_q + offs_kp[:, None]
+    kq_packed0 = tl.load(kq_ptrs0, mask=t_mask0[None, :], other=0).to(tl.int32)
+    kq0_0 = ((kq_packed0 >> 0) & QMAX).to(tl.float16)
+    kq0_1 = ((kq_packed0 >> 2) & QMAX).to(tl.float16)
+    kq0_2 = ((kq_packed0 >> 4) & QMAX).to(tl.float16)
+    kq0_3 = ((kq_packed0 >> 6) & QMAX).to(tl.float16)
+    b_s0 = tl.dot(q_scaled0, kq0_0, out_dtype=tl.float32)
+    b_s0 += tl.dot(q_scaled1, kq0_1, out_dtype=tl.float32)
+    b_s0 += tl.dot(q_scaled2, kq0_2, out_dtype=tl.float32)
+    b_s0 += tl.dot(q_scaled3, kq0_3, out_dtype=tl.float32)
+    b_s0 = (b_s0 + q_zero_sum[:, None]) * scale * RCP_LN2
     b_s0 = tl.where(t_mask0[None, :], b_s0, NEG_INF)
     m0 = tl.max(b_s0, axis=1)
 
@@ -60,11 +99,18 @@ def attn_compute_threshold_qbits(
     offs_t1 = tb1 * T_BS + tl.arange(0, T_BS)
     t_mask1 = offs_t1 < T
     base_tok1_q = pid_b * (T * HKV * K_PACKED) + (offs_t1[None, :] * (HKV * K_PACKED)) + (pid_hkv * K_PACKED)
-    kq_ptrs1 = k_q + base_tok1_q + pack_idx[:, None]
-    kq_tile1 = tl.load(kq_ptrs1, mask=(TRUE_K[:, None] & t_mask1[None, :]), other=0).to(tl.int32)
-    kq_tile1 = ((kq_tile1 >> pack_shifts[:, None]) & tl.full((), QMAX, tl.int32)).to(tl.float32)
-    k_tile1 = (kq_tile1 * scale_tile[:, None] + zp_tile[:, None]).to(tl.float16)
-    b_s1 = tl.dot(q_tile, k_tile1, out_dtype=tl.float32) * scale * RCP_LN2
+    tl.multiple_of(base_tok1_q, K_PACKED)
+    kq_ptrs1 = k_q + base_tok1_q + offs_kp[:, None]
+    kq_packed1 = tl.load(kq_ptrs1, mask=t_mask1[None, :], other=0).to(tl.int32)
+    kq1_0 = ((kq_packed1 >> 0) & QMAX).to(tl.float16)
+    kq1_1 = ((kq_packed1 >> 2) & QMAX).to(tl.float16)
+    kq1_2 = ((kq_packed1 >> 4) & QMAX).to(tl.float16)
+    kq1_3 = ((kq_packed1 >> 6) & QMAX).to(tl.float16)
+    b_s1 = tl.dot(q_scaled0, kq1_0, out_dtype=tl.float32)
+    b_s1 += tl.dot(q_scaled1, kq1_1, out_dtype=tl.float32)
+    b_s1 += tl.dot(q_scaled2, kq1_2, out_dtype=tl.float32)
+    b_s1 += tl.dot(q_scaled3, kq1_3, out_dtype=tl.float32)
+    b_s1 = (b_s1 + q_zero_sum[:, None]) * scale * RCP_LN2
     b_s1 = tl.where(t_mask1[None, :], b_s1, NEG_INF)
     m1 = tl.max(b_s1, axis=1)
 
@@ -105,18 +151,50 @@ def attn_forward_stage1_fused_threshold_qbits(
 
     rows     = tl.arange(0, BM_DOT)
     row_mask = rows < G
-    offs_k   = tl.arange(0, K)
-    pack_idx = offs_k // VALS_PER_BYTE
-    pack_shifts = (offs_k % VALS_PER_BYTE) * K_BITS
+    offs_kp = tl.arange(0, K_PACKED)
+    offs_k0 = offs_kp * VALS_PER_BYTE + 0
+    offs_k1 = offs_kp * VALS_PER_BYTE + 1
+    offs_k2 = offs_kp * VALS_PER_BYTE + 2
+    offs_k3 = offs_kp * VALS_PER_BYTE + 3
+    mask_k0 = offs_k0 < K
+    mask_k1 = offs_k1 < K
+    mask_k2 = offs_k2 < K
+    mask_k3 = offs_k3 < K
 
-    q_ptrs   = q + pid_b * (HQ * K) + (base_hq + rows)[:, None] * K + offs_k[None, :]
-    q_tile   = tl.load(q_ptrs, mask=row_mask[:, None], other=0.0).to(tl.float16)
+    q_ptrs0 = q + pid_b * (HQ * K) + (base_hq + rows)[:, None] * K + offs_k0[None, :]
+    q_ptrs1 = q + pid_b * (HQ * K) + (base_hq + rows)[:, None] * K + offs_k1[None, :]
+    q_ptrs2 = q + pid_b * (HQ * K) + (base_hq + rows)[:, None] * K + offs_k2[None, :]
+    q_ptrs3 = q + pid_b * (HQ * K) + (base_hq + rows)[:, None] * K + offs_k3[None, :]
+    q0 = tl.load(q_ptrs0, mask=row_mask[:, None] & mask_k0[None, :], other=0.0).to(tl.float16)
+    q1 = tl.load(q_ptrs1, mask=row_mask[:, None] & mask_k1[None, :], other=0.0).to(tl.float16)
+    q2 = tl.load(q_ptrs2, mask=row_mask[:, None] & mask_k2[None, :], other=0.0).to(tl.float16)
+    q3 = tl.load(q_ptrs3, mask=row_mask[:, None] & mask_k3[None, :], other=0.0).to(tl.float16)
 
-    # Scale / zero do not depend on token; load once per (B, HKV)
-    scale_ptrs = k_scale + pid_b * (HKV * K) + pid_hkv * K + offs_k
-    zp_ptrs    = k_zp    + pid_b * (HKV * K) + pid_hkv * K + offs_k
-    scale_tile = tl.load(scale_ptrs, mask=TRUE_K, other=0.0).to(tl.float32)
-    zp_tile    = tl.load(zp_ptrs,    mask=TRUE_K, other=0.0).to(tl.float32)
+    scale_ptrs0 = k_scale + pid_b * (HKV * K) + pid_hkv * K + offs_k0
+    scale_ptrs1 = k_scale + pid_b * (HKV * K) + pid_hkv * K + offs_k1
+    scale_ptrs2 = k_scale + pid_b * (HKV * K) + pid_hkv * K + offs_k2
+    scale_ptrs3 = k_scale + pid_b * (HKV * K) + pid_hkv * K + offs_k3
+    zp_ptrs0 = k_zp + pid_b * (HKV * K) + pid_hkv * K + offs_k0
+    zp_ptrs1 = k_zp + pid_b * (HKV * K) + pid_hkv * K + offs_k1
+    zp_ptrs2 = k_zp + pid_b * (HKV * K) + pid_hkv * K + offs_k2
+    zp_ptrs3 = k_zp + pid_b * (HKV * K) + pid_hkv * K + offs_k3
+    scale0 = tl.load(scale_ptrs0, mask=mask_k0, other=0.0).to(tl.float32)
+    scale1 = tl.load(scale_ptrs1, mask=mask_k1, other=0.0).to(tl.float32)
+    scale2 = tl.load(scale_ptrs2, mask=mask_k2, other=0.0).to(tl.float32)
+    scale3 = tl.load(scale_ptrs3, mask=mask_k3, other=0.0).to(tl.float32)
+    zp0 = tl.load(zp_ptrs0, mask=mask_k0, other=0.0).to(tl.float32)
+    zp1 = tl.load(zp_ptrs1, mask=mask_k1, other=0.0).to(tl.float32)
+    zp2 = tl.load(zp_ptrs2, mask=mask_k2, other=0.0).to(tl.float32)
+    zp3 = tl.load(zp_ptrs3, mask=mask_k3, other=0.0).to(tl.float32)
+
+    q_scaled0 = q0 * scale0[None, :].to(tl.float16)
+    q_scaled1 = q1 * scale1[None, :].to(tl.float16)
+    q_scaled2 = q2 * scale2[None, :].to(tl.float16)
+    q_scaled3 = q3 * scale3[None, :].to(tl.float16)
+    q_zero_sum = tl.sum(q0.to(tl.float32) * zp0[None, :], axis=1)
+    q_zero_sum += tl.sum(q1.to(tl.float32) * zp1[None, :], axis=1)
+    q_zero_sum += tl.sum(q2.to(tl.float32) * zp2[None, :], axis=1)
+    q_zero_sum += tl.sum(q3.to(tl.float32) * zp3[None, :], axis=1)
 
     if USE_EXT_TH:
         th_rows = tl.load(th_in + pid_b * HQ + (base_hq + rows), mask=row_mask, other=0.0)
@@ -125,11 +203,18 @@ def attn_forward_stage1_fused_threshold_qbits(
         offs_t0 = tb0 * T_BS + tl.arange(0, T_BS)
         t_mask0 = offs_t0 < T
         base_tok0_q = pid_b * (T * HKV * K_PACKED) + (offs_t0[None, :] * (HKV * K_PACKED)) + (pid_hkv * K_PACKED)
-        kq_ptrs0 = k_q + base_tok0_q + pack_idx[:, None]
-        kq_tile0 = tl.load(kq_ptrs0, mask=(TRUE_K[:, None] & t_mask0[None, :]), other=0).to(tl.int32)
-        kq_tile0 = ((kq_tile0 >> pack_shifts[:, None]) & tl.full((), QMAX, tl.int32)).to(tl.float32)
-        k_tile0 = (kq_tile0 * scale_tile[:, None] + zp_tile[:, None]).to(tl.float16)
-        b_s0 = tl.dot(q_tile, k_tile0, out_dtype=tl.float32) * scale * RCP_LN2
+        tl.multiple_of(base_tok0_q, K_PACKED)
+        kq_ptrs0 = k_q + base_tok0_q + offs_kp[:, None]
+        kq_packed0 = tl.load(kq_ptrs0, mask=t_mask0[None, :], other=0).to(tl.int32)
+        kq0_0 = ((kq_packed0 >> 0) & QMAX).to(tl.float16)
+        kq0_1 = ((kq_packed0 >> 2) & QMAX).to(tl.float16)
+        kq0_2 = ((kq_packed0 >> 4) & QMAX).to(tl.float16)
+        kq0_3 = ((kq_packed0 >> 6) & QMAX).to(tl.float16)
+        b_s0 = tl.dot(q_scaled0, kq0_0, out_dtype=tl.float32)
+        b_s0 += tl.dot(q_scaled1, kq0_1, out_dtype=tl.float32)
+        b_s0 += tl.dot(q_scaled2, kq0_2, out_dtype=tl.float32)
+        b_s0 += tl.dot(q_scaled3, kq0_3, out_dtype=tl.float32)
+        b_s0 = (b_s0 + q_zero_sum[:, None]) * scale * RCP_LN2
         b_s0 = tl.where(t_mask0[None, :], b_s0, NEG_INF)
         m0 = tl.max(b_s0, axis=1)
 
@@ -137,11 +222,18 @@ def attn_forward_stage1_fused_threshold_qbits(
         offs_t1 = tb1 * T_BS + tl.arange(0, T_BS)
         t_mask1 = offs_t1 < T
         base_tok1_q = pid_b * (T * HKV * K_PACKED) + (offs_t1[None, :] * (HKV * K_PACKED)) + (pid_hkv * K_PACKED)
-        kq_ptrs1 = k_q + base_tok1_q + pack_idx[:, None]
-        kq_tile1 = tl.load(kq_ptrs1, mask=(TRUE_K[:, None] & t_mask1[None, :]), other=0).to(tl.int32)
-        kq_tile1 = ((kq_tile1 >> pack_shifts[:, None]) & tl.full((), QMAX, tl.int32)).to(tl.float32)
-        k_tile1 = (kq_tile1 * scale_tile[:, None] + zp_tile[:, None]).to(tl.float16)
-        b_s1 = tl.dot(q_tile, k_tile1, out_dtype=tl.float32) * scale * RCP_LN2
+        tl.multiple_of(base_tok1_q, K_PACKED)
+        kq_ptrs1 = k_q + base_tok1_q + offs_kp[:, None]
+        kq_packed1 = tl.load(kq_ptrs1, mask=t_mask1[None, :], other=0).to(tl.int32)
+        kq1_0 = ((kq_packed1 >> 0) & QMAX).to(tl.float16)
+        kq1_1 = ((kq_packed1 >> 2) & QMAX).to(tl.float16)
+        kq1_2 = ((kq_packed1 >> 4) & QMAX).to(tl.float16)
+        kq1_3 = ((kq_packed1 >> 6) & QMAX).to(tl.float16)
+        b_s1 = tl.dot(q_scaled0, kq1_0, out_dtype=tl.float32)
+        b_s1 += tl.dot(q_scaled1, kq1_1, out_dtype=tl.float32)
+        b_s1 += tl.dot(q_scaled2, kq1_2, out_dtype=tl.float32)
+        b_s1 += tl.dot(q_scaled3, kq1_3, out_dtype=tl.float32)
+        b_s1 = (b_s1 + q_zero_sum[:, None]) * scale * RCP_LN2
         b_s1 = tl.where(t_mask1[None, :], b_s1, NEG_INF)
         m1 = tl.max(b_s1, axis=1)
 
@@ -153,11 +245,19 @@ def attn_forward_stage1_fused_threshold_qbits(
 
         base_toksb_q = pid_b * (T * HKV * K_PACKED) + (offs_t_sb[None, :] * (HKV * K_PACKED)) + (pid_hkv * K_PACKED)
         base_toksb_k = pid_b * (T * HKV * K) + (offs_t_sb[None, :] * (HKV * K)) + (pid_hkv * K)
-        kq_ptrssb = k_q + base_toksb_q + pack_idx[:, None]
-        kq_tilesb = tl.load(kq_ptrssb, mask=(TRUE_K[:, None] & t_mask_sb[None, :]), other=0).to(tl.int32)
-        kq_tilesb = ((kq_tilesb >> pack_shifts[:, None]) & tl.full((), QMAX, tl.int32)).to(tl.float32)
-        k_tile_q = (kq_tilesb * scale_tile[:, None] + zp_tile[:, None]).to(tl.float16)
-        b_s_q     = tl.dot(q_tile, k_tile_q, out_dtype=tl.float32) * scale * RCP_LN2
+        tl.multiple_of(base_toksb_q, K_PACKED)
+        tl.multiple_of(base_toksb_k, K)
+        kq_ptrssb = k_q + base_toksb_q + offs_kp[:, None]
+        kq_packedsb = tl.load(kq_ptrssb, mask=t_mask_sb[None, :], other=0).to(tl.int32)
+        kqsb0 = ((kq_packedsb >> 0) & QMAX).to(tl.float16)
+        kqsb1 = ((kq_packedsb >> 2) & QMAX).to(tl.float16)
+        kqsb2 = ((kq_packedsb >> 4) & QMAX).to(tl.float16)
+        kqsb3 = ((kq_packedsb >> 6) & QMAX).to(tl.float16)
+        b_s_q = tl.dot(q_scaled0, kqsb0, out_dtype=tl.float32)
+        b_s_q += tl.dot(q_scaled1, kqsb1, out_dtype=tl.float32)
+        b_s_q += tl.dot(q_scaled2, kqsb2, out_dtype=tl.float32)
+        b_s_q += tl.dot(q_scaled3, kqsb3, out_dtype=tl.float32)
+        b_s_q = (b_s_q + q_zero_sum[:, None]) * scale * RCP_LN2
         b_s_act = tl.where(t_mask_sb[None, :], b_s_q, NEG_INF)
 
         m_rows_blk = tl.max(b_s_act, axis=1)
@@ -172,14 +272,37 @@ def attn_forward_stage1_fused_threshold_qbits(
 
         if not prune_blk:
             if USE_FP8_RESIDUAL:
-                k_res_ptrssb = k_res + base_toksb_k + offs_k[:, None]
-                k_res_tile = tl.load(
-                    k_res_ptrssb,
-                    mask=(TRUE_K[:, None] & t_mask_sb[None, :]),
+                k_res_ptrs0 = k_res + base_toksb_k + offs_k0[:, None]
+                k_res_ptrs1 = k_res + base_toksb_k + offs_k1[:, None]
+                k_res_ptrs2 = k_res + base_toksb_k + offs_k2[:, None]
+                k_res_ptrs3 = k_res + base_toksb_k + offs_k3[:, None]
+                k_res0 = tl.load(
+                    k_res_ptrs0,
+                    mask=(mask_k0[:, None] & t_mask_sb[None, :]),
                     other=0.0,
                 ).to(tl.float16)
-                k_tile_refined = k_tile_q + k_res_tile
-                b_s = tl.dot(q_tile, k_tile_refined, out_dtype=tl.float32) * scale * RCP_LN2
+                k_res1 = tl.load(
+                    k_res_ptrs1,
+                    mask=(mask_k1[:, None] & t_mask_sb[None, :]),
+                    other=0.0,
+                ).to(tl.float16)
+                k_res2 = tl.load(
+                    k_res_ptrs2,
+                    mask=(mask_k2[:, None] & t_mask_sb[None, :]),
+                    other=0.0,
+                ).to(tl.float16)
+                k_res3 = tl.load(
+                    k_res_ptrs3,
+                    mask=(mask_k3[:, None] & t_mask_sb[None, :]),
+                    other=0.0,
+                ).to(tl.float16)
+                # Reuse selector b_s_q and add residual dot to avoid recomputing q·k_tile_q.
+                b_s_res = tl.dot(q0, k_res0, out_dtype=tl.float32)
+                b_s_res += tl.dot(q1, k_res1, out_dtype=tl.float32)
+                b_s_res += tl.dot(q2, k_res2, out_dtype=tl.float32)
+                b_s_res += tl.dot(q3, k_res3, out_dtype=tl.float32)
+                b_s_res = b_s_res * scale * RCP_LN2
+                b_s = b_s_q + b_s_res
                 b_s = tl.where(t_mask_sb[None, :], b_s, NEG_INF)
                 m_rows = tl.max(b_s, axis=1)
             else:

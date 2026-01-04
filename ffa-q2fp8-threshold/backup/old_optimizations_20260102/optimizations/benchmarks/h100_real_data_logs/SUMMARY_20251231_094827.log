@@ -1,0 +1,208 @@
+==========================================
+H100 Real Data Test Summary
+==========================================
+Timestamp: 20251231_094827
+GPU: NVIDIA H100 80GB HBM3
+Data: Llama-3.2-3B longbench_gov_report
+
+
+==========================================
+Sequence Length: 16384
+==========================================
+  Skip ratio: 63.77%
+  Speedup vs FlashAttn: 0.160x
+
+[BS=256, SBS=256, delta=5.0]
+  BS=256, SBS=256, delta=5.0
+  Time: 0.2320 ms
+  Skip ratio: 59.57%
+  Speedup vs FlashAttn: 0.338x
+  Speedup vs Original: 2.116x
+
+[BS=512, SBS=256, delta=5.0]
+  BS=512, SBS=256, delta=5.0
+--
+  Skip ratio: 59.57%
+  Speedup vs FlashAttn: 0.338x
+  Speedup vs Original: 2.119x
+
+[BS=512, SBS=256, delta=6.5]
+  BS=512, SBS=256, delta=6.5
+--
+  Skip ratio: 48.63%
+  Speedup vs FlashAttn: 0.356x
+  Speedup vs Original: 2.230x
+
+[BS=512, SBS=256, delta=7.0]
+  BS=512, SBS=256, delta=7.0
+--
+  Skip ratio: 44.92%
+  Speedup vs FlashAttn: 0.358x
+  Speedup vs Original: 2.246x
+
+Results saved to: /inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-speedtest/ffa-q2fp8-threshold/optimizations/benchmarks/h100_real_data_logs/real_data_T16384_20251231_094827.json
+
+
+==========================================
+Sequence Length: 32768
+==========================================
+  Skip ratio: 85.16%
+  Speedup vs FlashAttn: 0.435x
+
+[BS=256, SBS=256, delta=5.0]
+  BS=256, SBS=256, delta=5.0
+  Time: 0.1383 ms
+  Skip ratio: 83.40%
+  Speedup vs FlashAttn: 1.014x
+  Speedup vs Original: 2.329x
+
+[BS=512, SBS=256, delta=5.0]
+  BS=512, SBS=256, delta=5.0
+--
+  Skip ratio: 83.40%
+  Speedup vs FlashAttn: 0.947x
+  Speedup vs Original: 2.174x
+
+[BS=512, SBS=256, delta=6.5]
+  BS=512, SBS=256, delta=6.5
+--
+  Skip ratio: 72.95%
+  Speedup vs FlashAttn: 0.923x
+  Speedup vs Original: 2.121x
+
+[BS=512, SBS=256, delta=7.0]
+  BS=512, SBS=256, delta=7.0
+--
+  Skip ratio: 68.36%
+  Speedup vs FlashAttn: 0.917x
+  Speedup vs Original: 2.106x
+
+Results saved to: /inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-speedtest/ffa-q2fp8-threshold/optimizations/benchmarks/h100_real_data_logs/real_data_T32768_20251231_094827.json
+
+
+==========================================
+Sequence Length: 65536
+==========================================
+  Skip ratio: 71.41%
+  Speedup vs FlashAttn: 0.674x
+
+[BS=256, SBS=256, delta=5.0]
+  BS=256, SBS=256, delta=5.0
+  Time: 0.1842 ms
+  Skip ratio: 65.97%
+  Speedup vs FlashAttn: 1.443x
+  Speedup vs Original: 2.140x
+
+[BS=512, SBS=256, delta=5.0]
+  BS=512, SBS=256, delta=5.0
+--
+  Skip ratio: 65.97%
+  Speedup vs FlashAttn: 1.298x
+  Speedup vs Original: 1.924x
+
+[BS=512, SBS=256, delta=6.5]
+  BS=512, SBS=256, delta=6.5
+--
+  Skip ratio: 51.27%
+  Speedup vs FlashAttn: 1.200x
+  Speedup vs Original: 1.780x
+
+[BS=512, SBS=256, delta=7.0]
+  BS=512, SBS=256, delta=7.0
+--
+  Skip ratio: 46.68%
+  Speedup vs FlashAttn: 1.168x
+  Speedup vs Original: 1.732x
+
+Results saved to: /inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-speedtest/ffa-q2fp8-threshold/optimizations/benchmarks/h100_real_data_logs/real_data_T65536_20251231_094827.json
+
+
+==========================================
+Sequence Length: 131072
+==========================================
+  Skip ratio: 81.41%
+  Speedup vs FlashAttn: 0.953x
+
+[BS=256, SBS=256, delta=5.0]
+  BS=256, SBS=256, delta=5.0
+  Time: 0.2901 ms
+  Skip ratio: 77.34%
+  Speedup vs FlashAttn: 1.786x
+  Speedup vs Original: 1.874x
+
+[BS=512, SBS=256, delta=5.0]
+  BS=512, SBS=256, delta=5.0
+--
+  Skip ratio: 77.34%
+  Speedup vs FlashAttn: 1.672x
+  Speedup vs Original: 1.754x
+
+[BS=512, SBS=256, delta=6.5]
+  BS=512, SBS=256, delta=6.5
+--
+  Skip ratio: 61.45%
+  Speedup vs FlashAttn: 1.508x
+  Speedup vs Original: 1.582x
+
+[BS=512, SBS=256, delta=7.0]
+  BS=512, SBS=256, delta=7.0
+--
+  Skip ratio: 55.62%
+  Speedup vs FlashAttn: 1.466x
+  Speedup vs Original: 1.539x
+
+Results saved to: /inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-speedtest/ffa-q2fp8-threshold/optimizations/benchmarks/h100_real_data_logs/real_data_T131072_20251231_094827.json
+
+
+==========================================
+Sequence Length: 262144
+==========================================
+  Skip ratio: 50.42%
+  Speedup vs FlashAttn: 1.057x
+
+[BS=256, SBS=256, delta=5.0]
+  BS=256, SBS=256, delta=5.0
+  Time: 0.6260 ms
+  Skip ratio: 48.27%
+  Speedup vs FlashAttn: 1.635x
+  Speedup vs Original: 1.547x
+
+[BS=512, SBS=256, delta=5.0]
+  BS=512, SBS=256, delta=5.0
+--
+  Skip ratio: 46.97%
+  Speedup vs FlashAttn: 1.527x
+  Speedup vs Original: 1.445x
+
+[BS=512, SBS=256, delta=6.5]
+  BS=512, SBS=256, delta=6.5
+--
+  Skip ratio: 38.98%
+  Speedup vs FlashAttn: 1.454x
+  Speedup vs Original: 1.376x
+
+[BS=512, SBS=256, delta=7.0]
+  BS=512, SBS=256, delta=7.0
+--
+  Skip ratio: 36.35%
+  Speedup vs FlashAttn: 1.443x
+  Speedup vs Original: 1.365x
+
+Results saved to: /inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-speedtest/ffa-q2fp8-threshold/optimizations/benchmarks/h100_real_data_logs/real_data_T262144_20251231_094827.json
+
+
+==========================================
+Files Generated
+==========================================
+-rw-r--r-- 1 root root 1.7K Dec 31 09:49 /inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-speedtest/ffa-q2fp8-threshold/optimizations/benchmarks/h100_real_data_logs/real_data_T131072_20251231_094827.json
+-rw-r--r-- 1 root root 3.4K Dec 31 09:49 /inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-speedtest/ffa-q2fp8-threshold/optimizations/benchmarks/h100_real_data_logs/real_data_T131072_20251231_094827.log
+-rw-r--r-- 1 root root 1.7K Dec 31 09:48 /inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-speedtest/ffa-q2fp8-threshold/optimizations/benchmarks/h100_real_data_logs/real_data_T16384_20251231_094827.json
+-rw-r--r-- 1 root root 3.4K Dec 31 09:48 /inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-speedtest/ffa-q2fp8-threshold/optimizations/benchmarks/h100_real_data_logs/real_data_T16384_20251231_094827.log
+-rw-r--r-- 1 root root 1.7K Dec 31 09:49 /inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-speedtest/ffa-q2fp8-threshold/optimizations/benchmarks/h100_real_data_logs/real_data_T262144_20251231_094827.json
+-rw-r--r-- 1 root root 3.4K Dec 31 09:49 /inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-speedtest/ffa-q2fp8-threshold/optimizations/benchmarks/h100_real_data_logs/real_data_T262144_20251231_094827.log
+-rw-r--r-- 1 root root 1.7K Dec 31 09:49 /inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-speedtest/ffa-q2fp8-threshold/optimizations/benchmarks/h100_real_data_logs/real_data_T32768_20251231_094827.json
+-rw-r--r-- 1 root root 3.4K Dec 31 09:49 /inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-speedtest/ffa-q2fp8-threshold/optimizations/benchmarks/h100_real_data_logs/real_data_T32768_20251231_094827.log
+-rw-r--r-- 1 root root 1.7K Dec 31 09:49 /inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-speedtest/ffa-q2fp8-threshold/optimizations/benchmarks/h100_real_data_logs/real_data_T65536_20251231_094827.json
+-rw-r--r-- 1 root root 3.4K Dec 31 09:49 /inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-speedtest/ffa-q2fp8-threshold/optimizations/benchmarks/h100_real_data_logs/real_data_T65536_20251231_094827.log
+-rw-r--r-- 1 root root 5.1K Dec 31 09:49 /inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-speedtest/ffa-q2fp8-threshold/optimizations/benchmarks/h100_real_data_logs/SUMMARY_20251231_094827.log
+

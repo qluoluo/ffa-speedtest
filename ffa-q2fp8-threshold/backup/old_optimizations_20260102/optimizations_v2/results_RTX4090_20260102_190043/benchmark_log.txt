@@ -1,0 +1,51 @@
+/inspire/hdd/global_user/liuzhigeng-253108120105/miniconda/envs/ffa/lib/python3.12/site-packages/torch/cuda/__init__.py:63: FutureWarning: The pynvml package is deprecated. Please install nvidia-ml-py instead. If you did not install pynvml directly, please report this to the maintainers of the package that installed pynvml for you.
+  import pynvml  # type: ignore[import]
+================================================================================
+Q2FP8 Optimization Benchmarks
+================================================================================
+GPU: NVIDIA GeForce RTX 4090
+Memory: 47 GB
+Compute: 8.9
+
+Configuration:
+  Batch size: 1
+  Sequence length: 262144
+  HQ: 24, HKV: 8, D: 128, V: 128
+  BS: 256, SBS: 256, delta: 5.0
+  Warmup: 10, Iterations: 100
+
+Creating test data...
+Done!
+
+[1/5] Benchmarking Baseline...
+  Mean: 1.1471 ms
+  Std:  0.0156 ms
+
+[2/5] Benchmarking Opt2 (Adaptive BM_DOT)...
+  Mean: 1.1448 ms
+  Speedup vs baseline: 1.002x
+
+[3/5] Benchmarking Opt3 (FP16 o_buf)...
+  Mean: 1.1237 ms
+  Speedup vs baseline: 1.021x
+
+[4/5] Benchmarking Opt4 (Stage2 Compact)...
+  Mean: 1.8926 ms
+  Speedup vs baseline: 0.606x
+
+[5/5] Benchmarking Opt5 (Triton Autotune)...
+  Mean: 1.1018 ms
+  Speedup vs baseline: 1.041x
+
+================================================================================
+Summary
+================================================================================
+Kernel                         Time (ms)       Speedup   
+--------------------------------------------------------------------------------
+baseline                       1.1471          1.000     x
+opt2_adaptive_bm_dot           1.1448          1.002     x
+opt3_fp16_obuf                 1.1237          1.021     x
+opt4_stage2_compact            1.8926          0.606     x
+opt5_autotune                  1.1018          1.041     x
+
+Results saved to: results_RTX4090_20260102_190043/benchmark_results.json

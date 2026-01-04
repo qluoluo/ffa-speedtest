@@ -1,0 +1,137 @@
+================================================================================
+Q2FP8 Attention Kernel Optimizations - Installation Guide
+================================================================================
+
+📦 All optimization files are ready in: /tmp/q2fp8_optimizations/
+
+================================================================================
+📁 File Structure
+================================================================================
+
+/tmp/q2fp8_optimizations/
+├── install.sh                      # ⭐ Installation script
+├── quick_test.py                   # ⭐ Quick functionality test
+├── run_all_benchmarks.sh           # ⭐ Run all benchmarks
+├── README.md                       # 📖 Complete documentation
+├── kernels/                        # 🔧 Optimized kernel implementations
+│   ├── __init__.py
+│   ├── opt2_adaptive_bm_dot.py    # Optimization 2
+│   ├── opt3_fp16_obuf.py          # Optimization 3
+│   ├── opt4_stage2_compact.py     # Optimization 4
+│   └── opt5_autotune.py           # Optimization 5
+├── benchmarks/
+│   └── benchmark_all_opts.py      # 📊 Unified benchmark script
+└── results/                       # (Will be created during benchmarking)
+
+================================================================================
+🚀 Quick Start (3 Steps)
+================================================================================
+
+Step 1: Install to your project
+---------------------------------
+cd /tmp/q2fp8_optimizations
+./install.sh
+
+# When prompted, enter your project path, e.g.:
+# /inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-speedtest/ffa-q2fp8-threshold
+
+Step 2: Quick test (on 4090)
+-----------------------------
+cd <your-project-path>/optimizations_v2
+python3 quick_test.py
+
+# This runs a quick test to verify all kernels work correctly
+
+Step 3: Run full benchmarks
+----------------------------
+./run_all_benchmarks.sh
+
+# This will benchmark all optimizations and save results
+
+================================================================================
+📊 Optimizations Included
+================================================================================
+
+✅ Optimization 2: Adaptive BM_DOT
+   - Auto-selects optimal BM_DOT based on G (group size)
+   - Expected: 20-30% Stage1 improvement for G=3
+
+✅ Optimization 3: FP16 o_buf
+   - Uses FP16 for output buffer to reduce bandwidth
+   - Expected: 5-10% total time improvement
+
+✅ Optimization 4: Stage2 Compact
+   - Only iterates over kept blocks in Stage2
+   - Expected: 30-50% Stage2 improvement
+
+✅ Optimization 5: Triton Autotune
+   - Auto-tunes num_warps and num_stages
+   - Expected: 10-20% improvement
+
+❌ Optimization 1: Upper-bound Pruning (NOT INCLUDED)
+   - Requires modification to K quantization
+   - Would provide 50-70% Stage1 improvement
+   - Recommended for future implementation
+
+================================================================================
+🎯 Expected Results
+================================================================================
+
+On H100, you should see approximately:
+- Baseline: ~0.26 ms (from your current data)
+- With optimizations: ~0.18-0.20 ms
+- Overall speedup: 1.3-1.5x → 1.7-2.0x (25-50% improvement)
+
+Note: Actual results depend on specific configuration and hardware.
+
+================================================================================
+💻 Running on H100
+================================================================================
+
+After testing on 4090:
+
+1. Copy directory to H100:
+   scp -r <your-project-path>/optimizations_v2 user@h100:/path/to/project/
+
+2. SSH to H100 and run:
+   cd /path/to/project/optimizations_v2
+   ./run_all_benchmarks.sh
+
+3. Compare results between 4090 and H100
+
+================================================================================
+🔍 Troubleshooting
+================================================================================
+
+Problem: Cannot import kernels
+Solution: Make sure you're running from optimizations_v2/ directory
+          and that the kernels/ subdirectory exists
+
+Problem: CUDA out of memory
+Solution: Reduce sequence length:
+          python3 benchmarks/benchmark_all_opts.py --seq-len 131072
+
+Problem: Triton compilation errors
+Solution: Update triton: pip install --upgrade triton
+          Clear cache: rm -rf ~/.triton/cache
+
+================================================================================
+📖 Full Documentation
+================================================================================
+
+For complete details, see README.md in the optimizations_v2/ directory.
+
+================================================================================
+✨ Summary
+================================================================================
+
+All optimization files have been created in /tmp/q2fp8_optimizations/
+
+To install and test:
+1. Run: cd /tmp/q2fp8_optimizations && ./install.sh
+2. Follow the prompts
+3. Test with: python3 quick_test.py
+4. Benchmark with: ./run_all_benchmarks.sh
+
+Good luck with your optimizations!
+================================================================================

@@ -1,0 +1,83 @@
+/inspire/hdd/global_user/liuzhigeng-253108120105/miniconda/envs/ffa/lib/python3.12/site-packages/torch/cuda/__init__.py:63: FutureWarning: The pynvml package is deprecated. Please install nvidia-ml-py instead. If you did not install pynvml directly, please report this to the maintainers of the package that installed pynvml for you.
+  import pynvml  # type: ignore[import]
+================================================================================
+H100 Real Data Optimization Tests
+================================================================================
+GPU: NVIDIA H100 80GB HBM3
+Layer data directory: /inspire/hdd/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/huffkv-opencompass/opencompass/models/myModel/ffa/attn_analysis/result/Llama-3_2-3B/longbench_gov_report_48_68_256k/layer_data
+Layer: 0
+Max length: 32768
+Warmup: 10, Iterations: 50
+================================================================================
+
+================================================================================
+Loading Real LLM Data from Dumped Files
+================================================================================
+Layer data directory: /inspire/hdd/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/huffkv-opencompass/opencompass/models/myModel/ffa/attn_analysis/result/Llama-3_2-3B/longbench_gov_report_48_68_256k/layer_data
+Layer index: 0
+Max length: 32768
+
+Loaded data shapes (original layout):
+  q_rope: torch.Size([1, 24, 32768, 128])
+  k_rope: torch.Size([1, 8, 32768, 128])
+  v: torch.Size([1, 8, 32768, 128])
+
+Converted to kernel layout:
+  q: torch.Size([1, 1, 24, 128])  (decode query)
+  k: torch.Size([1, 32768, 8, 128])
+  v: torch.Size([1, 32768, 8, 128])
+
+Sequence length: 32768
+
+================================================================================
+BENCHMARK WITH REAL LLM DATA
+================================================================================
+Sequence Length: 32768
+Warmup: 10, Iterations: 50
+================================================================================
+
+[Quantizing K to 2-bit + FP8 residual...]
+  k_q: torch.Size([1, 32768, 8, 32]), k_scale: torch.Size([1, 8, 128]), k_residual: torch.Size([1, 32768, 8, 128])
+
+[Baseline] FlashAttention...
+  Time: 0.1402 ms
+
+[Original (BS=128, delta=5.0)]
+  BS=128, SBS=128, delta=5.0
+  Time: 0.3220 ms
+  Skip ratio: 85.16%
+  Speedup vs FlashAttn: 0.435x
+
+[BS=256, SBS=256, delta=5.0]
+  BS=256, SBS=256, delta=5.0
+  Time: 0.1383 ms
+  Skip ratio: 83.40%
+  Speedup vs FlashAttn: 1.014x
+  Speedup vs Original: 2.329x
+
+[BS=512, SBS=256, delta=5.0]
+  BS=512, SBS=256, delta=5.0
+  Time: 0.1481 ms
+  Skip ratio: 83.40%
+  Speedup vs FlashAttn: 0.947x
+  Speedup vs Original: 2.174x
+
+[BS=512, SBS=256, delta=6.5]
+  BS=512, SBS=256, delta=6.5
+  Time: 0.1519 ms
+  Skip ratio: 72.95%
+  Speedup vs FlashAttn: 0.923x
+  Speedup vs Original: 2.121x
+
+[BS=512, SBS=256, delta=7.0]
+  BS=512, SBS=256, delta=7.0
+  Time: 0.1529 ms
+  Skip ratio: 68.36%
+  Speedup vs FlashAttn: 0.917x
+  Speedup vs Original: 2.106x
+
+Results saved to: /inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-speedtest/ffa-q2fp8-threshold/optimizations/benchmarks/h100_real_data_logs/real_data_T32768_20251231_094827.json
+
+================================================================================
+BENCHMARK COMPLETED
+================================================================================

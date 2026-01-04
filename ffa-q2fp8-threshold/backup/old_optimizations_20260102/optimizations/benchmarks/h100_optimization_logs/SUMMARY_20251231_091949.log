@@ -1,0 +1,210 @@
+==========================================
+H100 Optimization Test Summary
+==========================================
+Timestamp: 20251231_091949
+GPU: NVIDIA H100 80GB HBM3
+
+==========================================
+Test 1: Block Size Optimization Results
+==========================================
+  Speedup vs FlashAttn: 0.560x
+
+[Larger BS (256/128)] BS=256, SBS=128
+  Time: 0.3055 ms
+--
+  Speedup vs FlashAttn: 0.873x
+  Speedup vs Original: 1.559x
+
+[Larger Both (256/256)] BS=256, SBS=256
+--
+  Speedup vs FlashAttn: 0.903x
+  Speedup vs Original: 1.613x
+
+[Large BS (512/256)] BS=512, SBS=256
+--
+  Speedup vs FlashAttn: 0.827x
+  Speedup vs Original: 1.477x
+
+[Very Large BS (1024/256)] BS=1024, SBS=256
+--
+  Speedup vs FlashAttn: 0.628x
+  Speedup vs Original: 1.121x
+
+[Large Both (512/512)] BS=512, SBS=512
+--
+  Speedup vs FlashAttn: 0.470x
+  Speedup vs Original: 0.839x
+
+Results saved to: /inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-speedtest/ffa-q2fp8-threshold/optimizations/benchmarks/h100_optimization_logs/test1_block_size_20251231_091949.json
+
+==========================================
+Test 2: Delta Parameter Results
+==========================================
+  Speedup vs FlashAttn: 0.678x
+
+[Delta=4.5]
+  Time: 0.2578 ms
+--
+  Speedup vs FlashAttn: 1.033x
+
+[Delta=5.0]
+  Time: 0.2573 ms
+--
+  Speedup vs FlashAttn: 1.034x
+
+[Delta=5.5]
+  Time: 0.2571 ms
+--
+  Speedup vs FlashAttn: 1.035x
+
+[Delta=6.0]
+  Time: 0.2601 ms
+--
+  Speedup vs FlashAttn: 1.023x
+
+[Delta=6.5]
+  Time: 0.2558 ms
+--
+  Speedup vs FlashAttn: 1.041x
+
+[Delta=7.0]
+  Time: 0.2570 ms
+--
+  Speedup vs FlashAttn: 1.036x
+
+[Delta=7.5]
+  Time: 0.2628 ms
+--
+  Speedup vs FlashAttn: 1.013x
+
+[Delta=8.0]
+  Time: 0.2607 ms
+--
+  Speedup vs FlashAttn: 1.021x
+
+Results saved to: /inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-speedtest/ffa-q2fp8-threshold/optimizations/benchmarks/h100_optimization_logs/test2_delta_20251231_091949.json
+
+
+==========================================
+Test 4: Combined Optimization Results
+==========================================
+  Speedup vs FlashAttn: 0.726x
+
+[Optimized BS only]
+  BS=512, SBS=256, delta=5.0
+  Time: 0.2605 ms
+--
+  Speedup vs FlashAttn: 1.021x
+  Speedup vs Original Q2FP8: 1.406x
+
+[Optimized BS + Delta]
+  BS=512, SBS=256, delta=6.0
+  Time: 0.2610 ms
+--
+  Speedup vs FlashAttn: 1.019x
+  Speedup vs Original Q2FP8: 1.403x
+
+[Optimized BS + Aggressive Delta]
+  BS=512, SBS=256, delta=7.0
+  Time: 0.2617 ms
+--
+  Speedup vs FlashAttn: 1.017x
+  Speedup vs Original Q2FP8: 1.399x
+
+[Very Large BS + Delta]
+  BS=1024, SBS=256, delta=6.0
+  Time: 0.3587 ms
+--
+  Speedup vs FlashAttn: 0.742x
+  Speedup vs Original Q2FP8: 1.021x
+
+Results saved to: /inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-speedtest/ffa-q2fp8-threshold/optimizations/benchmarks/h100_optimization_logs/test4_combined_20251231_091949.json
+
+================================================================================
+
+==========================================
+Test 5: Scaling Results Summary
+==========================================
+--- T=16384 ---
+  Speedup vs FlashAttn: 0.315x
+
+[Optimized BS only]
+--
+  Speedup vs FlashAttn: 0.509x
+  Speedup vs Original Q2FP8: 1.616x
+
+--
+  Speedup vs FlashAttn: 0.510x
+  Speedup vs Original Q2FP8: 1.621x
+
+--- T=32768 ---
+  Speedup vs FlashAttn: 0.486x
+
+[Optimized BS only]
+--
+  Speedup vs FlashAttn: 0.719x
+  Speedup vs Original Q2FP8: 1.480x
+
+--
+  Speedup vs FlashAttn: 0.738x
+  Speedup vs Original Q2FP8: 1.519x
+
+--- T=65536 ---
+  Speedup vs FlashAttn: 0.729x
+
+[Optimized BS only]
+--
+  Speedup vs FlashAttn: 1.019x
+  Speedup vs Original Q2FP8: 1.398x
+
+--
+  Speedup vs FlashAttn: 1.029x
+  Speedup vs Original Q2FP8: 1.411x
+
+--- T=131072 ---
+  Speedup vs FlashAttn: 0.901x
+
+[Optimized BS only]
+--
+  Speedup vs FlashAttn: 1.120x
+  Speedup vs Original Q2FP8: 1.243x
+
+--
+  Speedup vs FlashAttn: 1.163x
+  Speedup vs Original Q2FP8: 1.291x
+
+--- T=262144 ---
+  Speedup vs FlashAttn: 1.041x
+
+[Optimized BS only]
+--
+  Speedup vs FlashAttn: 1.279x
+  Speedup vs Original Q2FP8: 1.228x
+
+--
+  Speedup vs FlashAttn: 1.279x
+  Speedup vs Original Q2FP8: 1.228x
+
+==========================================
+Files Generated
+==========================================
+-rw-r--r-- 1 root root 4.2K Dec 31 09:21 /inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-speedtest/ffa-q2fp8-threshold/optimizations/benchmarks/h100_optimization_logs/SUMMARY_20251231_091949.log
+-rw-r--r-- 1 root root 1.6K Dec 31 09:20 /inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-speedtest/ffa-q2fp8-threshold/optimizations/benchmarks/h100_optimization_logs/test1_block_size_20251231_091949.json
+-rw-r--r-- 1 root root 2.2K Dec 31 09:20 /inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-speedtest/ffa-q2fp8-threshold/optimizations/benchmarks/h100_optimization_logs/test1_block_size_20251231_091949.log
+-rw-r--r-- 1 root root 1.4K Dec 31 09:20 /inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-speedtest/ffa-q2fp8-threshold/optimizations/benchmarks/h100_optimization_logs/test2_delta_20251231_091949.json
+-rw-r--r-- 1 root root 2.1K Dec 31 09:20 /inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-speedtest/ffa-q2fp8-threshold/optimizations/benchmarks/h100_optimization_logs/test2_delta_20251231_091949.log
+-rw-r--r-- 1 root root  161 Dec 31 09:20 /inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-speedtest/ffa-q2fp8-threshold/optimizations/benchmarks/h100_optimization_logs/test3_threshold_20251231_091949.json
+-rw-r--r-- 1 root root 1.7K Dec 31 09:20 /inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-speedtest/ffa-q2fp8-threshold/optimizations/benchmarks/h100_optimization_logs/test3_threshold_20251231_091949.log
+-rw-r--r-- 1 root root 1.5K Dec 31 09:20 /inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-speedtest/ffa-q2fp8-threshold/optimizations/benchmarks/h100_optimization_logs/test4_combined_20251231_091949.json
+-rw-r--r-- 1 root root 2.1K Dec 31 09:20 /inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-speedtest/ffa-q2fp8-threshold/optimizations/benchmarks/h100_optimization_logs/test4_combined_20251231_091949.log
+-rw-r--r-- 1 root root 1.5K Dec 31 09:20 /inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-speedtest/ffa-q2fp8-threshold/optimizations/benchmarks/h100_optimization_logs/test5_scaling_T131072_20251231_091949.json
+-rw-r--r-- 1 root root 2.1K Dec 31 09:20 /inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-speedtest/ffa-q2fp8-threshold/optimizations/benchmarks/h100_optimization_logs/test5_scaling_T131072_20251231_091949.log
+-rw-r--r-- 1 root root 1.5K Dec 31 09:20 /inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-speedtest/ffa-q2fp8-threshold/optimizations/benchmarks/h100_optimization_logs/test5_scaling_T16384_20251231_091949.json
+-rw-r--r-- 1 root root 2.1K Dec 31 09:20 /inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-speedtest/ffa-q2fp8-threshold/optimizations/benchmarks/h100_optimization_logs/test5_scaling_T16384_20251231_091949.log
+-rw-r--r-- 1 root root 1.5K Dec 31 09:21 /inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-speedtest/ffa-q2fp8-threshold/optimizations/benchmarks/h100_optimization_logs/test5_scaling_T262144_20251231_091949.json
+-rw-r--r-- 1 root root 2.1K Dec 31 09:21 /inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-speedtest/ffa-q2fp8-threshold/optimizations/benchmarks/h100_optimization_logs/test5_scaling_T262144_20251231_091949.log
+-rw-r--r-- 1 root root 1.5K Dec 31 09:20 /inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-speedtest/ffa-q2fp8-threshold/optimizations/benchmarks/h100_optimization_logs/test5_scaling_T32768_20251231_091949.json
+-rw-r--r-- 1 root root 2.1K Dec 31 09:20 /inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-speedtest/ffa-q2fp8-threshold/optimizations/benchmarks/h100_optimization_logs/test5_scaling_T32768_20251231_091949.log
+-rw-r--r-- 1 root root 1.5K Dec 31 09:20 /inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-speedtest/ffa-q2fp8-threshold/optimizations/benchmarks/h100_optimization_logs/test5_scaling_T65536_20251231_091949.json
+-rw-r--r-- 1 root root 2.1K Dec 31 09:20 /inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-speedtest/ffa-q2fp8-threshold/optimizations/benchmarks/h100_optimization_logs/test5_scaling_T65536_20251231_091949.log
+

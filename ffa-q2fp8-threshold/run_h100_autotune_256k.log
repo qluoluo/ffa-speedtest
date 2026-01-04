@@ -1,0 +1,459 @@
+[Run] dtype=fp16 bsz=1 BS=128 SBS=128 delta=5 nwT=4 nsT=2 nw1=4 ns1=2 nw2=4 ns2=2
+[Info] Using GPU[0]: NVIDIA H100 80GB HBM3 (80GB)
+[Info] Loaded data for layer_1
+[Info] Layers=[1], bsz=1, Hq=24, Hkv=8, T_full=262144, K=128, V=128
+delta=5, layers1(bsz=1):   0%|          | 0/1 [00:00<?, ?it/s]delta=5, layers1(bsz=1): 100%|██████████| 1/1 [00:02<00:00,  2.51s/it]delta=5, layers1(bsz=1): 100%|██████████| 1/1 [00:02<00:00,  2.51s/it]
+[Info] Saved raw benchmark data to /inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-speedtest/ffa-q2fp8-threshold/plot/attn_kernel_v1210_fused_bsz_q2fp8_cudagraph/NVIDIA-H100-80GB-HBM3_80GB/delta5.0_layers1_BS128_SBS128_bsz1_262144/raw/layer_layers_1_Tmax256k_Hq24_Hkv8_D128_Dv128_BS128_SBS128_delta5_fp16_nwT4nsT2_nw14ns12_nw24ns22_step262144_it300_wu50_bsz1_cudagraph_replay.json
+[Result] Layers 1 | bsz=1 | T=256k | BS=128 SBS=128 delta=5.0 | Q2=0.283 ms, Q2_CG=0.281 ms, Flash=0.354 ms, Speedup=1.25x, Speedup_CG=1.26x
+[Run] dtype=fp16 bsz=1 BS=128 SBS=128 delta=5 nwT=4 nsT=2 nw1=4 ns1=2 nw2=4 ns2=3
+[Info] Using GPU[0]: NVIDIA H100 80GB HBM3 (80GB)
+[Info] Loaded data for layer_1
+[Info] Layers=[1], bsz=1, Hq=24, Hkv=8, T_full=262144, K=128, V=128
+delta=5, layers1(bsz=1):   0%|          | 0/1 [00:00<?, ?it/s]delta=5, layers1(bsz=1): 100%|██████████| 1/1 [00:01<00:00,  1.91s/it]delta=5, layers1(bsz=1): 100%|██████████| 1/1 [00:01<00:00,  1.91s/it]
+[Info] Saved raw benchmark data to /inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-speedtest/ffa-q2fp8-threshold/plot/attn_kernel_v1210_fused_bsz_q2fp8_cudagraph/NVIDIA-H100-80GB-HBM3_80GB/delta5.0_layers1_BS128_SBS128_bsz1_262144/raw/layer_layers_1_Tmax256k_Hq24_Hkv8_D128_Dv128_BS128_SBS128_delta5_fp16_nwT4nsT2_nw14ns12_nw24ns23_step262144_it300_wu50_bsz1_cudagraph_replay.json
+[Result] Layers 1 | bsz=1 | T=256k | BS=128 SBS=128 delta=5.0 | Q2=0.285 ms, Q2_CG=0.277 ms, Flash=0.354 ms, Speedup=1.24x, Speedup_CG=1.28x
+[Run] dtype=fp16 bsz=1 BS=128 SBS=128 delta=5 nwT=4 nsT=2 nw1=4 ns1=2 nw2=8 ns2=2
+[Info] Using GPU[0]: NVIDIA H100 80GB HBM3 (80GB)
+[Info] Loaded data for layer_1
+[Info] Layers=[1], bsz=1, Hq=24, Hkv=8, T_full=262144, K=128, V=128
+delta=5, layers1(bsz=1):   0%|          | 0/1 [00:00<?, ?it/s]delta=5, layers1(bsz=1): 100%|██████████| 1/1 [00:01<00:00,  1.86s/it]delta=5, layers1(bsz=1): 100%|██████████| 1/1 [00:01<00:00,  1.87s/it]
+[Info] Saved raw benchmark data to /inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-speedtest/ffa-q2fp8-threshold/plot/attn_kernel_v1210_fused_bsz_q2fp8_cudagraph/NVIDIA-H100-80GB-HBM3_80GB/delta5.0_layers1_BS128_SBS128_bsz1_262144/raw/layer_layers_1_Tmax256k_Hq24_Hkv8_D128_Dv128_BS128_SBS128_delta5_fp16_nwT4nsT2_nw14ns12_nw28ns22_step262144_it300_wu50_bsz1_cudagraph_replay.json
+[Result] Layers 1 | bsz=1 | T=256k | BS=128 SBS=128 delta=5.0 | Q2=0.292 ms, Q2_CG=0.287 ms, Flash=0.354 ms, Speedup=1.21x, Speedup_CG=1.23x
+[Run] dtype=fp16 bsz=1 BS=128 SBS=128 delta=5 nwT=4 nsT=2 nw1=4 ns1=2 nw2=8 ns2=3
+[Info] Using GPU[0]: NVIDIA H100 80GB HBM3 (80GB)
+[Info] Loaded data for layer_1
+[Info] Layers=[1], bsz=1, Hq=24, Hkv=8, T_full=262144, K=128, V=128
+delta=5, layers1(bsz=1):   0%|          | 0/1 [00:00<?, ?it/s]delta=5, layers1(bsz=1): 100%|██████████| 1/1 [00:02<00:00,  2.07s/it]delta=5, layers1(bsz=1): 100%|██████████| 1/1 [00:02<00:00,  2.07s/it]
+[Info] Saved raw benchmark data to /inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-speedtest/ffa-q2fp8-threshold/plot/attn_kernel_v1210_fused_bsz_q2fp8_cudagraph/NVIDIA-H100-80GB-HBM3_80GB/delta5.0_layers1_BS128_SBS128_bsz1_262144/raw/layer_layers_1_Tmax256k_Hq24_Hkv8_D128_Dv128_BS128_SBS128_delta5_fp16_nwT4nsT2_nw14ns12_nw28ns23_step262144_it300_wu50_bsz1_cudagraph_replay.json
+[Result] Layers 1 | bsz=1 | T=256k | BS=128 SBS=128 delta=5.0 | Q2=0.291 ms, Q2_CG=0.288 ms, Flash=0.354 ms, Speedup=1.22x, Speedup_CG=1.23x
+[Run] dtype=fp16 bsz=1 BS=128 SBS=128 delta=5 nwT=4 nsT=2 nw1=4 ns1=3 nw2=4 ns2=2
+[Info] Using GPU[0]: NVIDIA H100 80GB HBM3 (80GB)
+[Info] Loaded data for layer_1
+[Info] Layers=[1], bsz=1, Hq=24, Hkv=8, T_full=262144, K=128, V=128
+delta=5, layers1(bsz=1):   0%|          | 0/1 [00:00<?, ?it/s]delta=5, layers1(bsz=1): 100%|██████████| 1/1 [00:01<00:00,  1.67s/it]delta=5, layers1(bsz=1): 100%|██████████| 1/1 [00:01<00:00,  1.67s/it]
+[Info] Saved raw benchmark data to /inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-speedtest/ffa-q2fp8-threshold/plot/attn_kernel_v1210_fused_bsz_q2fp8_cudagraph/NVIDIA-H100-80GB-HBM3_80GB/delta5.0_layers1_BS128_SBS128_bsz1_262144/raw/layer_layers_1_Tmax256k_Hq24_Hkv8_D128_Dv128_BS128_SBS128_delta5_fp16_nwT4nsT2_nw14ns13_nw24ns22_step262144_it300_wu50_bsz1_cudagraph_replay.json
+[Result] Layers 1 | bsz=1 | T=256k | BS=128 SBS=128 delta=5.0 | Q2=0.284 ms, Q2_CG=0.280 ms, Flash=0.354 ms, Speedup=1.25x, Speedup_CG=1.26x
+[Run] dtype=fp16 bsz=1 BS=128 SBS=128 delta=5 nwT=4 nsT=2 nw1=4 ns1=3 nw2=4 ns2=3
+[Info] Using GPU[0]: NVIDIA H100 80GB HBM3 (80GB)
+[Info] Loaded data for layer_1
+[Info] Layers=[1], bsz=1, Hq=24, Hkv=8, T_full=262144, K=128, V=128
+delta=5, layers1(bsz=1):   0%|          | 0/1 [00:00<?, ?it/s]delta=5, layers1(bsz=1): 100%|██████████| 1/1 [00:01<00:00,  1.67s/it]delta=5, layers1(bsz=1): 100%|██████████| 1/1 [00:01<00:00,  1.67s/it]
+[Info] Saved raw benchmark data to /inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-speedtest/ffa-q2fp8-threshold/plot/attn_kernel_v1210_fused_bsz_q2fp8_cudagraph/NVIDIA-H100-80GB-HBM3_80GB/delta5.0_layers1_BS128_SBS128_bsz1_262144/raw/layer_layers_1_Tmax256k_Hq24_Hkv8_D128_Dv128_BS128_SBS128_delta5_fp16_nwT4nsT2_nw14ns13_nw24ns23_step262144_it300_wu50_bsz1_cudagraph_replay.json
+[Result] Layers 1 | bsz=1 | T=256k | BS=128 SBS=128 delta=5.0 | Q2=0.284 ms, Q2_CG=0.279 ms, Flash=0.354 ms, Speedup=1.25x, Speedup_CG=1.27x
+[Run] dtype=fp16 bsz=1 BS=128 SBS=128 delta=5 nwT=4 nsT=2 nw1=4 ns1=3 nw2=8 ns2=2
+[Info] Using GPU[0]: NVIDIA H100 80GB HBM3 (80GB)
+[Info] Loaded data for layer_1
+[Info] Layers=[1], bsz=1, Hq=24, Hkv=8, T_full=262144, K=128, V=128
+delta=5, layers1(bsz=1):   0%|          | 0/1 [00:00<?, ?it/s]delta=5, layers1(bsz=1): 100%|██████████| 1/1 [00:02<00:00,  2.30s/it]delta=5, layers1(bsz=1): 100%|██████████| 1/1 [00:02<00:00,  2.30s/it]
+[Info] Saved raw benchmark data to /inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-speedtest/ffa-q2fp8-threshold/plot/attn_kernel_v1210_fused_bsz_q2fp8_cudagraph/NVIDIA-H100-80GB-HBM3_80GB/delta5.0_layers1_BS128_SBS128_bsz1_262144/raw/layer_layers_1_Tmax256k_Hq24_Hkv8_D128_Dv128_BS128_SBS128_delta5_fp16_nwT4nsT2_nw14ns13_nw28ns22_step262144_it300_wu50_bsz1_cudagraph_replay.json
+[Result] Layers 1 | bsz=1 | T=256k | BS=128 SBS=128 delta=5.0 | Q2=0.295 ms, Q2_CG=0.289 ms, Flash=0.354 ms, Speedup=1.20x, Speedup_CG=1.22x
+[Run] dtype=fp16 bsz=1 BS=128 SBS=128 delta=5 nwT=4 nsT=2 nw1=4 ns1=3 nw2=8 ns2=3
+[Info] Using GPU[0]: NVIDIA H100 80GB HBM3 (80GB)
+[Info] Loaded data for layer_1
+[Info] Layers=[1], bsz=1, Hq=24, Hkv=8, T_full=262144, K=128, V=128
+delta=5, layers1(bsz=1):   0%|          | 0/1 [00:00<?, ?it/s]delta=5, layers1(bsz=1): 100%|██████████| 1/1 [00:02<00:00,  2.05s/it]delta=5, layers1(bsz=1): 100%|██████████| 1/1 [00:02<00:00,  2.05s/it]
+[Info] Saved raw benchmark data to /inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-speedtest/ffa-q2fp8-threshold/plot/attn_kernel_v1210_fused_bsz_q2fp8_cudagraph/NVIDIA-H100-80GB-HBM3_80GB/delta5.0_layers1_BS128_SBS128_bsz1_262144/raw/layer_layers_1_Tmax256k_Hq24_Hkv8_D128_Dv128_BS128_SBS128_delta5_fp16_nwT4nsT2_nw14ns13_nw28ns23_step262144_it300_wu50_bsz1_cudagraph_replay.json
+[Result] Layers 1 | bsz=1 | T=256k | BS=128 SBS=128 delta=5.0 | Q2=0.293 ms, Q2_CG=0.288 ms, Flash=0.355 ms, Speedup=1.21x, Speedup_CG=1.23x
+[Run] dtype=fp16 bsz=1 BS=128 SBS=128 delta=5 nwT=4 nsT=2 nw1=8 ns1=2 nw2=4 ns2=2
+[Info] Using GPU[0]: NVIDIA H100 80GB HBM3 (80GB)
+[Info] Loaded data for layer_1
+[Info] Layers=[1], bsz=1, Hq=24, Hkv=8, T_full=262144, K=128, V=128
+delta=5, layers1(bsz=1):   0%|          | 0/1 [00:00<?, ?it/s]delta=5, layers1(bsz=1): 100%|██████████| 1/1 [00:02<00:00,  2.51s/it]delta=5, layers1(bsz=1): 100%|██████████| 1/1 [00:02<00:00,  2.51s/it]
+[Info] Saved raw benchmark data to /inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-speedtest/ffa-q2fp8-threshold/plot/attn_kernel_v1210_fused_bsz_q2fp8_cudagraph/NVIDIA-H100-80GB-HBM3_80GB/delta5.0_layers1_BS128_SBS128_bsz1_262144/raw/layer_layers_1_Tmax256k_Hq24_Hkv8_D128_Dv128_BS128_SBS128_delta5_fp16_nwT4nsT2_nw18ns12_nw24ns22_step262144_it300_wu50_bsz1_cudagraph_replay.json
+[Result] Layers 1 | bsz=1 | T=256k | BS=128 SBS=128 delta=5.0 | Q2=0.321 ms, Q2_CG=0.308 ms, Flash=0.355 ms, Speedup=1.10x, Speedup_CG=1.15x
+[Run] dtype=fp16 bsz=1 BS=128 SBS=128 delta=5 nwT=4 nsT=2 nw1=8 ns1=2 nw2=4 ns2=3
+[Info] Using GPU[0]: NVIDIA H100 80GB HBM3 (80GB)
+[Info] Loaded data for layer_1
+[Info] Layers=[1], bsz=1, Hq=24, Hkv=8, T_full=262144, K=128, V=128
+delta=5, layers1(bsz=1):   0%|          | 0/1 [00:00<?, ?it/s]delta=5, layers1(bsz=1): 100%|██████████| 1/1 [00:02<00:00,  2.12s/it]delta=5, layers1(bsz=1): 100%|██████████| 1/1 [00:02<00:00,  2.12s/it]
+[Info] Saved raw benchmark data to /inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-speedtest/ffa-q2fp8-threshold/plot/attn_kernel_v1210_fused_bsz_q2fp8_cudagraph/NVIDIA-H100-80GB-HBM3_80GB/delta5.0_layers1_BS128_SBS128_bsz1_262144/raw/layer_layers_1_Tmax256k_Hq24_Hkv8_D128_Dv128_BS128_SBS128_delta5_fp16_nwT4nsT2_nw18ns12_nw24ns23_step262144_it300_wu50_bsz1_cudagraph_replay.json
+[Result] Layers 1 | bsz=1 | T=256k | BS=128 SBS=128 delta=5.0 | Q2=0.318 ms, Q2_CG=0.308 ms, Flash=0.354 ms, Speedup=1.11x, Speedup_CG=1.15x
+[Run] dtype=fp16 bsz=1 BS=128 SBS=128 delta=5 nwT=4 nsT=2 nw1=8 ns1=2 nw2=8 ns2=2
+[Info] Using GPU[0]: NVIDIA H100 80GB HBM3 (80GB)
+[Info] Loaded data for layer_1
+[Info] Layers=[1], bsz=1, Hq=24, Hkv=8, T_full=262144, K=128, V=128
+delta=5, layers1(bsz=1):   0%|          | 0/1 [00:00<?, ?it/s]delta=5, layers1(bsz=1): 100%|██████████| 1/1 [00:02<00:00,  2.08s/it]delta=5, layers1(bsz=1): 100%|██████████| 1/1 [00:02<00:00,  2.08s/it]
+[Info] Saved raw benchmark data to /inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-speedtest/ffa-q2fp8-threshold/plot/attn_kernel_v1210_fused_bsz_q2fp8_cudagraph/NVIDIA-H100-80GB-HBM3_80GB/delta5.0_layers1_BS128_SBS128_bsz1_262144/raw/layer_layers_1_Tmax256k_Hq24_Hkv8_D128_Dv128_BS128_SBS128_delta5_fp16_nwT4nsT2_nw18ns12_nw28ns22_step262144_it300_wu50_bsz1_cudagraph_replay.json
+[Result] Layers 1 | bsz=1 | T=256k | BS=128 SBS=128 delta=5.0 | Q2=0.327 ms, Q2_CG=0.315 ms, Flash=0.354 ms, Speedup=1.08x, Speedup_CG=1.12x
+[Run] dtype=fp16 bsz=1 BS=128 SBS=128 delta=5 nwT=4 nsT=2 nw1=8 ns1=2 nw2=8 ns2=3
+[Info] Using GPU[0]: NVIDIA H100 80GB HBM3 (80GB)
+[Info] Loaded data for layer_1
+[Info] Layers=[1], bsz=1, Hq=24, Hkv=8, T_full=262144, K=128, V=128
+delta=5, layers1(bsz=1):   0%|          | 0/1 [00:00<?, ?it/s]delta=5, layers1(bsz=1): 100%|██████████| 1/1 [00:02<00:00,  2.10s/it]delta=5, layers1(bsz=1): 100%|██████████| 1/1 [00:02<00:00,  2.10s/it]
+[Info] Saved raw benchmark data to /inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-speedtest/ffa-q2fp8-threshold/plot/attn_kernel_v1210_fused_bsz_q2fp8_cudagraph/NVIDIA-H100-80GB-HBM3_80GB/delta5.0_layers1_BS128_SBS128_bsz1_262144/raw/layer_layers_1_Tmax256k_Hq24_Hkv8_D128_Dv128_BS128_SBS128_delta5_fp16_nwT4nsT2_nw18ns12_nw28ns23_step262144_it300_wu50_bsz1_cudagraph_replay.json
+[Result] Layers 1 | bsz=1 | T=256k | BS=128 SBS=128 delta=5.0 | Q2=0.329 ms, Q2_CG=0.316 ms, Flash=0.354 ms, Speedup=1.08x, Speedup_CG=1.12x
+[Run] dtype=fp16 bsz=1 BS=128 SBS=128 delta=5 nwT=4 nsT=2 nw1=8 ns1=3 nw2=4 ns2=2
+[Info] Using GPU[0]: NVIDIA H100 80GB HBM3 (80GB)
+[Info] Loaded data for layer_1
+[Info] Layers=[1], bsz=1, Hq=24, Hkv=8, T_full=262144, K=128, V=128
+delta=5, layers1(bsz=1):   0%|          | 0/1 [00:00<?, ?it/s]delta=5, layers1(bsz=1): 100%|██████████| 1/1 [00:02<00:00,  2.41s/it]delta=5, layers1(bsz=1): 100%|██████████| 1/1 [00:02<00:00,  2.41s/it]
+[Info] Saved raw benchmark data to /inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-speedtest/ffa-q2fp8-threshold/plot/attn_kernel_v1210_fused_bsz_q2fp8_cudagraph/NVIDIA-H100-80GB-HBM3_80GB/delta5.0_layers1_BS128_SBS128_bsz1_262144/raw/layer_layers_1_Tmax256k_Hq24_Hkv8_D128_Dv128_BS128_SBS128_delta5_fp16_nwT4nsT2_nw18ns13_nw24ns22_step262144_it300_wu50_bsz1_cudagraph_replay.json
+[Result] Layers 1 | bsz=1 | T=256k | BS=128 SBS=128 delta=5.0 | Q2=0.321 ms, Q2_CG=0.307 ms, Flash=0.354 ms, Speedup=1.10x, Speedup_CG=1.15x
+[Run] dtype=fp16 bsz=1 BS=128 SBS=128 delta=5 nwT=4 nsT=2 nw1=8 ns1=3 nw2=4 ns2=3
+[Info] Using GPU[0]: NVIDIA H100 80GB HBM3 (80GB)
+[Info] Loaded data for layer_1
+[Info] Layers=[1], bsz=1, Hq=24, Hkv=8, T_full=262144, K=128, V=128
+delta=5, layers1(bsz=1):   0%|          | 0/1 [00:00<?, ?it/s]delta=5, layers1(bsz=1): 100%|██████████| 1/1 [00:01<00:00,  1.82s/it]delta=5, layers1(bsz=1): 100%|██████████| 1/1 [00:01<00:00,  1.82s/it]
+[Info] Saved raw benchmark data to /inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-speedtest/ffa-q2fp8-threshold/plot/attn_kernel_v1210_fused_bsz_q2fp8_cudagraph/NVIDIA-H100-80GB-HBM3_80GB/delta5.0_layers1_BS128_SBS128_bsz1_262144/raw/layer_layers_1_Tmax256k_Hq24_Hkv8_D128_Dv128_BS128_SBS128_delta5_fp16_nwT4nsT2_nw18ns13_nw24ns23_step262144_it300_wu50_bsz1_cudagraph_replay.json
+[Result] Layers 1 | bsz=1 | T=256k | BS=128 SBS=128 delta=5.0 | Q2=0.318 ms, Q2_CG=0.307 ms, Flash=0.354 ms, Speedup=1.11x, Speedup_CG=1.15x
+[Run] dtype=fp16 bsz=1 BS=128 SBS=128 delta=5 nwT=4 nsT=2 nw1=8 ns1=3 nw2=8 ns2=2
+[Info] Using GPU[0]: NVIDIA H100 80GB HBM3 (80GB)
+[Info] Loaded data for layer_1
+[Info] Layers=[1], bsz=1, Hq=24, Hkv=8, T_full=262144, K=128, V=128
+delta=5, layers1(bsz=1):   0%|          | 0/1 [00:00<?, ?it/s]delta=5, layers1(bsz=1): 100%|██████████| 1/1 [00:01<00:00,  1.97s/it]delta=5, layers1(bsz=1): 100%|██████████| 1/1 [00:01<00:00,  1.97s/it]
+[Info] Saved raw benchmark data to /inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-speedtest/ffa-q2fp8-threshold/plot/attn_kernel_v1210_fused_bsz_q2fp8_cudagraph/NVIDIA-H100-80GB-HBM3_80GB/delta5.0_layers1_BS128_SBS128_bsz1_262144/raw/layer_layers_1_Tmax256k_Hq24_Hkv8_D128_Dv128_BS128_SBS128_delta5_fp16_nwT4nsT2_nw18ns13_nw28ns22_step262144_it300_wu50_bsz1_cudagraph_replay.json
+[Result] Layers 1 | bsz=1 | T=256k | BS=128 SBS=128 delta=5.0 | Q2=0.327 ms, Q2_CG=0.316 ms, Flash=0.354 ms, Speedup=1.08x, Speedup_CG=1.12x
+[Run] dtype=fp16 bsz=1 BS=128 SBS=128 delta=5 nwT=4 nsT=2 nw1=8 ns1=3 nw2=8 ns2=3
+[Info] Using GPU[0]: NVIDIA H100 80GB HBM3 (80GB)
+[Info] Loaded data for layer_1
+[Info] Layers=[1], bsz=1, Hq=24, Hkv=8, T_full=262144, K=128, V=128
+delta=5, layers1(bsz=1):   0%|          | 0/1 [00:00<?, ?it/s]delta=5, layers1(bsz=1): 100%|██████████| 1/1 [00:01<00:00,  1.94s/it]delta=5, layers1(bsz=1): 100%|██████████| 1/1 [00:01<00:00,  1.94s/it]
+[Info] Saved raw benchmark data to /inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-speedtest/ffa-q2fp8-threshold/plot/attn_kernel_v1210_fused_bsz_q2fp8_cudagraph/NVIDIA-H100-80GB-HBM3_80GB/delta5.0_layers1_BS128_SBS128_bsz1_262144/raw/layer_layers_1_Tmax256k_Hq24_Hkv8_D128_Dv128_BS128_SBS128_delta5_fp16_nwT4nsT2_nw18ns13_nw28ns23_step262144_it300_wu50_bsz1_cudagraph_replay.json
+[Result] Layers 1 | bsz=1 | T=256k | BS=128 SBS=128 delta=5.0 | Q2=0.327 ms, Q2_CG=0.316 ms, Flash=0.354 ms, Speedup=1.08x, Speedup_CG=1.12x
+[Run] dtype=fp16 bsz=1 BS=128 SBS=128 delta=5 nwT=4 nsT=3 nw1=4 ns1=2 nw2=4 ns2=2
+[Info] Using GPU[0]: NVIDIA H100 80GB HBM3 (80GB)
+[Info] Loaded data for layer_1
+[Info] Layers=[1], bsz=1, Hq=24, Hkv=8, T_full=262144, K=128, V=128
+delta=5, layers1(bsz=1):   0%|          | 0/1 [00:00<?, ?it/s]delta=5, layers1(bsz=1): 100%|██████████| 1/1 [00:01<00:00,  1.94s/it]delta=5, layers1(bsz=1): 100%|██████████| 1/1 [00:01<00:00,  1.94s/it]
+[Info] Saved raw benchmark data to /inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-speedtest/ffa-q2fp8-threshold/plot/attn_kernel_v1210_fused_bsz_q2fp8_cudagraph/NVIDIA-H100-80GB-HBM3_80GB/delta5.0_layers1_BS128_SBS128_bsz1_262144/raw/layer_layers_1_Tmax256k_Hq24_Hkv8_D128_Dv128_BS128_SBS128_delta5_fp16_nwT4nsT3_nw14ns12_nw24ns22_step262144_it300_wu50_bsz1_cudagraph_replay.json
+[Result] Layers 1 | bsz=1 | T=256k | BS=128 SBS=128 delta=5.0 | Q2=0.285 ms, Q2_CG=0.275 ms, Flash=0.355 ms, Speedup=1.25x, Speedup_CG=1.29x
+[Run] dtype=fp16 bsz=1 BS=128 SBS=128 delta=5 nwT=4 nsT=3 nw1=4 ns1=2 nw2=4 ns2=3
+[Info] Using GPU[0]: NVIDIA H100 80GB HBM3 (80GB)
+[Info] Loaded data for layer_1
+[Info] Layers=[1], bsz=1, Hq=24, Hkv=8, T_full=262144, K=128, V=128
+delta=5, layers1(bsz=1):   0%|          | 0/1 [00:00<?, ?it/s]delta=5, layers1(bsz=1): 100%|██████████| 1/1 [00:02<00:00,  2.12s/it]delta=5, layers1(bsz=1): 100%|██████████| 1/1 [00:02<00:00,  2.12s/it]
+[Info] Saved raw benchmark data to /inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-speedtest/ffa-q2fp8-threshold/plot/attn_kernel_v1210_fused_bsz_q2fp8_cudagraph/NVIDIA-H100-80GB-HBM3_80GB/delta5.0_layers1_BS128_SBS128_bsz1_262144/raw/layer_layers_1_Tmax256k_Hq24_Hkv8_D128_Dv128_BS128_SBS128_delta5_fp16_nwT4nsT3_nw14ns12_nw24ns23_step262144_it300_wu50_bsz1_cudagraph_replay.json
+[Result] Layers 1 | bsz=1 | T=256k | BS=128 SBS=128 delta=5.0 | Q2=0.285 ms, Q2_CG=0.281 ms, Flash=0.354 ms, Speedup=1.24x, Speedup_CG=1.26x
+[Run] dtype=fp16 bsz=1 BS=128 SBS=128 delta=5 nwT=4 nsT=3 nw1=4 ns1=2 nw2=8 ns2=2
+[Info] Using GPU[0]: NVIDIA H100 80GB HBM3 (80GB)
+[Info] Loaded data for layer_1
+[Info] Layers=[1], bsz=1, Hq=24, Hkv=8, T_full=262144, K=128, V=128
+delta=5, layers1(bsz=1):   0%|          | 0/1 [00:00<?, ?it/s]delta=5, layers1(bsz=1): 100%|██████████| 1/1 [00:02<00:00,  2.25s/it]delta=5, layers1(bsz=1): 100%|██████████| 1/1 [00:02<00:00,  2.25s/it]
+[Info] Saved raw benchmark data to /inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-speedtest/ffa-q2fp8-threshold/plot/attn_kernel_v1210_fused_bsz_q2fp8_cudagraph/NVIDIA-H100-80GB-HBM3_80GB/delta5.0_layers1_BS128_SBS128_bsz1_262144/raw/layer_layers_1_Tmax256k_Hq24_Hkv8_D128_Dv128_BS128_SBS128_delta5_fp16_nwT4nsT3_nw14ns12_nw28ns22_step262144_it300_wu50_bsz1_cudagraph_replay.json
+[Result] Layers 1 | bsz=1 | T=256k | BS=128 SBS=128 delta=5.0 | Q2=0.292 ms, Q2_CG=0.289 ms, Flash=0.354 ms, Speedup=1.21x, Speedup_CG=1.23x
+[Run] dtype=fp16 bsz=1 BS=128 SBS=128 delta=5 nwT=4 nsT=3 nw1=4 ns1=2 nw2=8 ns2=3
+[Info] Using GPU[0]: NVIDIA H100 80GB HBM3 (80GB)
+[Info] Loaded data for layer_1
+[Info] Layers=[1], bsz=1, Hq=24, Hkv=8, T_full=262144, K=128, V=128
+delta=5, layers1(bsz=1):   0%|          | 0/1 [00:00<?, ?it/s]delta=5, layers1(bsz=1): 100%|██████████| 1/1 [00:01<00:00,  1.83s/it]delta=5, layers1(bsz=1): 100%|██████████| 1/1 [00:01<00:00,  1.83s/it]
+[Info] Saved raw benchmark data to /inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-speedtest/ffa-q2fp8-threshold/plot/attn_kernel_v1210_fused_bsz_q2fp8_cudagraph/NVIDIA-H100-80GB-HBM3_80GB/delta5.0_layers1_BS128_SBS128_bsz1_262144/raw/layer_layers_1_Tmax256k_Hq24_Hkv8_D128_Dv128_BS128_SBS128_delta5_fp16_nwT4nsT3_nw14ns12_nw28ns23_step262144_it300_wu50_bsz1_cudagraph_replay.json
+[Result] Layers 1 | bsz=1 | T=256k | BS=128 SBS=128 delta=5.0 | Q2=0.294 ms, Q2_CG=0.285 ms, Flash=0.354 ms, Speedup=1.20x, Speedup_CG=1.25x
+[Run] dtype=fp16 bsz=1 BS=128 SBS=128 delta=5 nwT=4 nsT=3 nw1=4 ns1=3 nw2=4 ns2=2
+[Info] Using GPU[0]: NVIDIA H100 80GB HBM3 (80GB)
+[Info] Loaded data for layer_1
+[Info] Layers=[1], bsz=1, Hq=24, Hkv=8, T_full=262144, K=128, V=128
+delta=5, layers1(bsz=1):   0%|          | 0/1 [00:00<?, ?it/s]delta=5, layers1(bsz=1): 100%|██████████| 1/1 [00:01<00:00,  1.74s/it]delta=5, layers1(bsz=1): 100%|██████████| 1/1 [00:01<00:00,  1.74s/it]
+[Info] Saved raw benchmark data to /inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-speedtest/ffa-q2fp8-threshold/plot/attn_kernel_v1210_fused_bsz_q2fp8_cudagraph/NVIDIA-H100-80GB-HBM3_80GB/delta5.0_layers1_BS128_SBS128_bsz1_262144/raw/layer_layers_1_Tmax256k_Hq24_Hkv8_D128_Dv128_BS128_SBS128_delta5_fp16_nwT4nsT3_nw14ns13_nw24ns22_step262144_it300_wu50_bsz1_cudagraph_replay.json
+[Result] Layers 1 | bsz=1 | T=256k | BS=128 SBS=128 delta=5.0 | Q2=0.284 ms, Q2_CG=0.278 ms, Flash=0.354 ms, Speedup=1.25x, Speedup_CG=1.27x
+[Run] dtype=fp16 bsz=1 BS=128 SBS=128 delta=5 nwT=4 nsT=3 nw1=4 ns1=3 nw2=4 ns2=3
+[Info] Using GPU[0]: NVIDIA H100 80GB HBM3 (80GB)
+[Info] Loaded data for layer_1
+[Info] Layers=[1], bsz=1, Hq=24, Hkv=8, T_full=262144, K=128, V=128
+delta=5, layers1(bsz=1):   0%|          | 0/1 [00:00<?, ?it/s]delta=5, layers1(bsz=1): 100%|██████████| 1/1 [00:01<00:00,  1.65s/it]delta=5, layers1(bsz=1): 100%|██████████| 1/1 [00:01<00:00,  1.65s/it]
+[Info] Saved raw benchmark data to /inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-speedtest/ffa-q2fp8-threshold/plot/attn_kernel_v1210_fused_bsz_q2fp8_cudagraph/NVIDIA-H100-80GB-HBM3_80GB/delta5.0_layers1_BS128_SBS128_bsz1_262144/raw/layer_layers_1_Tmax256k_Hq24_Hkv8_D128_Dv128_BS128_SBS128_delta5_fp16_nwT4nsT3_nw14ns13_nw24ns23_step262144_it300_wu50_bsz1_cudagraph_replay.json
+[Result] Layers 1 | bsz=1 | T=256k | BS=128 SBS=128 delta=5.0 | Q2=0.284 ms, Q2_CG=0.278 ms, Flash=0.355 ms, Speedup=1.25x, Speedup_CG=1.28x
+[Run] dtype=fp16 bsz=1 BS=128 SBS=128 delta=5 nwT=4 nsT=3 nw1=4 ns1=3 nw2=8 ns2=2
+[Info] Using GPU[0]: NVIDIA H100 80GB HBM3 (80GB)
+[Info] Loaded data for layer_1
+[Info] Layers=[1], bsz=1, Hq=24, Hkv=8, T_full=262144, K=128, V=128
+delta=5, layers1(bsz=1):   0%|          | 0/1 [00:00<?, ?it/s]delta=5, layers1(bsz=1): 100%|██████████| 1/1 [00:01<00:00,  1.96s/it]delta=5, layers1(bsz=1): 100%|██████████| 1/1 [00:01<00:00,  1.96s/it]
+[Info] Saved raw benchmark data to /inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-speedtest/ffa-q2fp8-threshold/plot/attn_kernel_v1210_fused_bsz_q2fp8_cudagraph/NVIDIA-H100-80GB-HBM3_80GB/delta5.0_layers1_BS128_SBS128_bsz1_262144/raw/layer_layers_1_Tmax256k_Hq24_Hkv8_D128_Dv128_BS128_SBS128_delta5_fp16_nwT4nsT3_nw14ns13_nw28ns22_step262144_it300_wu50_bsz1_cudagraph_replay.json
+[Result] Layers 1 | bsz=1 | T=256k | BS=128 SBS=128 delta=5.0 | Q2=0.293 ms, Q2_CG=0.290 ms, Flash=0.355 ms, Speedup=1.21x, Speedup_CG=1.22x
+[Run] dtype=fp16 bsz=1 BS=128 SBS=128 delta=5 nwT=4 nsT=3 nw1=4 ns1=3 nw2=8 ns2=3
+[Info] Using GPU[0]: NVIDIA H100 80GB HBM3 (80GB)
+[Info] Loaded data for layer_1
+[Info] Layers=[1], bsz=1, Hq=24, Hkv=8, T_full=262144, K=128, V=128
+delta=5, layers1(bsz=1):   0%|          | 0/1 [00:00<?, ?it/s]delta=5, layers1(bsz=1): 100%|██████████| 1/1 [00:02<00:00,  2.29s/it]delta=5, layers1(bsz=1): 100%|██████████| 1/1 [00:02<00:00,  2.30s/it]
+[Info] Saved raw benchmark data to /inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-speedtest/ffa-q2fp8-threshold/plot/attn_kernel_v1210_fused_bsz_q2fp8_cudagraph/NVIDIA-H100-80GB-HBM3_80GB/delta5.0_layers1_BS128_SBS128_bsz1_262144/raw/layer_layers_1_Tmax256k_Hq24_Hkv8_D128_Dv128_BS128_SBS128_delta5_fp16_nwT4nsT3_nw14ns13_nw28ns23_step262144_it300_wu50_bsz1_cudagraph_replay.json
+[Result] Layers 1 | bsz=1 | T=256k | BS=128 SBS=128 delta=5.0 | Q2=0.291 ms, Q2_CG=0.289 ms, Flash=0.354 ms, Speedup=1.22x, Speedup_CG=1.23x
+[Run] dtype=fp16 bsz=1 BS=128 SBS=128 delta=5 nwT=4 nsT=3 nw1=8 ns1=2 nw2=4 ns2=2
+[Info] Using GPU[0]: NVIDIA H100 80GB HBM3 (80GB)
+[Info] Loaded data for layer_1
+[Info] Layers=[1], bsz=1, Hq=24, Hkv=8, T_full=262144, K=128, V=128
+delta=5, layers1(bsz=1):   0%|          | 0/1 [00:00<?, ?it/s]delta=5, layers1(bsz=1): 100%|██████████| 1/1 [00:01<00:00,  1.93s/it]delta=5, layers1(bsz=1): 100%|██████████| 1/1 [00:01<00:00,  1.93s/it]
+[Info] Saved raw benchmark data to /inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-speedtest/ffa-q2fp8-threshold/plot/attn_kernel_v1210_fused_bsz_q2fp8_cudagraph/NVIDIA-H100-80GB-HBM3_80GB/delta5.0_layers1_BS128_SBS128_bsz1_262144/raw/layer_layers_1_Tmax256k_Hq24_Hkv8_D128_Dv128_BS128_SBS128_delta5_fp16_nwT4nsT3_nw18ns12_nw24ns22_step262144_it300_wu50_bsz1_cudagraph_replay.json
+[Result] Layers 1 | bsz=1 | T=256k | BS=128 SBS=128 delta=5.0 | Q2=0.322 ms, Q2_CG=0.314 ms, Flash=0.354 ms, Speedup=1.10x, Speedup_CG=1.13x
+[Run] dtype=fp16 bsz=1 BS=128 SBS=128 delta=5 nwT=4 nsT=3 nw1=8 ns1=2 nw2=4 ns2=3
+[Info] Using GPU[0]: NVIDIA H100 80GB HBM3 (80GB)
+[Info] Loaded data for layer_1
+[Info] Layers=[1], bsz=1, Hq=24, Hkv=8, T_full=262144, K=128, V=128
+delta=5, layers1(bsz=1):   0%|          | 0/1 [00:00<?, ?it/s]delta=5, layers1(bsz=1): 100%|██████████| 1/1 [00:01<00:00,  1.77s/it]delta=5, layers1(bsz=1): 100%|██████████| 1/1 [00:01<00:00,  1.77s/it]
+[Info] Saved raw benchmark data to /inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-speedtest/ffa-q2fp8-threshold/plot/attn_kernel_v1210_fused_bsz_q2fp8_cudagraph/NVIDIA-H100-80GB-HBM3_80GB/delta5.0_layers1_BS128_SBS128_bsz1_262144/raw/layer_layers_1_Tmax256k_Hq24_Hkv8_D128_Dv128_BS128_SBS128_delta5_fp16_nwT4nsT3_nw18ns12_nw24ns23_step262144_it300_wu50_bsz1_cudagraph_replay.json
+[Result] Layers 1 | bsz=1 | T=256k | BS=128 SBS=128 delta=5.0 | Q2=0.322 ms, Q2_CG=0.314 ms, Flash=0.355 ms, Speedup=1.10x, Speedup_CG=1.13x
+[Run] dtype=fp16 bsz=1 BS=128 SBS=128 delta=5 nwT=4 nsT=3 nw1=8 ns1=2 nw2=8 ns2=2
+[Info] Using GPU[0]: NVIDIA H100 80GB HBM3 (80GB)
+[Info] Loaded data for layer_1
+[Info] Layers=[1], bsz=1, Hq=24, Hkv=8, T_full=262144, K=128, V=128
+delta=5, layers1(bsz=1):   0%|          | 0/1 [00:00<?, ?it/s]delta=5, layers1(bsz=1): 100%|██████████| 1/1 [00:01<00:00,  1.70s/it]delta=5, layers1(bsz=1): 100%|██████████| 1/1 [00:01<00:00,  1.70s/it]
+[Info] Saved raw benchmark data to /inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-speedtest/ffa-q2fp8-threshold/plot/attn_kernel_v1210_fused_bsz_q2fp8_cudagraph/NVIDIA-H100-80GB-HBM3_80GB/delta5.0_layers1_BS128_SBS128_bsz1_262144/raw/layer_layers_1_Tmax256k_Hq24_Hkv8_D128_Dv128_BS128_SBS128_delta5_fp16_nwT4nsT3_nw18ns12_nw28ns22_step262144_it300_wu50_bsz1_cudagraph_replay.json
+[Result] Layers 1 | bsz=1 | T=256k | BS=128 SBS=128 delta=5.0 | Q2=0.327 ms, Q2_CG=0.315 ms, Flash=0.354 ms, Speedup=1.08x, Speedup_CG=1.12x
+[Run] dtype=fp16 bsz=1 BS=128 SBS=128 delta=5 nwT=4 nsT=3 nw1=8 ns1=2 nw2=8 ns2=3
+[Info] Using GPU[0]: NVIDIA H100 80GB HBM3 (80GB)
+[Info] Loaded data for layer_1
+[Info] Layers=[1], bsz=1, Hq=24, Hkv=8, T_full=262144, K=128, V=128
+delta=5, layers1(bsz=1):   0%|          | 0/1 [00:00<?, ?it/s]delta=5, layers1(bsz=1): 100%|██████████| 1/1 [00:01<00:00,  1.79s/it]delta=5, layers1(bsz=1): 100%|██████████| 1/1 [00:01<00:00,  1.79s/it]
+[Info] Saved raw benchmark data to /inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-speedtest/ffa-q2fp8-threshold/plot/attn_kernel_v1210_fused_bsz_q2fp8_cudagraph/NVIDIA-H100-80GB-HBM3_80GB/delta5.0_layers1_BS128_SBS128_bsz1_262144/raw/layer_layers_1_Tmax256k_Hq24_Hkv8_D128_Dv128_BS128_SBS128_delta5_fp16_nwT4nsT3_nw18ns12_nw28ns23_step262144_it300_wu50_bsz1_cudagraph_replay.json
+[Result] Layers 1 | bsz=1 | T=256k | BS=128 SBS=128 delta=5.0 | Q2=0.329 ms, Q2_CG=0.316 ms, Flash=0.355 ms, Speedup=1.08x, Speedup_CG=1.12x
+[Run] dtype=fp16 bsz=1 BS=128 SBS=128 delta=5 nwT=4 nsT=3 nw1=8 ns1=3 nw2=4 ns2=2
+[Info] Using GPU[0]: NVIDIA H100 80GB HBM3 (80GB)
+[Info] Loaded data for layer_1
+[Info] Layers=[1], bsz=1, Hq=24, Hkv=8, T_full=262144, K=128, V=128
+delta=5, layers1(bsz=1):   0%|          | 0/1 [00:00<?, ?it/s]delta=5, layers1(bsz=1): 100%|██████████| 1/1 [00:01<00:00,  1.75s/it]delta=5, layers1(bsz=1): 100%|██████████| 1/1 [00:01<00:00,  1.75s/it]
+[Info] Saved raw benchmark data to /inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-speedtest/ffa-q2fp8-threshold/plot/attn_kernel_v1210_fused_bsz_q2fp8_cudagraph/NVIDIA-H100-80GB-HBM3_80GB/delta5.0_layers1_BS128_SBS128_bsz1_262144/raw/layer_layers_1_Tmax256k_Hq24_Hkv8_D128_Dv128_BS128_SBS128_delta5_fp16_nwT4nsT3_nw18ns13_nw24ns22_step262144_it300_wu50_bsz1_cudagraph_replay.json
+[Result] Layers 1 | bsz=1 | T=256k | BS=128 SBS=128 delta=5.0 | Q2=0.322 ms, Q2_CG=0.309 ms, Flash=0.354 ms, Speedup=1.10x, Speedup_CG=1.14x
+[Run] dtype=fp16 bsz=1 BS=128 SBS=128 delta=5 nwT=4 nsT=3 nw1=8 ns1=3 nw2=4 ns2=3
+[Info] Using GPU[0]: NVIDIA H100 80GB HBM3 (80GB)
+[Info] Loaded data for layer_1
+[Info] Layers=[1], bsz=1, Hq=24, Hkv=8, T_full=262144, K=128, V=128
+delta=5, layers1(bsz=1):   0%|          | 0/1 [00:00<?, ?it/s]delta=5, layers1(bsz=1): 100%|██████████| 1/1 [00:01<00:00,  1.81s/it]delta=5, layers1(bsz=1): 100%|██████████| 1/1 [00:01<00:00,  1.81s/it]
+[Info] Saved raw benchmark data to /inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-speedtest/ffa-q2fp8-threshold/plot/attn_kernel_v1210_fused_bsz_q2fp8_cudagraph/NVIDIA-H100-80GB-HBM3_80GB/delta5.0_layers1_BS128_SBS128_bsz1_262144/raw/layer_layers_1_Tmax256k_Hq24_Hkv8_D128_Dv128_BS128_SBS128_delta5_fp16_nwT4nsT3_nw18ns13_nw24ns23_step262144_it300_wu50_bsz1_cudagraph_replay.json
+[Result] Layers 1 | bsz=1 | T=256k | BS=128 SBS=128 delta=5.0 | Q2=0.318 ms, Q2_CG=0.307 ms, Flash=0.354 ms, Speedup=1.11x, Speedup_CG=1.15x
+[Run] dtype=fp16 bsz=1 BS=128 SBS=128 delta=5 nwT=4 nsT=3 nw1=8 ns1=3 nw2=8 ns2=2
+[Info] Using GPU[0]: NVIDIA H100 80GB HBM3 (80GB)
+[Info] Loaded data for layer_1
+[Info] Layers=[1], bsz=1, Hq=24, Hkv=8, T_full=262144, K=128, V=128
+delta=5, layers1(bsz=1):   0%|          | 0/1 [00:00<?, ?it/s]delta=5, layers1(bsz=1): 100%|██████████| 1/1 [00:01<00:00,  1.82s/it]delta=5, layers1(bsz=1): 100%|██████████| 1/1 [00:01<00:00,  1.82s/it]
+[Info] Saved raw benchmark data to /inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-speedtest/ffa-q2fp8-threshold/plot/attn_kernel_v1210_fused_bsz_q2fp8_cudagraph/NVIDIA-H100-80GB-HBM3_80GB/delta5.0_layers1_BS128_SBS128_bsz1_262144/raw/layer_layers_1_Tmax256k_Hq24_Hkv8_D128_Dv128_BS128_SBS128_delta5_fp16_nwT4nsT3_nw18ns13_nw28ns22_step262144_it300_wu50_bsz1_cudagraph_replay.json
+[Result] Layers 1 | bsz=1 | T=256k | BS=128 SBS=128 delta=5.0 | Q2=0.328 ms, Q2_CG=0.315 ms, Flash=0.355 ms, Speedup=1.08x, Speedup_CG=1.13x
+[Run] dtype=fp16 bsz=1 BS=128 SBS=128 delta=5 nwT=4 nsT=3 nw1=8 ns1=3 nw2=8 ns2=3
+[Info] Using GPU[0]: NVIDIA H100 80GB HBM3 (80GB)
+[Info] Loaded data for layer_1
+[Info] Layers=[1], bsz=1, Hq=24, Hkv=8, T_full=262144, K=128, V=128
+delta=5, layers1(bsz=1):   0%|          | 0/1 [00:00<?, ?it/s]delta=5, layers1(bsz=1): 100%|██████████| 1/1 [00:01<00:00,  1.92s/it]delta=5, layers1(bsz=1): 100%|██████████| 1/1 [00:01<00:00,  1.92s/it]
+[Info] Saved raw benchmark data to /inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-speedtest/ffa-q2fp8-threshold/plot/attn_kernel_v1210_fused_bsz_q2fp8_cudagraph/NVIDIA-H100-80GB-HBM3_80GB/delta5.0_layers1_BS128_SBS128_bsz1_262144/raw/layer_layers_1_Tmax256k_Hq24_Hkv8_D128_Dv128_BS128_SBS128_delta5_fp16_nwT4nsT3_nw18ns13_nw28ns23_step262144_it300_wu50_bsz1_cudagraph_replay.json
+[Result] Layers 1 | bsz=1 | T=256k | BS=128 SBS=128 delta=5.0 | Q2=0.329 ms, Q2_CG=0.315 ms, Flash=0.355 ms, Speedup=1.08x, Speedup_CG=1.13x
+[Run] dtype=fp16 bsz=1 BS=128 SBS=128 delta=5 nwT=8 nsT=2 nw1=4 ns1=2 nw2=4 ns2=2
+[Info] Using GPU[0]: NVIDIA H100 80GB HBM3 (80GB)
+[Info] Loaded data for layer_1
+[Info] Layers=[1], bsz=1, Hq=24, Hkv=8, T_full=262144, K=128, V=128
+delta=5, layers1(bsz=1):   0%|          | 0/1 [00:00<?, ?it/s]delta=5, layers1(bsz=1): 100%|██████████| 1/1 [00:01<00:00,  1.67s/it]delta=5, layers1(bsz=1): 100%|██████████| 1/1 [00:01<00:00,  1.67s/it]
+[Info] Saved raw benchmark data to /inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-speedtest/ffa-q2fp8-threshold/plot/attn_kernel_v1210_fused_bsz_q2fp8_cudagraph/NVIDIA-H100-80GB-HBM3_80GB/delta5.0_layers1_BS128_SBS128_bsz1_262144/raw/layer_layers_1_Tmax256k_Hq24_Hkv8_D128_Dv128_BS128_SBS128_delta5_fp16_nwT8nsT2_nw14ns12_nw24ns22_step262144_it300_wu50_bsz1_cudagraph_replay.json
+[Result] Layers 1 | bsz=1 | T=256k | BS=128 SBS=128 delta=5.0 | Q2=0.283 ms, Q2_CG=0.280 ms, Flash=0.354 ms, Speedup=1.25x, Speedup_CG=1.26x
+[Run] dtype=fp16 bsz=1 BS=128 SBS=128 delta=5 nwT=8 nsT=2 nw1=4 ns1=2 nw2=4 ns2=3
+[Info] Using GPU[0]: NVIDIA H100 80GB HBM3 (80GB)
+[Info] Loaded data for layer_1
+[Info] Layers=[1], bsz=1, Hq=24, Hkv=8, T_full=262144, K=128, V=128
+delta=5, layers1(bsz=1):   0%|          | 0/1 [00:00<?, ?it/s]delta=5, layers1(bsz=1): 100%|██████████| 1/1 [00:01<00:00,  1.67s/it]delta=5, layers1(bsz=1): 100%|██████████| 1/1 [00:01<00:00,  1.67s/it]
+[Info] Saved raw benchmark data to /inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-speedtest/ffa-q2fp8-threshold/plot/attn_kernel_v1210_fused_bsz_q2fp8_cudagraph/NVIDIA-H100-80GB-HBM3_80GB/delta5.0_layers1_BS128_SBS128_bsz1_262144/raw/layer_layers_1_Tmax256k_Hq24_Hkv8_D128_Dv128_BS128_SBS128_delta5_fp16_nwT8nsT2_nw14ns12_nw24ns23_step262144_it300_wu50_bsz1_cudagraph_replay.json
+[Result] Layers 1 | bsz=1 | T=256k | BS=128 SBS=128 delta=5.0 | Q2=0.285 ms, Q2_CG=0.277 ms, Flash=0.354 ms, Speedup=1.24x, Speedup_CG=1.28x
+[Run] dtype=fp16 bsz=1 BS=128 SBS=128 delta=5 nwT=8 nsT=2 nw1=4 ns1=2 nw2=8 ns2=2
+[Info] Using GPU[0]: NVIDIA H100 80GB HBM3 (80GB)
+[Info] Loaded data for layer_1
+[Info] Layers=[1], bsz=1, Hq=24, Hkv=8, T_full=262144, K=128, V=128
+delta=5, layers1(bsz=1):   0%|          | 0/1 [00:00<?, ?it/s]delta=5, layers1(bsz=1): 100%|██████████| 1/1 [00:01<00:00,  1.78s/it]delta=5, layers1(bsz=1): 100%|██████████| 1/1 [00:01<00:00,  1.78s/it]
+[Info] Saved raw benchmark data to /inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-speedtest/ffa-q2fp8-threshold/plot/attn_kernel_v1210_fused_bsz_q2fp8_cudagraph/NVIDIA-H100-80GB-HBM3_80GB/delta5.0_layers1_BS128_SBS128_bsz1_262144/raw/layer_layers_1_Tmax256k_Hq24_Hkv8_D128_Dv128_BS128_SBS128_delta5_fp16_nwT8nsT2_nw14ns12_nw28ns22_step262144_it300_wu50_bsz1_cudagraph_replay.json
+[Result] Layers 1 | bsz=1 | T=256k | BS=128 SBS=128 delta=5.0 | Q2=0.295 ms, Q2_CG=0.284 ms, Flash=0.355 ms, Speedup=1.20x, Speedup_CG=1.25x
+[Run] dtype=fp16 bsz=1 BS=128 SBS=128 delta=5 nwT=8 nsT=2 nw1=4 ns1=2 nw2=8 ns2=3
+[Info] Using GPU[0]: NVIDIA H100 80GB HBM3 (80GB)
+[Info] Loaded data for layer_1
+[Info] Layers=[1], bsz=1, Hq=24, Hkv=8, T_full=262144, K=128, V=128
+delta=5, layers1(bsz=1):   0%|          | 0/1 [00:00<?, ?it/s]delta=5, layers1(bsz=1): 100%|██████████| 1/1 [00:01<00:00,  1.85s/it]delta=5, layers1(bsz=1): 100%|██████████| 1/1 [00:01<00:00,  1.85s/it]
+[Info] Saved raw benchmark data to /inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-speedtest/ffa-q2fp8-threshold/plot/attn_kernel_v1210_fused_bsz_q2fp8_cudagraph/NVIDIA-H100-80GB-HBM3_80GB/delta5.0_layers1_BS128_SBS128_bsz1_262144/raw/layer_layers_1_Tmax256k_Hq24_Hkv8_D128_Dv128_BS128_SBS128_delta5_fp16_nwT8nsT2_nw14ns12_nw28ns23_step262144_it300_wu50_bsz1_cudagraph_replay.json
+[Result] Layers 1 | bsz=1 | T=256k | BS=128 SBS=128 delta=5.0 | Q2=0.291 ms, Q2_CG=0.286 ms, Flash=0.354 ms, Speedup=1.22x, Speedup_CG=1.24x
+[Run] dtype=fp16 bsz=1 BS=128 SBS=128 delta=5 nwT=8 nsT=2 nw1=4 ns1=3 nw2=4 ns2=2
+[Info] Using GPU[0]: NVIDIA H100 80GB HBM3 (80GB)
+[Info] Loaded data for layer_1
+[Info] Layers=[1], bsz=1, Hq=24, Hkv=8, T_full=262144, K=128, V=128
+delta=5, layers1(bsz=1):   0%|          | 0/1 [00:00<?, ?it/s]delta=5, layers1(bsz=1): 100%|██████████| 1/1 [00:02<00:00,  2.14s/it]delta=5, layers1(bsz=1): 100%|██████████| 1/1 [00:02<00:00,  2.14s/it]
+[Info] Saved raw benchmark data to /inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-speedtest/ffa-q2fp8-threshold/plot/attn_kernel_v1210_fused_bsz_q2fp8_cudagraph/NVIDIA-H100-80GB-HBM3_80GB/delta5.0_layers1_BS128_SBS128_bsz1_262144/raw/layer_layers_1_Tmax256k_Hq24_Hkv8_D128_Dv128_BS128_SBS128_delta5_fp16_nwT8nsT2_nw14ns13_nw24ns22_step262144_it300_wu50_bsz1_cudagraph_replay.json
+[Result] Layers 1 | bsz=1 | T=256k | BS=128 SBS=128 delta=5.0 | Q2=0.283 ms, Q2_CG=0.281 ms, Flash=0.354 ms, Speedup=1.25x, Speedup_CG=1.26x
+[Run] dtype=fp16 bsz=1 BS=128 SBS=128 delta=5 nwT=8 nsT=2 nw1=4 ns1=3 nw2=4 ns2=3
+[Info] Using GPU[0]: NVIDIA H100 80GB HBM3 (80GB)
+[Info] Loaded data for layer_1
+[Info] Layers=[1], bsz=1, Hq=24, Hkv=8, T_full=262144, K=128, V=128
+delta=5, layers1(bsz=1):   0%|          | 0/1 [00:00<?, ?it/s]delta=5, layers1(bsz=1): 100%|██████████| 1/1 [00:01<00:00,  1.77s/it]delta=5, layers1(bsz=1): 100%|██████████| 1/1 [00:01<00:00,  1.77s/it]
+[Info] Saved raw benchmark data to /inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-speedtest/ffa-q2fp8-threshold/plot/attn_kernel_v1210_fused_bsz_q2fp8_cudagraph/NVIDIA-H100-80GB-HBM3_80GB/delta5.0_layers1_BS128_SBS128_bsz1_262144/raw/layer_layers_1_Tmax256k_Hq24_Hkv8_D128_Dv128_BS128_SBS128_delta5_fp16_nwT8nsT2_nw14ns13_nw24ns23_step262144_it300_wu50_bsz1_cudagraph_replay.json
+[Result] Layers 1 | bsz=1 | T=256k | BS=128 SBS=128 delta=5.0 | Q2=0.284 ms, Q2_CG=0.277 ms, Flash=0.355 ms, Speedup=1.25x, Speedup_CG=1.28x
+[Run] dtype=fp16 bsz=1 BS=128 SBS=128 delta=5 nwT=8 nsT=2 nw1=4 ns1=3 nw2=8 ns2=2
+[Info] Using GPU[0]: NVIDIA H100 80GB HBM3 (80GB)
+[Info] Loaded data for layer_1
+[Info] Layers=[1], bsz=1, Hq=24, Hkv=8, T_full=262144, K=128, V=128
+delta=5, layers1(bsz=1):   0%|          | 0/1 [00:00<?, ?it/s]delta=5, layers1(bsz=1): 100%|██████████| 1/1 [00:01<00:00,  1.88s/it]delta=5, layers1(bsz=1): 100%|██████████| 1/1 [00:01<00:00,  1.88s/it]
+[Info] Saved raw benchmark data to /inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-speedtest/ffa-q2fp8-threshold/plot/attn_kernel_v1210_fused_bsz_q2fp8_cudagraph/NVIDIA-H100-80GB-HBM3_80GB/delta5.0_layers1_BS128_SBS128_bsz1_262144/raw/layer_layers_1_Tmax256k_Hq24_Hkv8_D128_Dv128_BS128_SBS128_delta5_fp16_nwT8nsT2_nw14ns13_nw28ns22_step262144_it300_wu50_bsz1_cudagraph_replay.json
+[Result] Layers 1 | bsz=1 | T=256k | BS=128 SBS=128 delta=5.0 | Q2=0.293 ms, Q2_CG=0.290 ms, Flash=0.355 ms, Speedup=1.21x, Speedup_CG=1.22x
+[Run] dtype=fp16 bsz=1 BS=128 SBS=128 delta=5 nwT=8 nsT=2 nw1=4 ns1=3 nw2=8 ns2=3
+[Info] Using GPU[0]: NVIDIA H100 80GB HBM3 (80GB)
+[Info] Loaded data for layer_1
+[Info] Layers=[1], bsz=1, Hq=24, Hkv=8, T_full=262144, K=128, V=128
+delta=5, layers1(bsz=1):   0%|          | 0/1 [00:00<?, ?it/s]delta=5, layers1(bsz=1): 100%|██████████| 1/1 [00:01<00:00,  1.91s/it]delta=5, layers1(bsz=1): 100%|██████████| 1/1 [00:01<00:00,  1.91s/it]
+[Info] Saved raw benchmark data to /inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-speedtest/ffa-q2fp8-threshold/plot/attn_kernel_v1210_fused_bsz_q2fp8_cudagraph/NVIDIA-H100-80GB-HBM3_80GB/delta5.0_layers1_BS128_SBS128_bsz1_262144/raw/layer_layers_1_Tmax256k_Hq24_Hkv8_D128_Dv128_BS128_SBS128_delta5_fp16_nwT8nsT2_nw14ns13_nw28ns23_step262144_it300_wu50_bsz1_cudagraph_replay.json
+[Result] Layers 1 | bsz=1 | T=256k | BS=128 SBS=128 delta=5.0 | Q2=0.293 ms, Q2_CG=0.287 ms, Flash=0.355 ms, Speedup=1.21x, Speedup_CG=1.24x
+[Run] dtype=fp16 bsz=1 BS=128 SBS=128 delta=5 nwT=8 nsT=2 nw1=8 ns1=2 nw2=4 ns2=2
+[Info] Using GPU[0]: NVIDIA H100 80GB HBM3 (80GB)
+[Info] Loaded data for layer_1
+[Info] Layers=[1], bsz=1, Hq=24, Hkv=8, T_full=262144, K=128, V=128
+delta=5, layers1(bsz=1):   0%|          | 0/1 [00:00<?, ?it/s]delta=5, layers1(bsz=1): 100%|██████████| 1/1 [00:01<00:00,  1.85s/it]delta=5, layers1(bsz=1): 100%|██████████| 1/1 [00:01<00:00,  1.85s/it]
+[Info] Saved raw benchmark data to /inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-speedtest/ffa-q2fp8-threshold/plot/attn_kernel_v1210_fused_bsz_q2fp8_cudagraph/NVIDIA-H100-80GB-HBM3_80GB/delta5.0_layers1_BS128_SBS128_bsz1_262144/raw/layer_layers_1_Tmax256k_Hq24_Hkv8_D128_Dv128_BS128_SBS128_delta5_fp16_nwT8nsT2_nw18ns12_nw24ns22_step262144_it300_wu50_bsz1_cudagraph_replay.json
+[Result] Layers 1 | bsz=1 | T=256k | BS=128 SBS=128 delta=5.0 | Q2=0.319 ms, Q2_CG=0.307 ms, Flash=0.355 ms, Speedup=1.11x, Speedup_CG=1.15x
+[Run] dtype=fp16 bsz=1 BS=128 SBS=128 delta=5 nwT=8 nsT=2 nw1=8 ns1=2 nw2=4 ns2=3
+[Info] Using GPU[0]: NVIDIA H100 80GB HBM3 (80GB)
+[Info] Loaded data for layer_1
+[Info] Layers=[1], bsz=1, Hq=24, Hkv=8, T_full=262144, K=128, V=128
+delta=5, layers1(bsz=1):   0%|          | 0/1 [00:00<?, ?it/s]delta=5, layers1(bsz=1): 100%|██████████| 1/1 [00:01<00:00,  1.82s/it]delta=5, layers1(bsz=1): 100%|██████████| 1/1 [00:01<00:00,  1.82s/it]
+[Info] Saved raw benchmark data to /inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-speedtest/ffa-q2fp8-threshold/plot/attn_kernel_v1210_fused_bsz_q2fp8_cudagraph/NVIDIA-H100-80GB-HBM3_80GB/delta5.0_layers1_BS128_SBS128_bsz1_262144/raw/layer_layers_1_Tmax256k_Hq24_Hkv8_D128_Dv128_BS128_SBS128_delta5_fp16_nwT8nsT2_nw18ns12_nw24ns23_step262144_it300_wu50_bsz1_cudagraph_replay.json
+[Result] Layers 1 | bsz=1 | T=256k | BS=128 SBS=128 delta=5.0 | Q2=0.319 ms, Q2_CG=0.307 ms, Flash=0.355 ms, Speedup=1.11x, Speedup_CG=1.16x
+[Run] dtype=fp16 bsz=1 BS=128 SBS=128 delta=5 nwT=8 nsT=2 nw1=8 ns1=2 nw2=8 ns2=2
+[Info] Using GPU[0]: NVIDIA H100 80GB HBM3 (80GB)
+[Info] Loaded data for layer_1
+[Info] Layers=[1], bsz=1, Hq=24, Hkv=8, T_full=262144, K=128, V=128
+delta=5, layers1(bsz=1):   0%|          | 0/1 [00:00<?, ?it/s]delta=5, layers1(bsz=1): 100%|██████████| 1/1 [00:01<00:00,  1.85s/it]delta=5, layers1(bsz=1): 100%|██████████| 1/1 [00:01<00:00,  1.85s/it]
+[Info] Saved raw benchmark data to /inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-speedtest/ffa-q2fp8-threshold/plot/attn_kernel_v1210_fused_bsz_q2fp8_cudagraph/NVIDIA-H100-80GB-HBM3_80GB/delta5.0_layers1_BS128_SBS128_bsz1_262144/raw/layer_layers_1_Tmax256k_Hq24_Hkv8_D128_Dv128_BS128_SBS128_delta5_fp16_nwT8nsT2_nw18ns12_nw28ns22_step262144_it300_wu50_bsz1_cudagraph_replay.json
+[Result] Layers 1 | bsz=1 | T=256k | BS=128 SBS=128 delta=5.0 | Q2=0.327 ms, Q2_CG=0.316 ms, Flash=0.355 ms, Speedup=1.09x, Speedup_CG=1.12x
+[Run] dtype=fp16 bsz=1 BS=128 SBS=128 delta=5 nwT=8 nsT=2 nw1=8 ns1=2 nw2=8 ns2=3
+[Info] Using GPU[0]: NVIDIA H100 80GB HBM3 (80GB)
+[Info] Loaded data for layer_1
+[Info] Layers=[1], bsz=1, Hq=24, Hkv=8, T_full=262144, K=128, V=128
+delta=5, layers1(bsz=1):   0%|          | 0/1 [00:00<?, ?it/s]delta=5, layers1(bsz=1): 100%|██████████| 1/1 [00:01<00:00,  1.91s/it]delta=5, layers1(bsz=1): 100%|██████████| 1/1 [00:01<00:00,  1.91s/it]
+[Info] Saved raw benchmark data to /inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-speedtest/ffa-q2fp8-threshold/plot/attn_kernel_v1210_fused_bsz_q2fp8_cudagraph/NVIDIA-H100-80GB-HBM3_80GB/delta5.0_layers1_BS128_SBS128_bsz1_262144/raw/layer_layers_1_Tmax256k_Hq24_Hkv8_D128_Dv128_BS128_SBS128_delta5_fp16_nwT8nsT2_nw18ns12_nw28ns23_step262144_it300_wu50_bsz1_cudagraph_replay.json
+[Result] Layers 1 | bsz=1 | T=256k | BS=128 SBS=128 delta=5.0 | Q2=0.329 ms, Q2_CG=0.316 ms, Flash=0.354 ms, Speedup=1.08x, Speedup_CG=1.12x
+[Run] dtype=fp16 bsz=1 BS=128 SBS=128 delta=5 nwT=8 nsT=2 nw1=8 ns1=3 nw2=4 ns2=2
+[Info] Using GPU[0]: NVIDIA H100 80GB HBM3 (80GB)
+[Info] Loaded data for layer_1
+[Info] Layers=[1], bsz=1, Hq=24, Hkv=8, T_full=262144, K=128, V=128
+delta=5, layers1(bsz=1):   0%|          | 0/1 [00:00<?, ?it/s]delta=5, layers1(bsz=1): 100%|██████████| 1/1 [00:01<00:00,  1.79s/it]delta=5, layers1(bsz=1): 100%|██████████| 1/1 [00:01<00:00,  1.79s/it]
+[Info] Saved raw benchmark data to /inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-speedtest/ffa-q2fp8-threshold/plot/attn_kernel_v1210_fused_bsz_q2fp8_cudagraph/NVIDIA-H100-80GB-HBM3_80GB/delta5.0_layers1_BS128_SBS128_bsz1_262144/raw/layer_layers_1_Tmax256k_Hq24_Hkv8_D128_Dv128_BS128_SBS128_delta5_fp16_nwT8nsT2_nw18ns13_nw24ns22_step262144_it300_wu50_bsz1_cudagraph_replay.json
+[Result] Layers 1 | bsz=1 | T=256k | BS=128 SBS=128 delta=5.0 | Q2=0.318 ms, Q2_CG=0.307 ms, Flash=0.354 ms, Speedup=1.11x, Speedup_CG=1.15x
+[Run] dtype=fp16 bsz=1 BS=128 SBS=128 delta=5 nwT=8 nsT=2 nw1=8 ns1=3 nw2=4 ns2=3
+[Info] Using GPU[0]: NVIDIA H100 80GB HBM3 (80GB)
+[Info] Loaded data for layer_1
+[Info] Layers=[1], bsz=1, Hq=24, Hkv=8, T_full=262144, K=128, V=128
+delta=5, layers1(bsz=1):   0%|          | 0/1 [00:00<?, ?it/s]delta=5, layers1(bsz=1): 100%|██████████| 1/1 [00:01<00:00,  1.86s/it]delta=5, layers1(bsz=1): 100%|██████████| 1/1 [00:01<00:00,  1.86s/it]
+[Info] Saved raw benchmark data to /inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-speedtest/ffa-q2fp8-threshold/plot/attn_kernel_v1210_fused_bsz_q2fp8_cudagraph/NVIDIA-H100-80GB-HBM3_80GB/delta5.0_layers1_BS128_SBS128_bsz1_262144/raw/layer_layers_1_Tmax256k_Hq24_Hkv8_D128_Dv128_BS128_SBS128_delta5_fp16_nwT8nsT2_nw18ns13_nw24ns23_step262144_it300_wu50_bsz1_cudagraph_replay.json
+[Result] Layers 1 | bsz=1 | T=256k | BS=128 SBS=128 delta=5.0 | Q2=0.318 ms, Q2_CG=0.308 ms, Flash=0.354 ms, Speedup=1.11x, Speedup_CG=1.15x
+[Run] dtype=fp16 bsz=1 BS=128 SBS=128 delta=5 nwT=8 nsT=2 nw1=8 ns1=3 nw2=8 ns2=2
+[Info] Using GPU[0]: NVIDIA H100 80GB HBM3 (80GB)
+[Info] Loaded data for layer_1
+[Info] Layers=[1], bsz=1, Hq=24, Hkv=8, T_full=262144, K=128, V=128
+delta=5, layers1(bsz=1):   0%|          | 0/1 [00:00<?, ?it/s]delta=5, layers1(bsz=1): 100%|██████████| 1/1 [00:01<00:00,  1.77s/it]delta=5, layers1(bsz=1): 100%|██████████| 1/1 [00:01<00:00,  1.77s/it]
+[Info] Saved raw benchmark data to /inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-speedtest/ffa-q2fp8-threshold/plot/attn_kernel_v1210_fused_bsz_q2fp8_cudagraph/NVIDIA-H100-80GB-HBM3_80GB/delta5.0_layers1_BS128_SBS128_bsz1_262144/raw/layer_layers_1_Tmax256k_Hq24_Hkv8_D128_Dv128_BS128_SBS128_delta5_fp16_nwT8nsT2_nw18ns13_nw28ns22_step262144_it300_wu50_bsz1_cudagraph_replay.json
+[Result] Layers 1 | bsz=1 | T=256k | BS=128 SBS=128 delta=5.0 | Q2=0.327 ms, Q2_CG=0.319 ms, Flash=0.354 ms, Speedup=1.08x, Speedup_CG=1.11x
+[Run] dtype=fp16 bsz=1 BS=128 SBS=128 delta=5 nwT=8 nsT=2 nw1=8 ns1=3 nw2=8 ns2=3
+[Info] Using GPU[0]: NVIDIA H100 80GB HBM3 (80GB)
+[Info] Loaded data for layer_1
+[Info] Layers=[1], bsz=1, Hq=24, Hkv=8, T_full=262144, K=128, V=128
+delta=5, layers1(bsz=1):   0%|          | 0/1 [00:00<?, ?it/s]delta=5, layers1(bsz=1): 100%|██████████| 1/1 [00:01<00:00,  1.77s/it]delta=5, layers1(bsz=1): 100%|██████████| 1/1 [00:01<00:00,  1.77s/it]
+[Info] Saved raw benchmark data to /inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-speedtest/ffa-q2fp8-threshold/plot/attn_kernel_v1210_fused_bsz_q2fp8_cudagraph/NVIDIA-H100-80GB-HBM3_80GB/delta5.0_layers1_BS128_SBS128_bsz1_262144/raw/layer_layers_1_Tmax256k_Hq24_Hkv8_D128_Dv128_BS128_SBS128_delta5_fp16_nwT8nsT2_nw18ns13_nw28ns23_step262144_it300_wu50_bsz1_cudagraph_replay.json
+[Result] Layers 1 | bsz=1 | T=256k | BS=128 SBS=128 delta=5.0 | Q2=0.327 ms, Q2_CG=0.317 ms, Flash=0.354 ms, Speedup=1.08x, Speedup_CG=1.12x
+[Run] dtype=fp16 bsz=1 BS=128 SBS=128 delta=5 nwT=8 nsT=3 nw1=4 ns1=2 nw2=4 ns2=2
+[Info] Using GPU[0]: NVIDIA H100 80GB HBM3 (80GB)
+[Info] Loaded data for layer_1
+[Info] Layers=[1], bsz=1, Hq=24, Hkv=8, T_full=262144, K=128, V=128
+delta=5, layers1(bsz=1):   0%|          | 0/1 [00:00<?, ?it/s]delta=5, layers1(bsz=1): 100%|██████████| 1/1 [00:01<00:00,  1.88s/it]delta=5, layers1(bsz=1): 100%|██████████| 1/1 [00:01<00:00,  1.88s/it]
+[Info] Saved raw benchmark data to /inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-speedtest/ffa-q2fp8-threshold/plot/attn_kernel_v1210_fused_bsz_q2fp8_cudagraph/NVIDIA-H100-80GB-HBM3_80GB/delta5.0_layers1_BS128_SBS128_bsz1_262144/raw/layer_layers_1_Tmax256k_Hq24_Hkv8_D128_Dv128_BS128_SBS128_delta5_fp16_nwT8nsT3_nw14ns12_nw24ns22_step262144_it300_wu50_bsz1_cudagraph_replay.json
+[Result] Layers 1 | bsz=1 | T=256k | BS=128 SBS=128 delta=5.0 | Q2=0.286 ms, Q2_CG=0.276 ms, Flash=0.354 ms, Speedup=1.24x, Speedup_CG=1.28x
+[Run] dtype=fp16 bsz=1 BS=128 SBS=128 delta=5 nwT=8 nsT=3 nw1=4 ns1=2 nw2=4 ns2=3
+[Info] Using GPU[0]: NVIDIA H100 80GB HBM3 (80GB)
+[Info] Loaded data for layer_1
+[Info] Layers=[1], bsz=1, Hq=24, Hkv=8, T_full=262144, K=128, V=128
+delta=5, layers1(bsz=1):   0%|          | 0/1 [00:00<?, ?it/s]delta=5, layers1(bsz=1): 100%|██████████| 1/1 [00:01<00:00,  1.80s/it]delta=5, layers1(bsz=1): 100%|██████████| 1/1 [00:01<00:00,  1.80s/it]
+[Info] Saved raw benchmark data to /inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-speedtest/ffa-q2fp8-threshold/plot/attn_kernel_v1210_fused_bsz_q2fp8_cudagraph/NVIDIA-H100-80GB-HBM3_80GB/delta5.0_layers1_BS128_SBS128_bsz1_262144/raw/layer_layers_1_Tmax256k_Hq24_Hkv8_D128_Dv128_BS128_SBS128_delta5_fp16_nwT8nsT3_nw14ns12_nw24ns23_step262144_it300_wu50_bsz1_cudagraph_replay.json
+[Result] Layers 1 | bsz=1 | T=256k | BS=128 SBS=128 delta=5.0 | Q2=0.284 ms, Q2_CG=0.282 ms, Flash=0.354 ms, Speedup=1.25x, Speedup_CG=1.26x
+[Run] dtype=fp16 bsz=1 BS=128 SBS=128 delta=5 nwT=8 nsT=3 nw1=4 ns1=2 nw2=8 ns2=2
+[Info] Using GPU[0]: NVIDIA H100 80GB HBM3 (80GB)
+[Info] Loaded data for layer_1
+[Info] Layers=[1], bsz=1, Hq=24, Hkv=8, T_full=262144, K=128, V=128
+delta=5, layers1(bsz=1):   0%|          | 0/1 [00:00<?, ?it/s]delta=5, layers1(bsz=1): 100%|██████████| 1/1 [00:01<00:00,  1.70s/it]delta=5, layers1(bsz=1): 100%|██████████| 1/1 [00:01<00:00,  1.70s/it]
+[Info] Saved raw benchmark data to /inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-speedtest/ffa-q2fp8-threshold/plot/attn_kernel_v1210_fused_bsz_q2fp8_cudagraph/NVIDIA-H100-80GB-HBM3_80GB/delta5.0_layers1_BS128_SBS128_bsz1_262144/raw/layer_layers_1_Tmax256k_Hq24_Hkv8_D128_Dv128_BS128_SBS128_delta5_fp16_nwT8nsT3_nw14ns12_nw28ns22_step262144_it300_wu50_bsz1_cudagraph_replay.json
+[Result] Layers 1 | bsz=1 | T=256k | BS=128 SBS=128 delta=5.0 | Q2=0.292 ms, Q2_CG=0.287 ms, Flash=0.354 ms, Speedup=1.21x, Speedup_CG=1.23x
+[Run] dtype=fp16 bsz=1 BS=128 SBS=128 delta=5 nwT=8 nsT=3 nw1=4 ns1=2 nw2=8 ns2=3
+[Info] Using GPU[0]: NVIDIA H100 80GB HBM3 (80GB)
+[Info] Loaded data for layer_1
+[Info] Layers=[1], bsz=1, Hq=24, Hkv=8, T_full=262144, K=128, V=128
+delta=5, layers1(bsz=1):   0%|          | 0/1 [00:00<?, ?it/s]delta=5, layers1(bsz=1): 100%|██████████| 1/1 [00:01<00:00,  1.96s/it]delta=5, layers1(bsz=1): 100%|██████████| 1/1 [00:01<00:00,  1.96s/it]
+[Info] Saved raw benchmark data to /inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-speedtest/ffa-q2fp8-threshold/plot/attn_kernel_v1210_fused_bsz_q2fp8_cudagraph/NVIDIA-H100-80GB-HBM3_80GB/delta5.0_layers1_BS128_SBS128_bsz1_262144/raw/layer_layers_1_Tmax256k_Hq24_Hkv8_D128_Dv128_BS128_SBS128_delta5_fp16_nwT8nsT3_nw14ns12_nw28ns23_step262144_it300_wu50_bsz1_cudagraph_replay.json
+[Result] Layers 1 | bsz=1 | T=256k | BS=128 SBS=128 delta=5.0 | Q2=0.294 ms, Q2_CG=0.284 ms, Flash=0.354 ms, Speedup=1.20x, Speedup_CG=1.25x
+[Run] dtype=fp16 bsz=1 BS=128 SBS=128 delta=5 nwT=8 nsT=3 nw1=4 ns1=3 nw2=4 ns2=2
+[Info] Using GPU[0]: NVIDIA H100 80GB HBM3 (80GB)
+[Info] Loaded data for layer_1
+[Info] Layers=[1], bsz=1, Hq=24, Hkv=8, T_full=262144, K=128, V=128
+delta=5, layers1(bsz=1):   0%|          | 0/1 [00:00<?, ?it/s]delta=5, layers1(bsz=1): 100%|██████████| 1/1 [00:01<00:00,  1.92s/it]delta=5, layers1(bsz=1): 100%|██████████| 1/1 [00:01<00:00,  1.92s/it]
+[Info] Saved raw benchmark data to /inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-speedtest/ffa-q2fp8-threshold/plot/attn_kernel_v1210_fused_bsz_q2fp8_cudagraph/NVIDIA-H100-80GB-HBM3_80GB/delta5.0_layers1_BS128_SBS128_bsz1_262144/raw/layer_layers_1_Tmax256k_Hq24_Hkv8_D128_Dv128_BS128_SBS128_delta5_fp16_nwT8nsT3_nw14ns13_nw24ns22_step262144_it300_wu50_bsz1_cudagraph_replay.json
+[Result] Layers 1 | bsz=1 | T=256k | BS=128 SBS=128 delta=5.0 | Q2=0.285 ms, Q2_CG=0.278 ms, Flash=0.355 ms, Speedup=1.25x, Speedup_CG=1.28x
+[Run] dtype=fp16 bsz=1 BS=128 SBS=128 delta=5 nwT=8 nsT=3 nw1=4 ns1=3 nw2=4 ns2=3
+[Info] Using GPU[0]: NVIDIA H100 80GB HBM3 (80GB)
+[Info] Loaded data for layer_1
+[Info] Layers=[1], bsz=1, Hq=24, Hkv=8, T_full=262144, K=128, V=128
+delta=5, layers1(bsz=1):   0%|          | 0/1 [00:00<?, ?it/s]delta=5, layers1(bsz=1): 100%|██████████| 1/1 [00:01<00:00,  1.73s/it]delta=5, layers1(bsz=1): 100%|██████████| 1/1 [00:01<00:00,  1.73s/it]
+[Info] Saved raw benchmark data to /inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-speedtest/ffa-q2fp8-threshold/plot/attn_kernel_v1210_fused_bsz_q2fp8_cudagraph/NVIDIA-H100-80GB-HBM3_80GB/delta5.0_layers1_BS128_SBS128_bsz1_262144/raw/layer_layers_1_Tmax256k_Hq24_Hkv8_D128_Dv128_BS128_SBS128_delta5_fp16_nwT8nsT3_nw14ns13_nw24ns23_step262144_it300_wu50_bsz1_cudagraph_replay.json
+[Result] Layers 1 | bsz=1 | T=256k | BS=128 SBS=128 delta=5.0 | Q2=0.284 ms, Q2_CG=0.279 ms, Flash=0.355 ms, Speedup=1.25x, Speedup_CG=1.27x
+[Run] dtype=fp16 bsz=1 BS=128 SBS=128 delta=5 nwT=8 nsT=3 nw1=4 ns1=3 nw2=8 ns2=2
+[Info] Using GPU[0]: NVIDIA H100 80GB HBM3 (80GB)
+[Info] Loaded data for layer_1
+[Info] Layers=[1], bsz=1, Hq=24, Hkv=8, T_full=262144, K=128, V=128
+delta=5, layers1(bsz=1):   0%|          | 0/1 [00:00<?, ?it/s]delta=5, layers1(bsz=1): 100%|██████████| 1/1 [00:02<00:00,  2.03s/it]delta=5, layers1(bsz=1): 100%|██████████| 1/1 [00:02<00:00,  2.03s/it]
+[Info] Saved raw benchmark data to /inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-speedtest/ffa-q2fp8-threshold/plot/attn_kernel_v1210_fused_bsz_q2fp8_cudagraph/NVIDIA-H100-80GB-HBM3_80GB/delta5.0_layers1_BS128_SBS128_bsz1_262144/raw/layer_layers_1_Tmax256k_Hq24_Hkv8_D128_Dv128_BS128_SBS128_delta5_fp16_nwT8nsT3_nw14ns13_nw28ns22_step262144_it300_wu50_bsz1_cudagraph_replay.json
+[Result] Layers 1 | bsz=1 | T=256k | BS=128 SBS=128 delta=5.0 | Q2=0.293 ms, Q2_CG=0.288 ms, Flash=0.355 ms, Speedup=1.21x, Speedup_CG=1.23x
+[Run] dtype=fp16 bsz=1 BS=128 SBS=128 delta=5 nwT=8 nsT=3 nw1=4 ns1=3 nw2=8 ns2=3
+[Info] Using GPU[0]: NVIDIA H100 80GB HBM3 (80GB)
+[Info] Loaded data for layer_1
+[Info] Layers=[1], bsz=1, Hq=24, Hkv=8, T_full=262144, K=128, V=128
+delta=5, layers1(bsz=1):   0%|          | 0/1 [00:00<?, ?it/s]delta=5, layers1(bsz=1): 100%|██████████| 1/1 [00:01<00:00,  1.67s/it]delta=5, layers1(bsz=1): 100%|██████████| 1/1 [00:01<00:00,  1.67s/it]
+[Info] Saved raw benchmark data to /inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-speedtest/ffa-q2fp8-threshold/plot/attn_kernel_v1210_fused_bsz_q2fp8_cudagraph/NVIDIA-H100-80GB-HBM3_80GB/delta5.0_layers1_BS128_SBS128_bsz1_262144/raw/layer_layers_1_Tmax256k_Hq24_Hkv8_D128_Dv128_BS128_SBS128_delta5_fp16_nwT8nsT3_nw14ns13_nw28ns23_step262144_it300_wu50_bsz1_cudagraph_replay.json
+[Result] Layers 1 | bsz=1 | T=256k | BS=128 SBS=128 delta=5.0 | Q2=0.295 ms, Q2_CG=0.283 ms, Flash=0.354 ms, Speedup=1.20x, Speedup_CG=1.25x
+[Run] dtype=fp16 bsz=1 BS=128 SBS=128 delta=5 nwT=8 nsT=3 nw1=8 ns1=2 nw2=4 ns2=2
+[Info] Using GPU[0]: NVIDIA H100 80GB HBM3 (80GB)
+[Info] Loaded data for layer_1
+[Info] Layers=[1], bsz=1, Hq=24, Hkv=8, T_full=262144, K=128, V=128
+delta=5, layers1(bsz=1):   0%|          | 0/1 [00:00<?, ?it/s]delta=5, layers1(bsz=1): 100%|██████████| 1/1 [00:02<00:00,  2.09s/it]delta=5, layers1(bsz=1): 100%|██████████| 1/1 [00:02<00:00,  2.09s/it]
+[Info] Saved raw benchmark data to /inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-speedtest/ffa-q2fp8-threshold/plot/attn_kernel_v1210_fused_bsz_q2fp8_cudagraph/NVIDIA-H100-80GB-HBM3_80GB/delta5.0_layers1_BS128_SBS128_bsz1_262144/raw/layer_layers_1_Tmax256k_Hq24_Hkv8_D128_Dv128_BS128_SBS128_delta5_fp16_nwT8nsT3_nw18ns12_nw24ns22_step262144_it300_wu50_bsz1_cudagraph_replay.json
+[Result] Layers 1 | bsz=1 | T=256k | BS=128 SBS=128 delta=5.0 | Q2=0.317 ms, Q2_CG=0.308 ms, Flash=0.354 ms, Speedup=1.12x, Speedup_CG=1.15x
+[Run] dtype=fp16 bsz=1 BS=128 SBS=128 delta=5 nwT=8 nsT=3 nw1=8 ns1=2 nw2=4 ns2=3
+[Info] Using GPU[0]: NVIDIA H100 80GB HBM3 (80GB)
+[Info] Loaded data for layer_1
+[Info] Layers=[1], bsz=1, Hq=24, Hkv=8, T_full=262144, K=128, V=128
+delta=5, layers1(bsz=1):   0%|          | 0/1 [00:00<?, ?it/s]delta=5, layers1(bsz=1): 100%|██████████| 1/1 [00:01<00:00,  1.70s/it]delta=5, layers1(bsz=1): 100%|██████████| 1/1 [00:01<00:00,  1.70s/it]
+[Info] Saved raw benchmark data to /inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-speedtest/ffa-q2fp8-threshold/plot/attn_kernel_v1210_fused_bsz_q2fp8_cudagraph/NVIDIA-H100-80GB-HBM3_80GB/delta5.0_layers1_BS128_SBS128_bsz1_262144/raw/layer_layers_1_Tmax256k_Hq24_Hkv8_D128_Dv128_BS128_SBS128_delta5_fp16_nwT8nsT3_nw18ns12_nw24ns23_step262144_it300_wu50_bsz1_cudagraph_replay.json
+[Result] Layers 1 | bsz=1 | T=256k | BS=128 SBS=128 delta=5.0 | Q2=0.318 ms, Q2_CG=0.307 ms, Flash=0.354 ms, Speedup=1.11x, Speedup_CG=1.15x
+[Run] dtype=fp16 bsz=1 BS=128 SBS=128 delta=5 nwT=8 nsT=3 nw1=8 ns1=2 nw2=8 ns2=2
+[Info] Using GPU[0]: NVIDIA H100 80GB HBM3 (80GB)
+[Info] Loaded data for layer_1
+[Info] Layers=[1], bsz=1, Hq=24, Hkv=8, T_full=262144, K=128, V=128
+delta=5, layers1(bsz=1):   0%|          | 0/1 [00:00<?, ?it/s]delta=5, layers1(bsz=1): 100%|██████████| 1/1 [00:01<00:00,  1.70s/it]delta=5, layers1(bsz=1): 100%|██████████| 1/1 [00:01<00:00,  1.70s/it]
+[Info] Saved raw benchmark data to /inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-speedtest/ffa-q2fp8-threshold/plot/attn_kernel_v1210_fused_bsz_q2fp8_cudagraph/NVIDIA-H100-80GB-HBM3_80GB/delta5.0_layers1_BS128_SBS128_bsz1_262144/raw/layer_layers_1_Tmax256k_Hq24_Hkv8_D128_Dv128_BS128_SBS128_delta5_fp16_nwT8nsT3_nw18ns12_nw28ns22_step262144_it300_wu50_bsz1_cudagraph_replay.json
+[Result] Layers 1 | bsz=1 | T=256k | BS=128 SBS=128 delta=5.0 | Q2=0.330 ms, Q2_CG=0.317 ms, Flash=0.354 ms, Speedup=1.07x, Speedup_CG=1.12x
+[Run] dtype=fp16 bsz=1 BS=128 SBS=128 delta=5 nwT=8 nsT=3 nw1=8 ns1=2 nw2=8 ns2=3
+[Info] Using GPU[0]: NVIDIA H100 80GB HBM3 (80GB)
+[Info] Loaded data for layer_1
+[Info] Layers=[1], bsz=1, Hq=24, Hkv=8, T_full=262144, K=128, V=128
+delta=5, layers1(bsz=1):   0%|          | 0/1 [00:00<?, ?it/s]delta=5, layers1(bsz=1): 100%|██████████| 1/1 [00:01<00:00,  1.90s/it]delta=5, layers1(bsz=1): 100%|██████████| 1/1 [00:01<00:00,  1.90s/it]
+[Info] Saved raw benchmark data to /inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-speedtest/ffa-q2fp8-threshold/plot/attn_kernel_v1210_fused_bsz_q2fp8_cudagraph/NVIDIA-H100-80GB-HBM3_80GB/delta5.0_layers1_BS128_SBS128_bsz1_262144/raw/layer_layers_1_Tmax256k_Hq24_Hkv8_D128_Dv128_BS128_SBS128_delta5_fp16_nwT8nsT3_nw18ns12_nw28ns23_step262144_it300_wu50_bsz1_cudagraph_replay.json
+[Result] Layers 1 | bsz=1 | T=256k | BS=128 SBS=128 delta=5.0 | Q2=0.327 ms, Q2_CG=0.316 ms, Flash=0.355 ms, Speedup=1.08x, Speedup_CG=1.12x
+[Run] dtype=fp16 bsz=1 BS=128 SBS=128 delta=5 nwT=8 nsT=3 nw1=8 ns1=3 nw2=4 ns2=2
+[Info] Using GPU[0]: NVIDIA H100 80GB HBM3 (80GB)
+[Info] Loaded data for layer_1
+[Info] Layers=[1], bsz=1, Hq=24, Hkv=8, T_full=262144, K=128, V=128
+delta=5, layers1(bsz=1):   0%|          | 0/1 [00:00<?, ?it/s]delta=5, layers1(bsz=1): 100%|██████████| 1/1 [00:02<00:00,  2.37s/it]delta=5, layers1(bsz=1): 100%|██████████| 1/1 [00:02<00:00,  2.37s/it]
+[Info] Saved raw benchmark data to /inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-speedtest/ffa-q2fp8-threshold/plot/attn_kernel_v1210_fused_bsz_q2fp8_cudagraph/NVIDIA-H100-80GB-HBM3_80GB/delta5.0_layers1_BS128_SBS128_bsz1_262144/raw/layer_layers_1_Tmax256k_Hq24_Hkv8_D128_Dv128_BS128_SBS128_delta5_fp16_nwT8nsT3_nw18ns13_nw24ns22_step262144_it300_wu50_bsz1_cudagraph_replay.json
+[Result] Layers 1 | bsz=1 | T=256k | BS=128 SBS=128 delta=5.0 | Q2=0.321 ms, Q2_CG=0.307 ms, Flash=0.354 ms, Speedup=1.10x, Speedup_CG=1.15x
+[Run] dtype=fp16 bsz=1 BS=128 SBS=128 delta=5 nwT=8 nsT=3 nw1=8 ns1=3 nw2=4 ns2=3
+[Info] Using GPU[0]: NVIDIA H100 80GB HBM3 (80GB)
+[Info] Loaded data for layer_1
+[Info] Layers=[1], bsz=1, Hq=24, Hkv=8, T_full=262144, K=128, V=128
+delta=5, layers1(bsz=1):   0%|          | 0/1 [00:00<?, ?it/s]delta=5, layers1(bsz=1): 100%|██████████| 1/1 [00:01<00:00,  1.95s/it]delta=5, layers1(bsz=1): 100%|██████████| 1/1 [00:01<00:00,  1.95s/it]
+[Info] Saved raw benchmark data to /inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-speedtest/ffa-q2fp8-threshold/plot/attn_kernel_v1210_fused_bsz_q2fp8_cudagraph/NVIDIA-H100-80GB-HBM3_80GB/delta5.0_layers1_BS128_SBS128_bsz1_262144/raw/layer_layers_1_Tmax256k_Hq24_Hkv8_D128_Dv128_BS128_SBS128_delta5_fp16_nwT8nsT3_nw18ns13_nw24ns23_step262144_it300_wu50_bsz1_cudagraph_replay.json
+[Result] Layers 1 | bsz=1 | T=256k | BS=128 SBS=128 delta=5.0 | Q2=0.318 ms, Q2_CG=0.308 ms, Flash=0.354 ms, Speedup=1.11x, Speedup_CG=1.15x
+[Run] dtype=fp16 bsz=1 BS=128 SBS=128 delta=5 nwT=8 nsT=3 nw1=8 ns1=3 nw2=8 ns2=2
+[Info] Using GPU[0]: NVIDIA H100 80GB HBM3 (80GB)
+[Info] Loaded data for layer_1
+[Info] Layers=[1], bsz=1, Hq=24, Hkv=8, T_full=262144, K=128, V=128
+delta=5, layers1(bsz=1):   0%|          | 0/1 [00:00<?, ?it/s]delta=5, layers1(bsz=1): 100%|██████████| 1/1 [00:01<00:00,  1.77s/it]delta=5, layers1(bsz=1): 100%|██████████| 1/1 [00:01<00:00,  1.77s/it]
+[Info] Saved raw benchmark data to /inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-speedtest/ffa-q2fp8-threshold/plot/attn_kernel_v1210_fused_bsz_q2fp8_cudagraph/NVIDIA-H100-80GB-HBM3_80GB/delta5.0_layers1_BS128_SBS128_bsz1_262144/raw/layer_layers_1_Tmax256k_Hq24_Hkv8_D128_Dv128_BS128_SBS128_delta5_fp16_nwT8nsT3_nw18ns13_nw28ns22_step262144_it300_wu50_bsz1_cudagraph_replay.json
+[Result] Layers 1 | bsz=1 | T=256k | BS=128 SBS=128 delta=5.0 | Q2=0.329 ms, Q2_CG=0.317 ms, Flash=0.355 ms, Speedup=1.08x, Speedup_CG=1.12x
+[Run] dtype=fp16 bsz=1 BS=128 SBS=128 delta=5 nwT=8 nsT=3 nw1=8 ns1=3 nw2=8 ns2=3
+[Info] Using GPU[0]: NVIDIA H100 80GB HBM3 (80GB)
+[Info] Loaded data for layer_1
+[Info] Layers=[1], bsz=1, Hq=24, Hkv=8, T_full=262144, K=128, V=128
+delta=5, layers1(bsz=1):   0%|          | 0/1 [00:00<?, ?it/s]delta=5, layers1(bsz=1): 100%|██████████| 1/1 [00:01<00:00,  1.85s/it]delta=5, layers1(bsz=1): 100%|██████████| 1/1 [00:01<00:00,  1.85s/it]
+[Info] Saved raw benchmark data to /inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-speedtest/ffa-q2fp8-threshold/plot/attn_kernel_v1210_fused_bsz_q2fp8_cudagraph/NVIDIA-H100-80GB-HBM3_80GB/delta5.0_layers1_BS128_SBS128_bsz1_262144/raw/layer_layers_1_Tmax256k_Hq24_Hkv8_D128_Dv128_BS128_SBS128_delta5_fp16_nwT8nsT3_nw18ns13_nw28ns23_step262144_it300_wu50_bsz1_cudagraph_replay.json
+[Result] Layers 1 | bsz=1 | T=256k | BS=128 SBS=128 delta=5.0 | Q2=0.327 ms, Q2_CG=0.315 ms, Flash=0.355 ms, Speedup=1.09x, Speedup_CG=1.12x
+Top configs by q2_cg_ms:
+q2_cg_ms=0.275258 BS=128 SBS=128 delta=5 nwT=4 nsT=3 nw1=4 ns1=2 nw2=4 ns2=2 bsz=1 dtype=fp16
+q2_cg_ms=0.276353 BS=128 SBS=128 delta=5 nwT=8 nsT=3 nw1=4 ns1=2 nw2=4 ns2=2 bsz=1 dtype=fp16
+q2_cg_ms=0.277190 BS=128 SBS=128 delta=5 nwT=4 nsT=2 nw1=4 ns1=2 nw2=4 ns2=3 bsz=1 dtype=fp16
+q2_cg_ms=0.277345 BS=128 SBS=128 delta=5 nwT=8 nsT=2 nw1=4 ns1=2 nw2=4 ns2=3 bsz=1 dtype=fp16
+q2_cg_ms=0.277405 BS=128 SBS=128 delta=5 nwT=8 nsT=2 nw1=4 ns1=3 nw2=4 ns2=3 bsz=1 dtype=fp16
+q2_cg_ms=0.277775 BS=128 SBS=128 delta=5 nwT=8 nsT=3 nw1=4 ns1=3 nw2=4 ns2=2 bsz=1 dtype=fp16
+q2_cg_ms=0.277881 BS=128 SBS=128 delta=5 nwT=4 nsT=3 nw1=4 ns1=3 nw2=4 ns2=2 bsz=1 dtype=fp16
+q2_cg_ms=0.277900 BS=128 SBS=128 delta=5 nwT=4 nsT=3 nw1=4 ns1=3 nw2=4 ns2=3 bsz=1 dtype=fp16
+q2_cg_ms=0.279301 BS=128 SBS=128 delta=5 nwT=4 nsT=2 nw1=4 ns1=3 nw2=4 ns2=3 bsz=1 dtype=fp16
+q2_cg_ms=0.279486 BS=128 SBS=128 delta=5 nwT=8 nsT=3 nw1=4 ns1=3 nw2=4 ns2=3 bsz=1 dtype=fp16

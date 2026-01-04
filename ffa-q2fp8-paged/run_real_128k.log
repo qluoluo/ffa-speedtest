@@ -1,0 +1,32 @@
+[Info] Using GPU[0]: NVIDIA GeForce RTX 4090 (48GB)
+[Info] Loading layer 1 from /inspire/hdd/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/huffkv-opencompass/opencompass/models/myModel/ffa/attn_analysis/result/Llama-3_2-3B/longbench_gov_report_48_68_256k/layer_data
+[Info] Loaded: B=1, Hq=24, Hkv=8, T=131072, K=128, V=128
+[Info] Populating cache with full sequence (T=131072)...
+[Info] Cache populated: 1024 pages
+[Info] Testing 8 lengths: 16K to 128K
+
+================================================================================
+Running Benchmarks
+================================================================================
+
+Layer 1, delta=5.0:   0%|          | 0/8 [00:00<?, ?it/s]Layer 1, delta=5.0:  12%|█▎        | 1/8 [00:17<01:59, 17.05s/it]Layer 1, delta=5.0:  25%|██▌       | 2/8 [00:22<01:03, 10.50s/it]Layer 1, delta=5.0:  38%|███▊      | 3/8 [00:28<00:41,  8.36s/it]Layer 1, delta=5.0:  50%|█████     | 4/8 [00:36<00:32,  8.05s/it]Layer 1, delta=5.0:  62%|██████▎   | 5/8 [00:45<00:25,  8.49s/it]Layer 1, delta=5.0:  75%|███████▌  | 6/8 [00:56<00:18,  9.40s/it]Layer 1, delta=5.0:  88%|████████▊ | 7/8 [01:09<00:10, 10.63s/it]Layer 1, delta=5.0: 100%|██████████| 8/8 [01:24<00:00, 11.98s/it]Layer 1, delta=5.0: 100%|██████████| 8/8 [01:24<00:00, 10.60s/it]
+
+     16K: Paged=302.674ms, Flash=       N/A, Speedup=   N/A, Prune= 89.8%
+
+     64K: Paged=137.518ms, Flash=       N/A, Speedup=   N/A, Prune= 98.4%
+
+    128K: Paged=269.982ms, Flash=       N/A, Speedup=   N/A, Prune= 99.2%
+
+[Info] Saved results to /inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-speedtest/ffa-q2fp8-paged/plot/paged_real_data/NVIDIA-GeForce-RTX-4090_48GB/layer_1/results_layer1_page128_delta5.0.json
+[Info] Saved plot to /inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-speedtest/ffa-q2fp8-paged/plot/paged_real_data/NVIDIA-GeForce-RTX-4090_48GB/layer_1/performance_layer1_page128_delta5.0.png
+
+================================================================================
+Benchmark Summary
+================================================================================
+  Layer: 1
+  Sequence length: 131072 (128K)
+  Paged Q2FP8 avg: 187.445 ms
+  Avg prune ratio: 96.85%
+  Peak prune ratio: 99.22%
+================================================================================
+

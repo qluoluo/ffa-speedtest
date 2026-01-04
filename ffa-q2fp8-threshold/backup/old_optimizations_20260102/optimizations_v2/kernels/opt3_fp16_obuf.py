@@ -1,7 +1,6 @@
-# attn_kernel_v1210_fused_bsz_q2fp8.py
-# 2-bit quantized K with fp8 residual refinement.
+# Optimization 3: Use FP16 for o_buf to reduce Stage1->Stage2 bandwidth
+# Stage1 writes o_buf in FP16, Stage2 reads and accumulates in FP32
 import math
-
 import torch
 import triton
 import triton.language as tl
@@ -18,7 +17,6 @@ def attn_compute_threshold_qbits(
     T_BS: tl.constexpr = 16,
     K_BITS: tl.constexpr = 2,
 ):
-    # 2D grid = (B, HKV)
     pid_b = tl.program_id(0)
     pid_hkv = tl.program_id(1)
 
@@ -38,7 +36,6 @@ def attn_compute_threshold_qbits(
     q_ptrs = q + pid_b * (HQ * K) + (base_hq + rows)[:, None] * K + offs_k[None, :]
     q_tile = tl.load(q_ptrs, mask=row_mask[:, None], other=0.0).to(tl.float16)
 
-    # Scale / zero do not depend on token; load once per (B, HKV)
     scale_ptrs = k_scale + pid_b * (HKV * K) + pid_hkv * K + offs_k
     zp_ptrs = k_zp + pid_b * (HKV * K) + pid_hkv * K + offs_k
     scale_tile = tl.load(scale_ptrs, mask=TRUE_K, other=0.0).to(tl.float32)
@@ -74,9 +71,9 @@ def attn_compute_threshold_qbits(
 
 
 @triton.jit
-def attn_forward_stage1_fused_threshold_qbits(
+def attn_forward_stage1_fp16_obuf(
     q, k_q, k_scale, k_zp, k_res, v,
-    m_buf, l_buf, o_buf,
+    m_buf, l_buf, o_buf,  # o_buf is now FP16
     mask_buf,
     scale, T, NTB, NTBS, delta,
     th_in,
@@ -88,7 +85,6 @@ def attn_forward_stage1_fused_threshold_qbits(
     USE_EXT_TH: tl.constexpr = False,
     USE_FP8_RESIDUAL: tl.constexpr = False,
 ):
-    # 3D grid = (NTB, B, HKV)
     pid_tb = tl.program_id(0)
     pid_b = tl.program_id(1)
     pid_hkv = tl.program_id(2)
@@ -112,7 +108,6 @@ def attn_forward_stage1_fused_threshold_qbits(
     q_ptrs   = q + pid_b * (HQ * K) + (base_hq + rows)[:, None] * K + offs_k[None, :]
     q_tile   = tl.load(q_ptrs, mask=row_mask[:, None], other=0.0).to(tl.float16)
 
-    # Scale / zero do not depend on token; load once per (B, HKV)
     scale_ptrs = k_scale + pid_b * (HKV * K) + pid_hkv * K + offs_k
     zp_ptrs    = k_zp    + pid_b * (HKV * K) + pid_hkv * K + offs_k
     scale_tile = tl.load(scale_ptrs, mask=TRUE_K, other=0.0).to(tl.float32)
@@ -201,13 +196,14 @@ def attn_forward_stage1_fused_threshold_qbits(
             o_ptrs = o_buf + pid_b * (HQ * NTBS * V) + (base_hq + rows)[:, None] * (NTBS * V) + tb_sb * V + v_offs[None, :]
             tl.store(m_ptrs, m_rows, mask=row_mask)
             tl.store(l_ptrs, l_rows, mask=row_mask)
-            tl.store(o_ptrs, o_tile, mask=row_mask[:, None])
+            # OPTIMIZATION: Store o_tile as FP16 instead of FP32
+            tl.store(o_ptrs, o_tile.to(tl.float16), mask=row_mask[:, None])
             tl.store(mask_buf + pid_b * (HKV * NTBS) + pid_hkv * NTBS + tb_sb, tl.full((), 1, tl.int8))
 
 
 @triton.jit
-def attn_forward_stage2_masked(
-    m_buf, l_buf, o_buf, mask_buf, o, NTBS,
+def attn_forward_stage2_fp16_obuf(
+    m_buf, l_buf, o_buf, mask_buf, o, NTBS,  # o_buf is FP16
     B: tl.constexpr, HKV: tl.constexpr, G: tl.constexpr, HQ: tl.constexpr, V: tl.constexpr,
 ):
     pid_b = tl.program_id(0)
@@ -224,7 +220,9 @@ def attn_forward_stage2_masked(
         if keep:
             m_b = tl.load(m_buf + pid_b * (HQ * NTBS) + pid_hq * NTBS + tb)
             l_b = tl.load(l_buf + pid_b * (HQ * NTBS) + pid_hq * NTBS + tb)
-            o_b = tl.load(o_buf + pid_b * (HQ * NTBS * V) + pid_hq * (NTBS * V) + tb * V + v_offs)
+            # OPTIMIZATION: Load o_buf as FP16 and convert to FP32 for accumulation
+            o_b_fp16 = tl.load(o_buf + pid_b * (HQ * NTBS * V) + pid_hq * (NTBS * V) + tb * V + v_offs)
+            o_b = o_b_fp16.to(tl.float32)
             new_m = tl.maximum(b_m, m_b)
             r_prev = tl.exp2(b_m - new_m)
             r_blk = tl.exp2(m_b - new_m)
@@ -238,43 +236,24 @@ def attn_forward_stage2_masked(
 
 
 def _normalize_scale_zero(k_scale: torch.Tensor, k_zero: torch.Tensor, expect_shape):
-    """
-    Ensure scale / zero_point tensors are contiguous and have shape [B, HKV, K].
-    """
     if k_scale.ndim == 4 and k_scale.shape[1] == 1:
         k_scale = k_scale.squeeze(1)
     if k_zero.ndim == 4 and k_zero.shape[1] == 1:
         k_zero = k_zero.squeeze(1)
-
     if k_scale.shape != expect_shape or k_zero.shape != expect_shape:
         raise ValueError(
             f"Unsupported k_scale/k_zero shapes: {k_scale.shape=} {k_zero.shape=}, expected {expect_shape}"
         )
-
     return k_scale.contiguous(), k_zero.contiguous()
 
 
-
-def _kernel_kwargs(num_warps: int | None, num_stages: int | None) -> dict:
-    kwargs = {}
-    if num_warps is not None:
-        if num_warps <= 0:
-            raise ValueError(f"num_warps must be positive, got {num_warps}")
-        kwargs["num_warps"] = int(num_warps)
-    if num_stages is not None:
-        if num_stages <= 0:
-            raise ValueError(f"num_stages must be positive, got {num_stages}")
-        kwargs["num_stages"] = int(num_stages)
-    return kwargs
-
-
-def attn_forward_decode_quantized(
-    q: torch.Tensor,           # [B, 1, HQ, K]
-    k_q: torch.Tensor,         # [B, T, HKV, ceil(K / (8 / k_bits))], packed quantized ints
-    k_scale: torch.Tensor,     # [B, HKV, K] (token dimension removed)
-    k_zero: torch.Tensor,      # same shape as k_scale
-    v: torch.Tensor,           # [B, T, HKV, V]
-    k_residual: torch.Tensor | None = None,  # [B, T, HKV, K], fp8 residual
+def attn_forward_decode_quantized_opt3(
+    q: torch.Tensor,
+    k_q: torch.Tensor,
+    k_scale: torch.Tensor,
+    k_zero: torch.Tensor,
+    v: torch.Tensor,
+    k_residual: torch.Tensor | None = None,
     k_bits: int = 2,
     scale: float = None,
     BS: int = 128,
@@ -283,50 +262,29 @@ def attn_forward_decode_quantized(
     return_skip_ratio: bool = False,
     precomputed_threshold: torch.Tensor | None = None,
     use_fp8_residual: bool = True,
-    num_warps_th: int | None = None,
-    num_stages_th: int | None = None,
-    num_warps_s1: int | None = None,
-    num_stages_s1: int | None = None,
-    num_warps_s2: int | None = None,
-    num_stages_s2: int | None = None,
     **kwargs,
 ):
-    # import os
-    # print(f"ENTER {__file__} attn_forward_decode_quantized")
-    
+    """Optimization 3: Use FP16 for o_buf to reduce bandwidth."""
     assert q.is_cuda and k_q.is_cuda and v.is_cuda
     if k_residual is not None and not k_residual.is_cuda:
         raise ValueError("k_residual must be a CUDA tensor when provided")
     if k_bits != 2:
-        raise ValueError(f"attn_forward_decode_quantized currently supports 2-bit keys, got k_bits={k_bits}")
-    assert k_scale.is_cuda and k_zero.is_cuda, "k_scale/k_zero must be CUDA tensors"
-    if not k_scale.is_floating_point() or not k_zero.is_floating_point():
-        raise ValueError("k_scale and k_zero must be floating point tensors for dequantization")
-    if k_q.is_floating_point():
-        raise ValueError("k_q must contain integer quantized values (e.g., uint8/int8)")
-    if k_residual is not None and not k_residual.is_floating_point():
-        raise ValueError("k_residual must be a floating point tensor (e.g., fp8/fp16/bf16)")
+        raise ValueError(f"Currently supports 2-bit keys, got k_bits={k_bits}")
+    assert k_scale.is_cuda and k_zero.is_cuda
 
     B, Tq, HQ, K = q.shape
     Bk, T, HKV, K_packed = k_q.shape
     Bv, Tv, HKVv, V = v.shape
-    if 8 % k_bits != 0:
-        raise ValueError(f"k_bits must divide 8 for packing, got {k_bits}")
     vals_per_byte = 8 // k_bits
     expected_k_packed = (K + vals_per_byte - 1) // vals_per_byte
     if K_packed != expected_k_packed:
-        raise ValueError(f"k_q packed dim mismatch: got {K_packed}, expected {expected_k_packed} for K={K}, k_bits={k_bits}")
+        raise ValueError(f"k_q packed dim mismatch")
     if k_residual is not None:
         Bk_r, T_r, HKV_r, K_r = k_residual.shape
-        assert (
-            B == Bk == Bv == Bk_r
-            and Tq == 1
-            and Tv == T == T_r
-            and HKVv == HKV == HKV_r
-            and K == K_r
-        ), "K/V layouts must be [B, T, HKV, D]"
+        assert B == Bk == Bv == Bk_r and Tq == 1 and Tv == T == T_r and HKVv == HKV == HKV_r and K == K_r
     else:
-        assert B == Bk == Bv and Tq == 1 and Tv == T and HKVv == HKV, "K/V layouts must be [B, T, HKV, D]"
+        assert B == Bk == Bv and Tq == 1 and Tv == T and HKVv == HKV
+
     G = HQ // HKV
 
     expect_shape = (B, HKV, K)
@@ -346,7 +304,7 @@ def attn_forward_decode_quantized(
         raise ValueError("use_fp8_residual=True requires k_residual")
     if k_residual is not None:
         assert k_residual.is_contiguous()
-    
+
     q = q.contiguous()
     k_q = k_q.contiguous()
     use_fp8_residual = use_fp8_residual and (k_residual is not None)
@@ -355,7 +313,8 @@ def attn_forward_decode_quantized(
     o = torch.empty((B, HQ, V), device=q.device, dtype=q.dtype)
     m_buf = torch.empty((B, HQ, NTBS), device=q.device, dtype=torch.float32)
     l_buf = torch.empty((B, HQ, NTBS), device=q.device, dtype=torch.float32)
-    o_buf = torch.empty((B, HQ, NTBS, V), device=q.device, dtype=torch.float32)
+    # OPTIMIZATION: Use FP16 for o_buf instead of FP32
+    o_buf = torch.empty((B, HQ, NTBS, V), device=q.device, dtype=torch.float16)
     mask_buf = torch.zeros((B, HKV, NTBS), device=q.device, dtype=torch.int8)
 
     if precomputed_threshold is not None:
@@ -364,19 +323,16 @@ def attn_forward_decode_quantized(
         use_ext_th = True
     else:
         threshold_buf = torch.empty((B, HQ), device=q.device, dtype=torch.float32)
-        th_kwargs = _kernel_kwargs(num_warps_th, num_stages_th)
         attn_compute_threshold_qbits[(B, HKV)](
             q, k_q, k_scale, k_zero,
             threshold_buf,
             scale, T, NTB, delta,
             B=B, HKV=HKV, HQ=HQ, K=K, K_PACKED=K_packed, G=G,
             K_BITS=k_bits,
-            **th_kwargs,
         )
         use_ext_th = True
 
-    s1_kwargs = _kernel_kwargs(num_warps_s1, num_stages_s1)
-    attn_forward_stage1_fused_threshold_qbits[(NTB, B, HKV)](
+    attn_forward_stage1_fp16_obuf[(NTB, B, HKV)](
         q, k_q, k_scale, k_zero, k_res, v,
         m_buf, l_buf, o_buf,
         mask_buf,
@@ -384,7 +340,6 @@ def attn_forward_decode_quantized(
         threshold_buf,
         B=B, HKV=HKV, HQ=HQ, K=K, K_PACKED=K_packed, V=V, G=G, BS=BS, SBS=SBS,
         K_BITS=k_bits, USE_EXT_TH=use_ext_th, USE_FP8_RESIDUAL=use_fp8_residual,
-        **s1_kwargs,
     )
 
     skip_ratio = None
@@ -393,13 +348,11 @@ def attn_forward_decode_quantized(
         total = mask_buf.numel()
         skip_ratio = float((1.0 - (kept.float() / float(total))).item())
 
-    s2_kwargs = _kernel_kwargs(num_warps_s2, num_stages_s2)
-    attn_forward_stage2_masked[(B, HKV, G)](
+    attn_forward_stage2_fp16_obuf[(B, HKV, G)](
         m_buf, l_buf, o_buf,
         mask_buf,
         o, NTBS,
         B=B, HKV=HKV, G=G, HQ=HQ, V=V,
-        **s2_kwargs,
     )
 
     if return_skip_ratio:

@@ -1,14 +1,14 @@
-# CUDAGraph wrapper for Q2FP8 decode kernel (no changes to the original kernel).
+# CUDAGraph wrapper for Q2FP8 decode kernel (vectorized load hints).
 from __future__ import annotations
 
 from typing import Optional
 
 import torch
 
-from .attn_kernel_v1210_fused_bsz_q2fp8 import attn_forward_decode_quantized
+from .attn_kernel_v1210_fused_bsz_q2fp8_vec import attn_forward_decode_quantized
 
 
-class CUDAGraphDecodeRunnerQ2FP8:
+class CUDAGraphDecodeRunnerQ2FP8Vec:
     """Capture and replay the Q2FP8 decode kernel with static buffers.
 
     This wrapper avoids per-step kernel launches by using torch.cuda.CUDAGraph.

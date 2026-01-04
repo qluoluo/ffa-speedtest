@@ -1,0 +1,427 @@
+==========================================
+H100 Optimized Kernel Benchmark
+==========================================
+
+GPU: NVIDIA H100 80GB HBM3
+
+==========================================
+Step 1: Correctness Test
+==========================================
+/inspire/hdd/global_user/liuzhigeng-253108120105/miniconda/envs/ffa/lib/python3.12/site-packages/torch/cuda/__init__.py:63: FutureWarning: The pynvml package is deprecated. Please install nvidia-ml-py instead. If you did not install pynvml directly, please report this to the maintainers of the package that installed pynvml for you.
+  import pynvml  # type: ignore[import]
+
+================================================================================
+TESTING CORRECTNESS
+================================================================================
+Creating test inputs: B=1, T=4096, HQ=24, HKV=8, K=128, V=128
+  q: torch.Size([1, 1, 24, 128]), k_q: torch.Size([1, 4096, 8, 32]), k_scale: torch.Size([1, 8, 128]), v: torch.Size([1, 4096, 8, 128])
+  k_residual: torch.Size([1, 4096, 8, 128]), dtype: torch.float8_e5m2
+
+[1/4] Testing original kernel...
+  Output shape: torch.Size([1, 24, 128])
+  Output range: [-0.0920, 0.0919]
+
+[2/4] Testing optimized kernel (LUT only)...
+  Output shape: torch.Size([1, 24, 128])
+  Output range: [-0.0920, 0.0919]
+  Diff vs original: max=0.000061, mean=0.000006
+
+[3/4] Testing optimized kernel (LUT + async copy)...
+  Output shape: torch.Size([1, 24, 128])
+  Diff vs original: max=0.000061, mean=0.000006
+
+[4/4] Testing FP8 support...
+  GPU: NVIDIA H100 80GB HBM3
+  FP8 tensor cores supported, testing FP8 mode...
+  FP8 output shape: torch.Size([1, 24, 128])
+  FP8 diff vs original: max=0.000061, mean=0.000006
+
+================================================================================
+CORRECTNESS TEST SUMMARY
+================================================================================
+✓ Original kernel works
+✓ LUT optimization: max diff = 0.000061
+✓ Async copy: max diff = 0.000061
+
+✓ ALL TESTS PASSED! (differences within tolerance)
+
+✓ All tests completed!
+
+==========================================
+Step 2: Quick Benchmark (T=16384)
+==========================================
+/inspire/hdd/global_user/liuzhigeng-253108120105/miniconda/envs/ffa/lib/python3.12/site-packages/torch/cuda/__init__.py:63: FutureWarning: The pynvml package is deprecated. Please install nvidia-ml-py instead. If you did not install pynvml directly, please report this to the maintainers of the package that installed pynvml for you.
+  import pynvml  # type: ignore[import]
+
+================================================================================
+PERFORMANCE BENCHMARK (T=16384)
+================================================================================
+Creating test inputs: B=1, T=16384, HQ=24, HKV=8, K=128, V=128
+  q: torch.Size([1, 1, 24, 128]), k_q: torch.Size([1, 16384, 8, 32]), k_scale: torch.Size([1, 8, 128]), v: torch.Size([1, 16384, 8, 128])
+  k_residual: torch.Size([1, 16384, 8, 128]), dtype: torch.float8_e5m2
+
+GPU: NVIDIA H100 80GB HBM3
+Warmup: 20, Iterations: 200
+
+[1/5] Benchmarking original kernel...
+  Time: 0.0688 ms
+
+[2/5] Benchmarking optimized (LUT only)...
+  Time: 0.0923 ms
+  Speedup: 0.745x
+
+[3/5] Benchmarking optimized (LUT + Async)...
+  Time: 0.0920 ms
+  Speedup: 0.747x
+
+[4/5] Benchmarking FP8 mode...
+  Time: 0.0912 ms
+  Speedup: 0.754x
+
+[5/5] Benchmarking ALL optimizations...
+  Time: 0.0865 ms
+  Speedup: 0.795x
+
+================================================================================
+PERFORMANCE SUMMARY
+================================================================================
+Variant              Time (ms)    Speedup   
+--------------------------------------------------------------------------------
+Original                 0.0688     1.000x
+LUT                      0.0923     0.745x
+LUT+Async                0.0920     0.747x
+FP8                      0.0912     0.754x
+All                      0.0865     0.795x
+================================================================================
+
+✓ All tests completed!
+
+==========================================
+Step 3: Long Sequence Benchmark (T=65536)
+==========================================
+/inspire/hdd/global_user/liuzhigeng-253108120105/miniconda/envs/ffa/lib/python3.12/site-packages/torch/cuda/__init__.py:63: FutureWarning: The pynvml package is deprecated. Please install nvidia-ml-py instead. If you did not install pynvml directly, please report this to the maintainers of the package that installed pynvml for you.
+  import pynvml  # type: ignore[import]
+
+================================================================================
+PERFORMANCE BENCHMARK (T=65536)
+================================================================================
+Creating test inputs: B=1, T=65536, HQ=24, HKV=8, K=128, V=128
+  q: torch.Size([1, 1, 24, 128]), k_q: torch.Size([1, 65536, 8, 32]), k_scale: torch.Size([1, 8, 128]), v: torch.Size([1, 65536, 8, 128])
+  k_residual: torch.Size([1, 65536, 8, 128]), dtype: torch.float8_e5m2
+
+GPU: NVIDIA H100 80GB HBM3
+Warmup: 20, Iterations: 200
+
+[1/5] Benchmarking original kernel...
+  Time: 0.2275 ms
+
+[2/5] Benchmarking optimized (LUT only)...
+  Time: 0.2840 ms
+  Speedup: 0.801x
+
+[3/5] Benchmarking optimized (LUT + Async)...
+  Time: 0.2811 ms
+  Speedup: 0.809x
+
+[4/5] Benchmarking FP8 mode...
+  Time: 0.2856 ms
+  Speedup: 0.797x
+
+[5/5] Benchmarking ALL optimizations...
+  Time: 0.2839 ms
+  Speedup: 0.801x
+
+================================================================================
+PERFORMANCE SUMMARY
+================================================================================
+Variant              Time (ms)    Speedup   
+--------------------------------------------------------------------------------
+Original                 0.2275     1.000x
+LUT                      0.2840     0.801x
+LUT+Async                0.2811     0.809x
+FP8                      0.2856     0.797x
+All                      0.2839     0.801x
+================================================================================
+
+✓ All tests completed!
+
+==========================================
+Step 4: Very Long Sequence (T=131072)
+==========================================
+/inspire/hdd/global_user/liuzhigeng-253108120105/miniconda/envs/ffa/lib/python3.12/site-packages/torch/cuda/__init__.py:63: FutureWarning: The pynvml package is deprecated. Please install nvidia-ml-py instead. If you did not install pynvml directly, please report this to the maintainers of the package that installed pynvml for you.
+  import pynvml  # type: ignore[import]
+
+================================================================================
+PERFORMANCE BENCHMARK (T=131072)
+================================================================================
+Creating test inputs: B=1, T=131072, HQ=24, HKV=8, K=128, V=128
+  q: torch.Size([1, 1, 24, 128]), k_q: torch.Size([1, 131072, 8, 32]), k_scale: torch.Size([1, 8, 128]), v: torch.Size([1, 131072, 8, 128])
+  k_residual: torch.Size([1, 131072, 8, 128]), dtype: torch.float8_e5m2
+
+GPU: NVIDIA H100 80GB HBM3
+Warmup: 20, Iterations: 100
+
+[1/5] Benchmarking original kernel...
+  Time: 0.4341 ms
+
+[2/5] Benchmarking optimized (LUT only)...
+  Time: 0.5412 ms
+  Speedup: 0.802x
+
+[3/5] Benchmarking optimized (LUT + Async)...
+  Time: 0.5405 ms
+  Speedup: 0.803x
+
+[4/5] Benchmarking FP8 mode...
+  Time: 0.5422 ms
+  Speedup: 0.801x
+
+[5/5] Benchmarking ALL optimizations...
+  Time: 0.5467 ms
+  Speedup: 0.794x
+
+================================================================================
+PERFORMANCE SUMMARY
+================================================================================
+Variant              Time (ms)    Speedup   
+--------------------------------------------------------------------------------
+Original                 0.4341     1.000x
+LUT                      0.5412     0.802x
+LUT+Async                0.5405     0.803x
+FP8                      0.5422     0.801x
+All                      0.5467     0.794x
+================================================================================
+
+✓ All tests completed!
+
+==========================================
+Step 5: Full Benchmark Suite
+==========================================
+/inspire/hdd/global_user/liuzhigeng-253108120105/miniconda/envs/ffa/lib/python3.12/site-packages/torch/cuda/__init__.py:63: FutureWarning: The pynvml package is deprecated. Please install nvidia-ml-py instead. If you did not install pynvml directly, please report this to the maintainers of the package that installed pynvml for you.
+  import pynvml  # type: ignore[import]
+
+================================================================================
+FULL BENCHMARK SUITE
+================================================================================
+
+================================================================================
+PERFORMANCE BENCHMARK (T=4096)
+================================================================================
+Creating test inputs: B=1, T=4096, HQ=24, HKV=8, K=128, V=128
+  q: torch.Size([1, 1, 24, 128]), k_q: torch.Size([1, 4096, 8, 32]), k_scale: torch.Size([1, 8, 128]), v: torch.Size([1, 4096, 8, 128])
+  k_residual: torch.Size([1, 4096, 8, 128]), dtype: torch.float8_e5m2
+
+GPU: NVIDIA H100 80GB HBM3
+Warmup: 20, Iterations: 200
+
+[1/5] Benchmarking original kernel...
+  Time: 0.0756 ms
+
+[2/5] Benchmarking optimized (LUT only)...
+  Time: 0.0892 ms
+  Speedup: 0.848x
+
+[3/5] Benchmarking optimized (LUT + Async)...
+  Time: 0.0992 ms
+  Speedup: 0.762x
+
+[4/5] Benchmarking FP8 mode...
+  Time: 0.0880 ms
+  Speedup: 0.859x
+
+[5/5] Benchmarking ALL optimizations...
+  Time: 0.0882 ms
+  Speedup: 0.858x
+
+================================================================================
+PERFORMANCE SUMMARY
+================================================================================
+Variant              Time (ms)    Speedup   
+--------------------------------------------------------------------------------
+Original                 0.0756     1.000x
+LUT                      0.0892     0.848x
+LUT+Async                0.0992     0.762x
+FP8                      0.0880     0.859x
+All                      0.0882     0.858x
+================================================================================
+
+================================================================================
+PERFORMANCE BENCHMARK (T=8192)
+================================================================================
+Creating test inputs: B=1, T=8192, HQ=24, HKV=8, K=128, V=128
+  q: torch.Size([1, 1, 24, 128]), k_q: torch.Size([1, 8192, 8, 32]), k_scale: torch.Size([1, 8, 128]), v: torch.Size([1, 8192, 8, 128])
+  k_residual: torch.Size([1, 8192, 8, 128]), dtype: torch.float8_e5m2
+
+GPU: NVIDIA H100 80GB HBM3
+Warmup: 20, Iterations: 200
+
+[1/5] Benchmarking original kernel...
+  Time: 0.0786 ms
+
+[2/5] Benchmarking optimized (LUT only)...
+  Time: 0.0891 ms
+  Speedup: 0.882x
+
+[3/5] Benchmarking optimized (LUT + Async)...
+  Time: 0.0995 ms
+  Speedup: 0.790x
+
+[4/5] Benchmarking FP8 mode...
+  Time: 0.0878 ms
+  Speedup: 0.895x
+
+[5/5] Benchmarking ALL optimizations...
+  Time: 0.0878 ms
+  Speedup: 0.895x
+
+================================================================================
+PERFORMANCE SUMMARY
+================================================================================
+Variant              Time (ms)    Speedup   
+--------------------------------------------------------------------------------
+Original                 0.0786     1.000x
+LUT                      0.0891     0.882x
+LUT+Async                0.0995     0.790x
+FP8                      0.0878     0.895x
+All                      0.0878     0.895x
+================================================================================
+
+================================================================================
+PERFORMANCE BENCHMARK (T=16384)
+================================================================================
+Creating test inputs: B=1, T=16384, HQ=24, HKV=8, K=128, V=128
+  q: torch.Size([1, 1, 24, 128]), k_q: torch.Size([1, 16384, 8, 32]), k_scale: torch.Size([1, 8, 128]), v: torch.Size([1, 16384, 8, 128])
+  k_residual: torch.Size([1, 16384, 8, 128]), dtype: torch.float8_e5m2
+
+GPU: NVIDIA H100 80GB HBM3
+Warmup: 20, Iterations: 200
+
+[1/5] Benchmarking original kernel...
+  Time: 0.0742 ms
+
+[2/5] Benchmarking optimized (LUT only)...
+  Time: 0.0952 ms
+  Speedup: 0.780x
+
+[3/5] Benchmarking optimized (LUT + Async)...
+  Time: 0.1005 ms
+  Speedup: 0.739x
+
+[4/5] Benchmarking FP8 mode...
+  Time: 0.0923 ms
+  Speedup: 0.804x
+
+[5/5] Benchmarking ALL optimizations...
+  Time: 0.0877 ms
+  Speedup: 0.846x
+
+================================================================================
+PERFORMANCE SUMMARY
+================================================================================
+Variant              Time (ms)    Speedup   
+--------------------------------------------------------------------------------
+Original                 0.0742     1.000x
+LUT                      0.0952     0.780x
+LUT+Async                0.1005     0.739x
+FP8                      0.0923     0.804x
+All                      0.0877     0.846x
+================================================================================
+
+================================================================================
+PERFORMANCE BENCHMARK (T=32768)
+================================================================================
+Creating test inputs: B=1, T=32768, HQ=24, HKV=8, K=128, V=128
+  q: torch.Size([1, 1, 24, 128]), k_q: torch.Size([1, 32768, 8, 32]), k_scale: torch.Size([1, 8, 128]), v: torch.Size([1, 32768, 8, 128])
+  k_residual: torch.Size([1, 32768, 8, 128]), dtype: torch.float8_e5m2
+
+GPU: NVIDIA H100 80GB HBM3
+Warmup: 20, Iterations: 200
+
+[1/5] Benchmarking original kernel...
+  Time: 0.1225 ms
+
+[2/5] Benchmarking optimized (LUT only)...
+  Time: 0.1570 ms
+  Speedup: 0.780x
+
+[3/5] Benchmarking optimized (LUT + Async)...
+  Time: 0.1561 ms
+  Speedup: 0.784x
+
+[4/5] Benchmarking FP8 mode...
+  Time: 0.1568 ms
+  Speedup: 0.781x
+
+[5/5] Benchmarking ALL optimizations...
+  Time: 0.1565 ms
+  Speedup: 0.783x
+
+================================================================================
+PERFORMANCE SUMMARY
+================================================================================
+Variant              Time (ms)    Speedup   
+--------------------------------------------------------------------------------
+Original                 0.1225     1.000x
+LUT                      0.1570     0.780x
+LUT+Async                0.1561     0.784x
+FP8                      0.1568     0.781x
+All                      0.1565     0.783x
+================================================================================
+
+================================================================================
+PERFORMANCE BENCHMARK (T=65536)
+================================================================================
+Creating test inputs: B=1, T=65536, HQ=24, HKV=8, K=128, V=128
+  q: torch.Size([1, 1, 24, 128]), k_q: torch.Size([1, 65536, 8, 32]), k_scale: torch.Size([1, 8, 128]), v: torch.Size([1, 65536, 8, 128])
+  k_residual: torch.Size([1, 65536, 8, 128]), dtype: torch.float8_e5m2
+
+GPU: NVIDIA H100 80GB HBM3
+Warmup: 20, Iterations: 200
+
+[1/5] Benchmarking original kernel...
+  Time: 0.2286 ms
+
+[2/5] Benchmarking optimized (LUT only)...
+  Time: 0.2867 ms
+  Speedup: 0.797x
+
+[3/5] Benchmarking optimized (LUT + Async)...
+  Time: 0.2841 ms
+  Speedup: 0.805x
+
+[4/5] Benchmarking FP8 mode...
+  Time: 0.2859 ms
+  Speedup: 0.800x
+
+[5/5] Benchmarking ALL optimizations...
+  Time: 0.2847 ms
+  Speedup: 0.803x
+
+================================================================================
+PERFORMANCE SUMMARY
+================================================================================
+Variant              Time (ms)    Speedup   
+--------------------------------------------------------------------------------
+Original                 0.2286     1.000x
+LUT                      0.2867     0.797x
+LUT+Async                0.2841     0.805x
+FP8                      0.2859     0.800x
+All                      0.2847     0.803x
+================================================================================
+
+✓ All tests completed!
+
+==========================================
+Benchmark Complete!
+==========================================
+
+Results summary:
+- Correctness tests: Check output above
+- Performance data: See benchmark results above
+
+Next steps:
+1. Compare speedup vs original kernel
+2. Compare speedup vs FlashAttention
+3. If speedup is good, integrate into your production code
+
+For integration, see README_OPTIMIZATIONS.md

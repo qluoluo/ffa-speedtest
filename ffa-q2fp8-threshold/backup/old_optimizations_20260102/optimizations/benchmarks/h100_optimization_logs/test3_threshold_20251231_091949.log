@@ -1,0 +1,32 @@
+/inspire/hdd/global_user/liuzhigeng-253108120105/miniconda/envs/ffa/lib/python3.12/site-packages/torch/cuda/__init__.py:63: FutureWarning: The pynvml package is deprecated. Please install nvidia-ml-py instead. If you did not install pynvml directly, please report this to the maintainers of the package that installed pynvml for you.
+  import pynvml  # type: ignore[import]
+================================================================================
+H100 Optimization Tests
+================================================================================
+GPU: NVIDIA H100 80GB HBM3
+Sequence Length: 65536
+Warmup: 20, Iterations: 100
+================================================================================
+
+================================================================================
+TEST 3: Precomputed Threshold Effect (T=65536)
+================================================================================
+
+[Without Precomputed Threshold]
+  Time: 0.4346 ms
+  Skip ratio: 0.00%
+
+[Computing threshold once...]
+  Threshold computation: 0.6583 ms (one-time cost)
+
+[With Precomputed Threshold] (theoretical)
+  Note: Current implementation always recomputes threshold
+  If we could reuse threshold across 100 iterations:
+  Amortized time: 0.4280 ms
+  Theoretical speedup: 1.015x
+
+Results saved to: /inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-speedtest/ffa-q2fp8-threshold/optimizations/benchmarks/h100_optimization_logs/test3_threshold_20251231_091949.json
+
+================================================================================
+ALL TESTS COMPLETED
+================================================================================

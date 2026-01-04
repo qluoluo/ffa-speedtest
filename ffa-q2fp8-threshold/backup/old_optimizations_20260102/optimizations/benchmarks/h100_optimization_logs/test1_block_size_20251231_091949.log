@@ -1,0 +1,57 @@
+/inspire/hdd/global_user/liuzhigeng-253108120105/miniconda/envs/ffa/lib/python3.12/site-packages/torch/cuda/__init__.py:63: FutureWarning: The pynvml package is deprecated. Please install nvidia-ml-py instead. If you did not install pynvml directly, please report this to the maintainers of the package that installed pynvml for you.
+  import pynvml  # type: ignore[import]
+================================================================================
+H100 Optimization Tests
+================================================================================
+GPU: NVIDIA H100 80GB HBM3
+Sequence Length: 65536
+Warmup: 20, Iterations: 100
+================================================================================
+
+================================================================================
+TEST 1: Block Size Optimization (T=65536)
+================================================================================
+
+[Baseline] FlashAttention...
+  Time: 0.2667 ms
+
+[Original (128/128)] BS=128, SBS=128
+  Time: 0.4762 ms
+  Skip ratio: 0.00%
+  Speedup vs FlashAttn: 0.560x
+
+[Larger BS (256/128)] BS=256, SBS=128
+  Time: 0.3055 ms
+  Skip ratio: 0.00%
+  Speedup vs FlashAttn: 0.873x
+  Speedup vs Original: 1.559x
+
+[Larger Both (256/256)] BS=256, SBS=256
+  Time: 0.2953 ms
+  Skip ratio: 0.00%
+  Speedup vs FlashAttn: 0.903x
+  Speedup vs Original: 1.613x
+
+[Large BS (512/256)] BS=512, SBS=256
+  Time: 0.3224 ms
+  Skip ratio: 0.00%
+  Speedup vs FlashAttn: 0.827x
+  Speedup vs Original: 1.477x
+
+[Very Large BS (1024/256)] BS=1024, SBS=256
+  Time: 0.4249 ms
+  Skip ratio: 0.00%
+  Speedup vs FlashAttn: 0.628x
+  Speedup vs Original: 1.121x
+
+[Large Both (512/512)] BS=512, SBS=512
+  Time: 0.5678 ms
+  Skip ratio: 0.00%
+  Speedup vs FlashAttn: 0.470x
+  Speedup vs Original: 0.839x
+
+Results saved to: /inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-speedtest/ffa-q2fp8-threshold/optimizations/benchmarks/h100_optimization_logs/test1_block_size_20251231_091949.json
+
+================================================================================
+ALL TESTS COMPLETED
+================================================================================

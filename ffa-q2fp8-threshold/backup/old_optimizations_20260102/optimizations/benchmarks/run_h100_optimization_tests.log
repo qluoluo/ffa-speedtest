@@ -1,0 +1,20 @@
+==========================================
+H100 Optimization Systematic Tests
+==========================================
+Timestamp: 20251231_084835
+Log directory: /inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-speedtest/ffa-q2fp8-threshold/optimizations/benchmarks/h100_optimization_logs
+
+GPU: NVIDIA H100 80GB HBM3
+
+==========================================
+Test Plan
+==========================================
+1. Block Size Optimization (T=65536)
+2. Delta Parameter Optimization (T=65536)
+3. Precomputed Threshold Effect (T=65536)
+4. Combined Optimizations (T=65536)
+5. Scaling Test (Multiple sequence lengths)
+
+Estimated time: ~10-15 minutes
+
+Press Enter to start tests...

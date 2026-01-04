@@ -1,0 +1,42 @@
+[Info] Using GPU[0]: NVIDIA GeForce RTX 4090 (48GB)
+[Info] Loading layer 1 from /inspire/hdd/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/huffkv-opencompass/opencompass/models/myModel/ffa/attn_analysis/result/Llama-3_2-3B/longbench_gov_report_48_68_256k/layer_data
+Traceback (most recent call last):
+  File "/inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-speedtest/ffa-q2fp8-paged/run_real_data_bench.py", line 500, in <module>
+    main()
+  File "/inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-speedtest/ffa-q2fp8-paged/run_real_data_bench.py", line 323, in main
+    data = next(gen)
+           ^^^^^^^^^
+  File "/inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-speedtest/ffa-q2fp8-paged/run_real_data_bench.py", line 50, in load_qkvh
+    tensor = torch.load(data_path, weights_only=True, map_location=device)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/inspire/hdd/global_user/liuzhigeng-253108120105/miniconda/envs/ffa/lib/python3.12/site-packages/torch/serialization.py", line 1521, in load
+    return _load(
+           ^^^^^^
+  File "/inspire/hdd/global_user/liuzhigeng-253108120105/miniconda/envs/ffa/lib/python3.12/site-packages/torch/serialization.py", line 2122, in _load
+    result = unpickler.load()
+             ^^^^^^^^^^^^^^^^
+  File "/inspire/hdd/global_user/liuzhigeng-253108120105/miniconda/envs/ffa/lib/python3.12/site-packages/torch/_weights_only_unpickler.py", line 535, in load
+    self.append(self.persistent_load(pid))
+                ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/inspire/hdd/global_user/liuzhigeng-253108120105/miniconda/envs/ffa/lib/python3.12/site-packages/torch/serialization.py", line 2086, in persistent_load
+    typed_storage = load_tensor(
+                    ^^^^^^^^^^^^
+  File "/inspire/hdd/global_user/liuzhigeng-253108120105/miniconda/envs/ffa/lib/python3.12/site-packages/torch/serialization.py", line 2052, in load_tensor
+    wrap_storage = restore_location(storage, location)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/inspire/hdd/global_user/liuzhigeng-253108120105/miniconda/envs/ffa/lib/python3.12/site-packages/torch/serialization.py", line 1864, in restore_location
+    return default_restore_location(storage, str(map_location))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/inspire/hdd/global_user/liuzhigeng-253108120105/miniconda/envs/ffa/lib/python3.12/site-packages/torch/serialization.py", line 698, in default_restore_location
+    result = fn(storage, location)
+             ^^^^^^^^^^^^^^^^^^^^^
+  File "/inspire/hdd/global_user/liuzhigeng-253108120105/miniconda/envs/ffa/lib/python3.12/site-packages/torch/serialization.py", line 637, in _deserialize
+    return obj.to(device=device)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/inspire/hdd/global_user/liuzhigeng-253108120105/miniconda/envs/ffa/lib/python3.12/site-packages/torch/storage.py", line 291, in to
+    return _to(self, device, non_blocking)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/inspire/hdd/global_user/liuzhigeng-253108120105/miniconda/envs/ffa/lib/python3.12/site-packages/torch/_utils.py", line 101, in _to
+    untyped_storage = torch.UntypedStorage(self.size(), device=device)
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+torch.OutOfMemoryError: CUDA out of memory. Tried to allocate 512.00 MiB. GPU 0 has a total capacity of 47.50 GiB of which 280.62 MiB is free. Process 545225 has 42.83 GiB memory in use. Process 616690 has 4.38 GiB memory in use. Of the allocated memory 4.00 GiB is allocated by PyTorch, and 0 bytes is reserved by PyTorch but unallocated. If reserved but unallocated memory is large try setting PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True to avoid fragmentation.  See documentation for Memory Management  (https://pytorch.org/docs/stable/notes/cuda.html#environment-variables)

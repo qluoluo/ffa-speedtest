@@ -1,0 +1,59 @@
+{
+  "gpu": "NVIDIA GeForce RTX 4090",
+  "layer_data_dir": "/inspire/hdd/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/huffkv-opencompass/opencompass/models/myModel/ffa/attn_analysis/result/Llama-3_2-3B/longbench_gov_report_48_68_256k/layer_data",
+  "layer": 1,
+  "seq_len": 262144,
+  "flash_baseline": 3.35388671875,
+  "results": [
+    {
+      "name": "Original (BS=128, delta=5.0)",
+      "BS": 128,
+      "SBS": 128,
+      "delta": 5.0,
+      "time": 0.5080883026123046,
+      "skip_ratio": 0.9884033203125,
+      "speedup_vs_flash": 6.600991799075473,
+      "speedup_vs_original": 1.0
+    },
+    {
+      "name": "BS=256, SBS=256, delta=5.0",
+      "BS": 256,
+      "SBS": 256,
+      "delta": 5.0,
+      "time": 0.4123040008544922,
+      "skip_ratio": 0.98291015625,
+      "speedup_vs_flash": 8.134499572643325,
+      "speedup_vs_original": 1.2323147521229512
+    },
+    {
+      "name": "BS=512, SBS=256, delta=5.0",
+      "BS": 512,
+      "SBS": 256,
+      "delta": 5.0,
+      "time": 0.40278526306152346,
+      "skip_ratio": 0.98291015625,
+      "speedup_vs_flash": 8.326736418451611,
+      "speedup_vs_original": 1.2614371706412126
+    },
+    {
+      "name": "BS=512, SBS=256, delta=6.5",
+      "BS": 512,
+      "SBS": 256,
+      "delta": 6.5,
+      "time": 0.4165606307983398,
+      "skip_ratio": 0.964111328125,
+      "speedup_vs_flash": 8.051377088425916,
+      "speedup_vs_original": 1.2197223286284922
+    },
+    {
+      "name": "BS=512, SBS=256, delta=7.0",
+      "BS": 512,
+      "SBS": 256,
+      "delta": 7.0,
+      "time": 0.4216608047485352,
+      "skip_ratio": 0.9539794921875,
+      "speedup_vs_flash": 7.95399212110822,
+      "speedup_vs_original": 1.2049692475337186
+    }
+  ]
+}

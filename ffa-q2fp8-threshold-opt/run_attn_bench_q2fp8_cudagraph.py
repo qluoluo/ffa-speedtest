@@ -14,9 +14,9 @@ from utils.bench import benchmark
 from utils.cache import dtype_key, to_k_str
 from utils.load import load_qkvh
 
-from attn_kernel.attn_kernel_v1210_fused_bsz_q2fp8 import attn_forward_decode_quantized
-from attn_kernel.attn_kernel_v1210_fused_bsz_q2fp8_cudagraph import (
-    CUDAGraphDecodeRunnerQ2FP8,
+from attn_kernel.attn_kernel_v1210_fused_bsz_q2fp8_vec import attn_forward_decode_quantized
+from attn_kernel.attn_kernel_v1210_fused_bsz_q2fp8_vec_cudagraph import (
+    CUDAGraphDecodeRunnerQ2FP8Vec as CUDAGraphDecodeRunnerQ2FP8,
 )
 
 # Ensure package importability
@@ -38,12 +38,6 @@ def parse_args():
     p.add_argument("--delta", type=float, default=5.0)
     p.add_argument("--layer", type=int, default=1, help="Layer index to load")
     p.add_argument("--bsz", type=int, default=1, help="Batch size (number of layers to combine)")
-    p.add_argument(
-        "--attn-kernel-name",
-        type=str,
-        default="attn_kernel_v1210_fused_bsz_q2fp8",
-        help="Kernel name tag for output dirs/plots and metadata.",
-    )
     p.add_argument(
         "--max-length",
         type=int,
@@ -404,7 +398,7 @@ def main():
     num_warps_s2 = _norm_kernel_arg(args.num_warps_s2) or num_warps
     num_stages_s2 = _norm_kernel_arg(args.num_stages_s2) or num_stages
 
-    attn_kernel_name = args.attn_kernel_name
+    attn_kernel_name = "attn_kernel_v1210_fused_bsz_q2fp8_vec"
 
     exp_root = EXP_ROOT_DIR / EXP_ROOT_SUBDIR
     layer_data_root = exp_root / "layer_data"

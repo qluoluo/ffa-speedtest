@@ -1,0 +1,23 @@
+/inspire/hdd/global_user/liuzhigeng-253108120105/miniconda/envs/ffa/lib/python3.12/site-packages/torch/cuda/__init__.py:63: FutureWarning: The pynvml package is deprecated. Please install nvidia-ml-py instead. If you did not install pynvml directly, please report this to the maintainers of the package that installed pynvml for you.
+  import pynvml  # type: ignore[import]
+`torch_dtype` is deprecated! Use `dtype` instead!
+================================================================================
+H100 Real Data Optimization Tests
+================================================================================
+GPU: NVIDIA H100 80GB HBM3
+Model: /inspire/hdd/global_user/liuzhigeng-253108120105/models/Llama-3_2-3B
+Target sequence length: 16384
+Warmup: 10, Iterations: 50
+Dtype: fp16
+================================================================================
+
+================================================================================
+Extracting Real QKV Data from LLM Model
+================================================================================
+Model: /inspire/hdd/global_user/liuzhigeng-253108120105/models/Llama-3_2-3B
+Sequence length: 16384
+Device: cuda
+Dtype: torch.float16
+
+[1/4] Loading tokenizer and model...
+Loading checkpoint shards:   0%|          | 0/2 [00:00<?, ?it/s]

@@ -1,0 +1,56 @@
+/inspire/hdd/global_user/liuzhigeng-253108120105/miniconda/envs/ffa/lib/python3.12/site-packages/torch/cuda/__init__.py:63: FutureWarning: The pynvml package is deprecated. Please install nvidia-ml-py instead. If you did not install pynvml directly, please report this to the maintainers of the package that installed pynvml for you.
+  import pynvml  # type: ignore[import]
+================================================================================
+H100 Optimization Tests
+================================================================================
+GPU: NVIDIA H100 80GB HBM3
+Sequence Length: 131072
+Warmup: 20, Iterations: 100
+================================================================================
+
+================================================================================
+TEST 4: Combined Optimizations (T=131072)
+================================================================================
+
+[Baseline] FlashAttention...
+  Time: 0.5177 ms
+
+[Original (baseline Q2FP8)]
+  BS=128, SBS=128, delta=5.0
+  Time: 0.5746 ms
+  Skip ratio: 0.00%
+  Speedup vs FlashAttn: 0.901x
+
+[Optimized BS only]
+  BS=512, SBS=256, delta=5.0
+  Time: 0.4624 ms
+  Skip ratio: 0.00%
+  Speedup vs FlashAttn: 1.120x
+  Speedup vs Original Q2FP8: 1.243x
+
+[Optimized BS + Delta]
+  BS=512, SBS=256, delta=6.0
+  Time: 0.4450 ms
+  Skip ratio: 0.00%
+  Speedup vs FlashAttn: 1.163x
+  Speedup vs Original Q2FP8: 1.291x
+
+[Optimized BS + Aggressive Delta]
+  BS=512, SBS=256, delta=7.0
+  Time: 0.4462 ms
+  Skip ratio: 0.00%
+  Speedup vs FlashAttn: 1.160x
+  Speedup vs Original Q2FP8: 1.288x
+
+[Very Large BS + Delta]
+  BS=1024, SBS=256, delta=6.0
+  Time: 0.6834 ms
+  Skip ratio: 0.00%
+  Speedup vs FlashAttn: 0.758x
+  Speedup vs Original Q2FP8: 0.841x
+
+Results saved to: /inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-speedtest/ffa-q2fp8-threshold/optimizations/benchmarks/h100_optimization_logs/test5_scaling_T131072_20251231_091949.json
+
+================================================================================
+ALL TESTS COMPLETED
+================================================================================
