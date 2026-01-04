@@ -80,9 +80,9 @@ def attn_compute_threshold_qbits(
     tb0 = 0
     offs_t0 = tb0 * T_BS + tl.arange(0, T_BS)
     t_mask0 = offs_t0 < T
-    base_tok0_q = pid_b * (T * HKV * K_PACKED) + (offs_t0[None, :] * (HKV * K_PACKED)) + (pid_hkv * K_PACKED)
+    base_tok0_q = pid_b * (T * HKV * K_PACKED) + offs_t0 * (HKV * K_PACKED) + (pid_hkv * K_PACKED)
     tl.multiple_of(base_tok0_q, K_PACKED)
-    kq_ptrs0 = k_q + base_tok0_q + offs_kp[:, None]
+    kq_ptrs0 = k_q + base_tok0_q[None, :] + offs_kp[:, None]
     kq_packed0 = tl.load(kq_ptrs0, mask=t_mask0[None, :], other=0).to(tl.int32)
     kq0_0 = ((kq_packed0 >> 0) & QMAX).to(tl.float16)
     kq0_1 = ((kq_packed0 >> 2) & QMAX).to(tl.float16)
@@ -99,9 +99,9 @@ def attn_compute_threshold_qbits(
     tb1 = NTB - 1
     offs_t1 = tb1 * T_BS + tl.arange(0, T_BS)
     t_mask1 = offs_t1 < T
-    base_tok1_q = pid_b * (T * HKV * K_PACKED) + (offs_t1[None, :] * (HKV * K_PACKED)) + (pid_hkv * K_PACKED)
+    base_tok1_q = pid_b * (T * HKV * K_PACKED) + offs_t1 * (HKV * K_PACKED) + (pid_hkv * K_PACKED)
     tl.multiple_of(base_tok1_q, K_PACKED)
-    kq_ptrs1 = k_q + base_tok1_q + offs_kp[:, None]
+    kq_ptrs1 = k_q + base_tok1_q[None, :] + offs_kp[:, None]
     kq_packed1 = tl.load(kq_ptrs1, mask=t_mask1[None, :], other=0).to(tl.int32)
     kq1_0 = ((kq_packed1 >> 0) & QMAX).to(tl.float16)
     kq1_1 = ((kq_packed1 >> 2) & QMAX).to(tl.float16)
@@ -203,9 +203,9 @@ def attn_forward_stage1_fused_threshold_qbits(
         tb0 = 0
         offs_t0 = tb0 * T_BS + tl.arange(0, T_BS)
         t_mask0 = offs_t0 < T
-        base_tok0_q = pid_b * (T * HKV * K_PACKED) + (offs_t0[None, :] * (HKV * K_PACKED)) + (pid_hkv * K_PACKED)
+        base_tok0_q = pid_b * (T * HKV * K_PACKED) + offs_t0 * (HKV * K_PACKED) + (pid_hkv * K_PACKED)
         tl.multiple_of(base_tok0_q, K_PACKED)
-        kq_ptrs0 = k_q + base_tok0_q + offs_kp[:, None]
+        kq_ptrs0 = k_q + base_tok0_q[None, :] + offs_kp[:, None]
         kq_packed0 = tl.load(kq_ptrs0, mask=t_mask0[None, :], other=0).to(tl.int32)
         kq0_0 = ((kq_packed0 >> 0) & QMAX).to(tl.float16)
         kq0_1 = ((kq_packed0 >> 2) & QMAX).to(tl.float16)
@@ -222,9 +222,9 @@ def attn_forward_stage1_fused_threshold_qbits(
         tb1 = NTB - 1
         offs_t1 = tb1 * T_BS + tl.arange(0, T_BS)
         t_mask1 = offs_t1 < T
-        base_tok1_q = pid_b * (T * HKV * K_PACKED) + (offs_t1[None, :] * (HKV * K_PACKED)) + (pid_hkv * K_PACKED)
+        base_tok1_q = pid_b * (T * HKV * K_PACKED) + offs_t1 * (HKV * K_PACKED) + (pid_hkv * K_PACKED)
         tl.multiple_of(base_tok1_q, K_PACKED)
-        kq_ptrs1 = k_q + base_tok1_q + offs_kp[:, None]
+        kq_ptrs1 = k_q + base_tok1_q[None, :] + offs_kp[:, None]
         kq_packed1 = tl.load(kq_ptrs1, mask=t_mask1[None, :], other=0).to(tl.int32)
         kq1_0 = ((kq_packed1 >> 0) & QMAX).to(tl.float16)
         kq1_1 = ((kq_packed1 >> 2) & QMAX).to(tl.float16)
@@ -244,11 +244,11 @@ def attn_forward_stage1_fused_threshold_qbits(
         offs_t_sb = s0 + sb * SBS + tl.arange(0, SBS)
         t_mask_sb = offs_t_sb < T
 
-        base_toksb_q = pid_b * (T * HKV * K_PACKED) + (offs_t_sb[None, :] * (HKV * K_PACKED)) + (pid_hkv * K_PACKED)
-        base_toksb_k = pid_b * (T * HKV * K) + (offs_t_sb[None, :] * (HKV * K)) + (pid_hkv * K)
+        base_toksb_q = pid_b * (T * HKV * K_PACKED) + offs_t_sb * (HKV * K_PACKED) + (pid_hkv * K_PACKED)
+        base_toksb_k = pid_b * (T * HKV * K) + offs_t_sb * (HKV * K) + (pid_hkv * K)
         tl.multiple_of(base_toksb_q, K_PACKED)
         tl.multiple_of(base_toksb_k, K)
-        kq_ptrssb = k_q + base_toksb_q + offs_kp[:, None]
+        kq_ptrssb = k_q + base_toksb_q[None, :] + offs_kp[:, None]
         kq_packedsb = tl.load(kq_ptrssb, mask=t_mask_sb[None, :], other=0).to(tl.int32)
         kqsb0 = ((kq_packedsb >> 0) & QMAX).to(tl.float16)
         kqsb1 = ((kq_packedsb >> 2) & QMAX).to(tl.float16)
@@ -273,10 +273,10 @@ def attn_forward_stage1_fused_threshold_qbits(
 
         if not prune_blk:
             if USE_FP8_RESIDUAL:
-                k_res_ptrs0 = k_res + base_toksb_k + offs_k0[:, None]
-                k_res_ptrs1 = k_res + base_toksb_k + offs_k1[:, None]
-                k_res_ptrs2 = k_res + base_toksb_k + offs_k2[:, None]
-                k_res_ptrs3 = k_res + base_toksb_k + offs_k3[:, None]
+                k_res_ptrs0 = k_res + base_toksb_k[None, :] + offs_k0[:, None]
+                k_res_ptrs1 = k_res + base_toksb_k[None, :] + offs_k1[:, None]
+                k_res_ptrs2 = k_res + base_toksb_k[None, :] + offs_k2[:, None]
+                k_res_ptrs3 = k_res + base_toksb_k[None, :] + offs_k3[:, None]
                 k_res0 = tl.load(
                     k_res_ptrs0,
                     mask=(mask_k0[:, None] & t_mask_sb[None, :]),

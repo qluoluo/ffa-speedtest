@@ -206,6 +206,7 @@ def make_cache_file_path(
     step,
     iters,
     warmup,
+    attn_kernel=None,
     bsz=1,
     replay_only=False,
     num_warps_th=None,
@@ -240,10 +241,14 @@ def make_cache_file_path(
             f"_nw1{_fmt(num_warps_s1)}ns1{_fmt(num_stages_s1)}"
             f"_nw2{_fmt(num_warps_s2)}ns2{_fmt(num_stages_s2)}"
         )
+    kernel_name_tag = ""
+    if attn_kernel:
+        safe_name = str(attn_kernel).replace("/", "_")
+        kernel_name_tag = f"_kernel{safe_name}"
     fname = (
         f"layer_{layer_idx}_Tmax{_to_k(T_full)}_Hq{Hq}_Hkv{Hkv}_D{D}_Dv{Dv}"
         f"_BS{BS}_SBS{SBS}_delta{delta:g}_{dtype_key(dtype)}"
-        f"{kernel_tag}_step{step}_it{iters}_wu{warmup}_bsz{bsz}{suffix}.json"
+        f"{kernel_name_tag}{kernel_tag}_step{step}_it{iters}_wu{warmup}_bsz{bsz}{suffix}.json"
     )
     return raw_dir / fname
 
@@ -496,6 +501,7 @@ def main():
         step,
         iters,
         warmup,
+        attn_kernel=attn_kernel_name,
         bsz=bsz,
         replay_only=args.cg_replay_only,
         num_warps_th=num_warps_th,
