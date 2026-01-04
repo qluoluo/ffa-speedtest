@@ -1,5 +1,7 @@
 # Benchmarking & plotting for Q2FP8 decode with CUDAGraph.
 import argparse
+import importlib
+import inspect
 import json
 import math
 import re
@@ -13,11 +15,6 @@ from tqdm import tqdm
 from utils.bench import benchmark
 from utils.cache import dtype_key, to_k_str
 from utils.load import load_qkvh
-
-from attn_kernel.attn_kernel_v1210_fused_bsz_q2fp8_vec import attn_forward_decode_quantized
-from attn_kernel.attn_kernel_v1210_fused_bsz_q2fp8_vec_cudagraph import (
-    CUDAGraphDecodeRunnerQ2FP8Vec as CUDAGraphDecodeRunnerQ2FP8,
-)
 
 # Ensure package importability
 THIS_DIR = Path(__file__).resolve().parent
@@ -38,6 +35,12 @@ def parse_args():
     p.add_argument("--delta", type=float, default=5.0)
     p.add_argument("--layer", type=int, default=1, help="Layer index to load")
     p.add_argument("--bsz", type=int, default=1, help="Batch size (number of layers to combine)")
+    p.add_argument(
+        "--attn-kernel",
+        type=str,
+        default="attn_kernel_v1210_fused_bsz_q2fp8_vec_cudagraph",
+        help="Kernel module name under attn_kernel/ (e.g. attn_kernel_v1210_fused_bsz_q2fp8_vec_cudagraph).",
+    )
     p.add_argument(
         "--max-length",
         type=int,
@@ -110,6 +113,55 @@ def quantize_k_2bit_fp8_residual(k: torch.Tensor, fp8_dtype: torch.dtype = torch
         | (k_q[..., 3] << 6)
     ).contiguous()
     return k_q_packed, scale, zero, k_residual
+
+
+def _resolve_cudagraph_runner(cg_module):
+    for name in (
+        "CUDAGraphDecodeRunnerQ2FP8Vec",
+        "CUDAGraphDecodeRunnerQ2FP8",
+        "CUDAGraphDecodeRunnerQ2FP8ReuseBS",
+    ):
+        if hasattr(cg_module, name):
+            return getattr(cg_module, name)
+    for name, obj in vars(cg_module).items():
+        if name.startswith("CUDAGraphDecodeRunner"):
+            return obj
+    raise AttributeError("No CUDAGraphDecodeRunner class found in cudagraph module.")
+
+
+def load_kernel_components(kernel_path: str):
+    kernel_name = kernel_path.strip()
+    if kernel_name.endswith(".py"):
+        kernel_name = kernel_name[:-3]
+    if kernel_name.startswith("attn_kernel."):
+        module_path = kernel_name
+        kernel_name = kernel_name.split(".", 1)[1]
+    else:
+        module_path = f"attn_kernel.{kernel_name}"
+    try:
+        kernel_module = importlib.import_module(module_path)
+    except ModuleNotFoundError as exc:
+        kernel_dir = THIS_DIR / "attn_kernel"
+        available = sorted(
+            path.stem for path in kernel_dir.glob("*.py") if path.name != "__init__.py"
+        )
+        available_str = ", ".join(available) if available else "<empty>"
+        raise ModuleNotFoundError(
+            f"Kernel '{kernel_name}' not found under attn_kernel/. Available: {available_str}"
+        ) from exc
+    if not hasattr(kernel_module, "attn_forward_decode_quantized"):
+        raise AttributeError(f"Module {module_path} does not define 'attn_forward_decode_quantized'")
+    attn_forward_decode = getattr(kernel_module, "attn_forward_decode_quantized")
+    cudagraph_runner = _resolve_cudagraph_runner(kernel_module)
+    return kernel_module, attn_forward_decode, cudagraph_runner
+
+
+def _filter_kwargs_for_signature(func, kwargs: dict) -> dict:
+    sig = inspect.signature(func)
+    if any(param.kind == inspect.Parameter.VAR_KEYWORD for param in sig.parameters.values()):
+        return kwargs
+    allowed = set(sig.parameters.keys())
+    return {key: value for key, value in kwargs.items() if key in allowed}
 
 
 def get_gpu_info():
@@ -373,6 +425,11 @@ def main():
     args = parse_args()
     torch.set_float32_matmul_precision("high")
 
+    kernel_module, attn_forward_decode_quantized, cudagraph_runner = load_kernel_components(args.attn_kernel)
+    attn_kernel_name = kernel_module.__name__.split(".")[-1]
+    if attn_kernel_name.endswith("_cudagraph"):
+        attn_kernel_name = attn_kernel_name[: -len("_cudagraph")]
+
     dtype = map_dtype(args.dtype)
     BS = int(args.BS)
     SBS = int(args.SBS) if args.SBS is not None else BS
@@ -397,8 +454,6 @@ def main():
     num_stages_s1 = _norm_kernel_arg(args.num_stages_s1) or num_stages
     num_warps_s2 = _norm_kernel_arg(args.num_warps_s2) or num_warps
     num_stages_s2 = _norm_kernel_arg(args.num_stages_s2) or num_stages
-
-    attn_kernel_name = "attn_kernel_v1210_fused_bsz_q2fp8_vec"
 
     exp_root = EXP_ROOT_DIR / EXP_ROOT_SUBDIR
     layer_data_root = exp_root / "layer_data"
@@ -505,12 +560,7 @@ def main():
                     num_stages_s2=num_stages_s2,
                 )
 
-                runner = CUDAGraphDecodeRunnerQ2FP8(
-                    q_1,
-                    k_q,
-                    k_scale,
-                    k_zero,
-                    v,
+                runner_kwargs = dict(
                     k_residual=k_residual,
                     k_bits=2,
                     scale=scale,
@@ -525,6 +575,14 @@ def main():
                     num_stages_s1=num_stages_s1,
                     num_warps_s2=num_warps_s2,
                     num_stages_s2=num_stages_s2,
+                )
+                runner = cudagraph_runner(
+                    q_1,
+                    k_q,
+                    k_scale,
+                    k_zero,
+                    v,
+                    **_filter_kwargs_for_signature(cudagraph_runner.__init__, runner_kwargs),
                 )
 
                 def run_q2():
