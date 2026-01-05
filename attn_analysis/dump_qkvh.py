@@ -81,9 +81,24 @@ def modify_model_attn(model, save_dirpath: Path):
     return model
 
 
+def resolve_default_dataset_path(
+    dataset_type: str, opencompass_root: Path, local_data_root: Path
+):
+    if dataset_type == "longbench":
+        return local_data_root / "Longbench/data/gov_report.jsonl"
+    else:
+        opencompass_path = opencompass_root / "data/babilong/data/qa1/16k.json"
+        local_path = local_data_root / "babilong/data/qa1/16k.json"
+
+    if local_path.exists():
+        return local_path
+    return opencompass_path
+
+
 def parse_args():
     ffa_root = Path(__file__).resolve().parents[2]
     default_opencompass_root = ffa_root / "huffkv-opencompass"
+    default_local_data_root = THIS_DIR / "data"
     parser = argparse.ArgumentParser(description="Dump q/k/v/h tensors from a model forward pass.")
     parser.add_argument(
         "--model-path",
@@ -140,14 +155,17 @@ def parse_args():
 
     opencompass_root = args.opencompass_root or default_opencompass_root
     if args.dataset_path is None:
-        if args.dataset_type == "longbench":
-            args.dataset_path = opencompass_root / "data/Longbench/data/gov_report.jsonl"
-        else:
-            args.dataset_path = opencompass_root / "data/babilong/data/qa1/16k.json"
+        args.dataset_path = resolve_default_dataset_path(
+            args.dataset_type, opencompass_root, default_local_data_root
+        )
     args.opencompass_root = opencompass_root
-    args.save_root = args.save_root or (
-        opencompass_root / "opencompass/models/myModel/ffa/attn_analysis/result"
-    )
+    if args.save_root is None:
+        if opencompass_root.exists():
+            args.save_root = (
+                opencompass_root / "opencompass/models/myModel/ffa/attn_analysis/result"
+            )
+        else:
+            args.save_root = THIS_DIR / "result"
     return args
 
 
