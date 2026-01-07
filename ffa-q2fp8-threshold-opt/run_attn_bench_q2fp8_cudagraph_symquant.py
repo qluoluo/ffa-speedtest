@@ -1,4 +1,4 @@
-# Benchmarking & plotting for Q2FP8 decode with CUDAGraph.
+# Benchmarking & plotting for Q2FP8 decode with CUDAGraph (symmetric quantization).
 import argparse
 import importlib
 import inspect
@@ -28,7 +28,7 @@ EXP_ROOT_SUBDIR = Path("Llama-3_2-3B/longbench_gov_report_48_68_256k")
 
 
 def parse_args():
-    p = argparse.ArgumentParser(description="Benchmark Q2FP8 decode with CUDAGraph.")
+    p = argparse.ArgumentParser(description="Benchmark Q2FP8 decode with CUDAGraph (symmetric quantization).")
     p.add_argument("--dtype", type=str, default="fp16", choices=["fp16", "bf16", "fp32"])
     p.add_argument("--BS", type=int, default=128)
     p.add_argument("--SBS", type=int, default=None)
@@ -38,8 +38,8 @@ def parse_args():
     p.add_argument(
         "--attn-kernel",
         type=str,
-        default="attn_q2fp8_base_mask",
-        help="Kernel module name under attn_kernel/ (e.g. attn_q2fp8_base_mask).",
+        default="attn_q2fp8_sym_mask",
+        help="Kernel module name under attn_kernel/ (e.g. attn_q2fp8_sym_mask).",
     )
     p.add_argument(
         "--max-length",
@@ -85,16 +85,18 @@ def convert_layout(q_rope_1: torch.Tensor, k_rope: torch.Tensor, v: torch.Tensor
     return q, k, v
 
 
-def quantize_k_2bit_fp8_residual(k: torch.Tensor, fp8_dtype: torch.dtype = torch.float8_e5m2):
-    # Scale/zero are per (B, HKV, K); token dimension is removed and broadcasted later.
-    k_min = k.amin(dim=1)
-    k_max = k.amax(dim=1)
-    scale = ((k_max - k_min).clamp_min(1e-6) / 3.0).contiguous()
-    zero = k_min.contiguous()
-    k_q = torch.round((k - zero[:, None, :, :]) / scale[:, None, :, :]).clamp(0, 3).to(torch.uint8)
-    k_dequant = (
-        k_q.to(torch.float32) * scale[:, None, :, :].to(torch.float32) + zero[:, None, :, :].to(torch.float32)
-    )
+def quantize_k_2bit_fp8_residual_symmetric(
+    k: torch.Tensor,
+    fp8_dtype: torch.dtype = torch.float8_e5m2,
+    k_bits: int = 2,
+):
+    # Symmetric quantization per (B, HKV, K); token dimension is removed and broadcasted later.
+    qmax = (1 << k_bits) - 1
+    qzero = qmax / 2.0
+    k_absmax = k.abs().amax(dim=1)
+    scale = (k_absmax / qzero).clamp_min(1e-6).contiguous()
+    k_q = torch.round(k / scale[:, None, :, :] + qzero).clamp(0, qmax).to(torch.uint8)
+    k_dequant = (k_q.to(torch.float32) - qzero) * scale[:, None, :, :].to(torch.float32)
     k_residual = (k.to(torch.float32) - k_dequant).to(fp8_dtype).contiguous()
 
     # Pack 4x2-bit values into a single byte to avoid storing each 2-bit value as uint8
@@ -112,7 +114,7 @@ def quantize_k_2bit_fp8_residual(k: torch.Tensor, fp8_dtype: torch.dtype = torch
         | (k_q[..., 2] << 4)
         | (k_q[..., 3] << 6)
     ).contiguous()
-    return k_q_packed, scale, zero, k_residual
+    return k_q_packed, scale, k_residual
 
 
 def _resolve_cudagraph_runner(cg_module):
@@ -542,14 +544,13 @@ def main():
 
                 q, k, v = convert_layout(q_rope_1, k_rope, v)
                 q_1 = q.unsqueeze(1)  # [B, 1, Hq, K]
-                k_q, k_scale, k_zero, k_residual = quantize_k_2bit_fp8_residual(k)
+                k_q, k_scale, k_residual = quantize_k_2bit_fp8_residual_symmetric(k)
 
                 # One forward to obtain skip ratio and validate shapes
                 _, skip_ratio = attn_forward_decode_quantized(
                     q=q_1,
                     k_q=k_q,
                     k_scale=k_scale,
-                    k_zero=k_zero,
                     k_residual=k_residual,
                     v=v,
                     k_bits=2,
@@ -586,7 +587,6 @@ def main():
                     q_1,
                     k_q,
                     k_scale,
-                    k_zero,
                     v,
                     **_filter_kwargs_for_signature(cudagraph_runner.__init__, runner_kwargs),
                 )
@@ -596,7 +596,6 @@ def main():
                         q=q_1,
                         k_q=k_q,
                         k_scale=k_scale,
-                        k_zero=k_zero,
                         k_residual=k_residual,
                         v=v,
                         k_bits=2,
@@ -620,7 +619,6 @@ def main():
                         q_1,
                         k_q,
                         k_scale,
-                        k_zero,
                         v,
                         k_residual=k_residual,
                     )

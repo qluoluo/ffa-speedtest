@@ -14,7 +14,7 @@
 #   ./test_all_kernels.sh --BS 256 --delta 3.0
 #   ./test_all_kernels.sh --iters 1000 --warmup 200
 #   ./test_all_kernels.sh --layer 2 --bsz 4 --step 2048
-#   KERNELS="attn_kernel_opt1_compact,attn_kernel_opt4_fused" ./test_all_kernels.sh --BS 256
+#   KERNELS="attn_q2fp8_base_mask,attn_q2fp8_lr64_compact" ./test_all_kernels.sh --BS 256
 #   KERNEL_FILTER="cudagraph" ./test_all_kernels.sh --iters 200
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
