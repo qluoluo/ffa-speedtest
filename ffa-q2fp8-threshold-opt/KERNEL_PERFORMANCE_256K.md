@@ -58,12 +58,22 @@
 | `attn_kernel/attn_q2fp8_base_mask.py` | 128/128 | 1 | 1 | 0.259155 | 0.355217 | 1.000 | 0.730 |
 | `attn_kernel/attn_q2fp8_base_mask.py` | 256/256 | 1 | 1 | 0.240535 | 0.355023 | 1.000 | 0.678 |
 | `attn_kernel/attn_q2fp8_base_mask.py` | 256/256 | 4 | 1-2-3-4 | 0.957358 | 1.348051 | 1.000 | 0.710 |
-| `attn_kernel/attn_q2fp8_lr64_mask.py` | 128/128 | 1 | 1 | N/A | N/A | N/A | N/A |
-| `attn_kernel/attn_q2fp8_sym_mask.py` | 128/128 | 1 | 1 | N/A | N/A | N/A | N/A |
-| `attn_kernel/attn_q2fp8_base_compact.py` | 128/128 | 1 | 1 | N/A | N/A | N/A | N/A |
+| `attn_kernel/attn_q2fp8_lr64_mask.py` | 128/128 | 1 | 1 | 0.295166 | 0.354962 | 1.139 | 0.832 |
+| `attn_kernel/attn_q2fp8_sym_mask.py` | 128/128 | 1 | 1 | 0.231700 | 0.355080 | 0.894 | 0.653 |
+| `attn_kernel/attn_q2fp8_base_compact.py` | 128/128 | 1 | 1 | 0.217692 | 0.355781 | 0.840 | 0.612 |
 | `attn_kernel/attn_q2fp8_lr64_compact.py` | 128/128 | 1 | 1 | 0.209329 | 0.354954 | 0.808 | 0.590 |
-| `attn_kernel/attn_q2fp8_sym_lr64_compact.py` | 128/128 | 1 | 1 | N/A | N/A | N/A | N/A |
+| `attn_kernel/attn_q2fp8_sym_lr64_compact.py` | 128/128 | 1 | 1 | 0.231274 | 0.355477 | 0.892 | 0.651 |
 
 ### 性能总结
-- 仅确认 `attn_q2fp8_lr64_compact` 优于基线（0.808x）。
-- `lr64_mask`、`base_compact`、`sym_mask` 在 H100 上尚未补齐 256k 数据。
+- 最快：`attn_q2fp8_lr64_compact`（0.209329 ms，0.808x）。
+- `base_compact` 也有明显收益（0.840x）；`sym_mask` 与 `sym_lr64_compact` 约 0.89x。
+- `lr64_mask` 在 H100 上反而变慢（1.139x），低寄存器分块不一定单独收益。
+
+### 方法加速比（相对 `attn_q2fp8_base_mask`）
+| 方法 | 对应 kernel | q2_cg_ms@256k | 相对基线 | 加速比 |
+| --- | --- | --- | --- | --- |
+| 低寄存器 BK=64 | `attn_q2fp8_lr64_mask` | 0.295166 | 1.139 | 0.878x |
+| 紧凑 keep 列表 | `attn_q2fp8_base_compact` | 0.217692 | 0.840 | 1.190x |
+| 对称量化 | `attn_q2fp8_sym_mask` | 0.231700 | 0.894 | 1.118x |
+| 低寄存器 + 紧凑列表 | `attn_q2fp8_lr64_compact` | 0.209329 | 0.808 | 1.238x |
+| 对称量化 + 低寄存器 + 紧凑列表 | `attn_q2fp8_sym_lr64_compact` | 0.231274 | 0.892 | 1.121x |
