@@ -67,6 +67,7 @@ def parse_args():
     p.add_argument("--num-stages-s2", type=int, default=None, help="Override num_stages for stage2 kernel.")
     p.add_argument("--no-flash", action="store_true", help="Skip FlashAttention baseline")
     p.add_argument("--no-plot", action="store_true", help="Skip plotting")
+    p.add_argument("--force", action="store_true", help="Force rerun and ignore cached results")
     return p.parse_args()
 
 
@@ -529,10 +530,12 @@ def main():
             created_raw_dir = True
 
     try:
-        if cache_path.exists():
+        if cache_path.exists() and not args.force:
             x_lengths, q2_ms_list, q2_cg_ms_list, flash_ms_list, skip_ratios, _meta = load_raw_cache(cache_path)
             print(f"[Info] Loaded cached results from {cache_path}")
         else:
+            if cache_path.exists() and args.force:
+                print(f"[Info] Force rerun enabled; ignoring cached results at {cache_path}")
             q2_ms_list, q2_cg_ms_list, flash_ms_list, skip_ratios = [], [], [], []
 
             for L in tqdm(lengths, desc=f"delta={delta:g}, layers{layer_range_str}(bsz={bsz})"):

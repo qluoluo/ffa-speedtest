@@ -1,4 +1,4 @@
-# CUDAGraph wrapper for Q2FP8 decode kernel (reuse selector b_s_q).
+# CUDAGraph wrapper for Q2FP8 decode kernel (symmetric quantization, low-reg stage1).
 from __future__ import annotations
 
 import math
@@ -10,7 +10,7 @@ import triton.language as tl
 
 @triton.jit
 def attn_compute_threshold_qbits(
-    q, k_q, k_scale, k_zp,
+    q, k_q, k_scale,
     th_out,
     scale, T, NTB, delta,
     B: tl.constexpr, HKV: tl.constexpr, HQ: tl.constexpr, K: tl.constexpr, K_PACKED: tl.constexpr,
@@ -27,45 +27,77 @@ def attn_compute_threshold_qbits(
     NEG_INF = float("-inf")
     TRUE_K = tl.full([K], True, tl.int1)
     QMAX = (1 << K_BITS) - 1
+    QZERO = QMAX / 2
     VALS_PER_BYTE: tl.constexpr = 8 // K_BITS
 
     base_hq = pid_hkv * G
     rows = tl.arange(0, BM_DOT)
     row_mask = rows < G
-    offs_k = tl.arange(0, K)
-    pack_idx = offs_k // VALS_PER_BYTE
-    pack_shifts = (offs_k % VALS_PER_BYTE) * K_BITS
+    offs_kp = tl.arange(0, K_PACKED)
+    offs_k0 = offs_kp * VALS_PER_BYTE + 0
+    offs_k1 = offs_kp * VALS_PER_BYTE + 1
+    offs_k2 = offs_kp * VALS_PER_BYTE + 2
+    offs_k3 = offs_kp * VALS_PER_BYTE + 3
+    mask_k0 = offs_k0 < K
+    mask_k1 = offs_k1 < K
+    mask_k2 = offs_k2 < K
+    mask_k3 = offs_k3 < K
 
-    q_ptrs = q + pid_b * (HQ * K) + (base_hq + rows)[:, None] * K + offs_k[None, :]
-    q_tile = tl.load(q_ptrs, mask=row_mask[:, None], other=0.0).to(tl.float16)
+    q_ptrs0 = q + pid_b * (HQ * K) + (base_hq + rows)[:, None] * K + offs_k0[None, :]
+    q_ptrs1 = q + pid_b * (HQ * K) + (base_hq + rows)[:, None] * K + offs_k1[None, :]
+    q_ptrs2 = q + pid_b * (HQ * K) + (base_hq + rows)[:, None] * K + offs_k2[None, :]
+    q_ptrs3 = q + pid_b * (HQ * K) + (base_hq + rows)[:, None] * K + offs_k3[None, :]
 
-    # Scale / zero do not depend on token; load once per (B, HKV)
-    scale_ptrs = k_scale + pid_b * (HKV * K) + pid_hkv * K + offs_k
-    zp_ptrs = k_zp + pid_b * (HKV * K) + pid_hkv * K + offs_k
-    scale_tile = tl.load(scale_ptrs, mask=TRUE_K, other=0.0).to(tl.float32)
-    zp_tile = tl.load(zp_ptrs, mask=TRUE_K, other=0.0).to(tl.float32)
+    scale_ptrs0 = k_scale + pid_b * (HKV * K) + pid_hkv * K + offs_k0
+    scale_ptrs1 = k_scale + pid_b * (HKV * K) + pid_hkv * K + offs_k1
+    scale_ptrs2 = k_scale + pid_b * (HKV * K) + pid_hkv * K + offs_k2
+    scale_ptrs3 = k_scale + pid_b * (HKV * K) + pid_hkv * K + offs_k3
+    scale0 = tl.load(scale_ptrs0, mask=mask_k0, other=0.0).to(tl.float32)
+    scale1 = tl.load(scale_ptrs1, mask=mask_k1, other=0.0).to(tl.float32)
+    scale2 = tl.load(scale_ptrs2, mask=mask_k2, other=0.0).to(tl.float32)
+    scale3 = tl.load(scale_ptrs3, mask=mask_k3, other=0.0).to(tl.float32)
+
+    q0 = tl.load(q_ptrs0, mask=row_mask[:, None] & mask_k0[None, :], other=0.0).to(tl.float16)
+    q1 = tl.load(q_ptrs1, mask=row_mask[:, None] & mask_k1[None, :], other=0.0).to(tl.float16)
+    q2 = tl.load(q_ptrs2, mask=row_mask[:, None] & mask_k2[None, :], other=0.0).to(tl.float16)
+    q3 = tl.load(q_ptrs3, mask=row_mask[:, None] & mask_k3[None, :], other=0.0).to(tl.float16)
+    q_scaled0 = q0 * scale0[None, :].to(tl.float16)
+    q_scaled1 = q1 * scale1[None, :].to(tl.float16)
+    q_scaled2 = q2 * scale2[None, :].to(tl.float16)
+    q_scaled3 = q3 * scale3[None, :].to(tl.float16)
+    q_zero_sum = tl.sum(q_scaled0.to(tl.float32), axis=1)
+    q_zero_sum += tl.sum(q_scaled1.to(tl.float32), axis=1)
+    q_zero_sum += tl.sum(q_scaled2.to(tl.float32), axis=1)
+    q_zero_sum += tl.sum(q_scaled3.to(tl.float32), axis=1)
+    q_zero_sum *= -QZERO
 
     tb0 = 0
     offs_t0 = tb0 * T_BS + tl.arange(0, T_BS)
     t_mask0 = offs_t0 < T
-    base_tok0_q = pid_b * (T * HKV * K_PACKED) + (offs_t0[None, :] * (HKV * K_PACKED)) + (pid_hkv * K_PACKED)
-    kq_ptrs0 = k_q + base_tok0_q + pack_idx[:, None]
-    kq_tile0 = tl.load(kq_ptrs0, mask=(TRUE_K[:, None] & t_mask0[None, :]), other=0).to(tl.int32)
-    kq_tile0 = ((kq_tile0 >> pack_shifts[:, None]) & tl.full((), QMAX, tl.int32)).to(tl.float32)
-    k_tile0 = (kq_tile0 * scale_tile[:, None] + zp_tile[:, None]).to(tl.float16)
-    b_s0 = tl.dot(q_tile, k_tile0, out_dtype=tl.float32) * scale * RCP_LN2
+    base_tok0_q = pid_b * (T * HKV * K_PACKED) + offs_t0 * (HKV * K_PACKED) + (pid_hkv * K_PACKED)
+    tl.multiple_of(base_tok0_q, K_PACKED)
+    kq_ptrs0 = k_q + base_tok0_q[None, :] + offs_kp[:, None]
+    kq_packed0 = tl.load(kq_ptrs0, mask=t_mask0[None, :], other=0).to(tl.int32)
+    b_s0 = tl.dot(q_scaled0, ((kq_packed0 >> 0) & QMAX).to(tl.float16), out_dtype=tl.float32)
+    b_s0 += tl.dot(q_scaled1, ((kq_packed0 >> 2) & QMAX).to(tl.float16), out_dtype=tl.float32)
+    b_s0 += tl.dot(q_scaled2, ((kq_packed0 >> 4) & QMAX).to(tl.float16), out_dtype=tl.float32)
+    b_s0 += tl.dot(q_scaled3, ((kq_packed0 >> 6) & QMAX).to(tl.float16), out_dtype=tl.float32)
+    b_s0 = (b_s0 + q_zero_sum[:, None]) * scale * RCP_LN2
     b_s0 = tl.where(t_mask0[None, :], b_s0, NEG_INF)
     m0 = tl.max(b_s0, axis=1)
 
     tb1 = NTB - 1
     offs_t1 = tb1 * T_BS + tl.arange(0, T_BS)
     t_mask1 = offs_t1 < T
-    base_tok1_q = pid_b * (T * HKV * K_PACKED) + (offs_t1[None, :] * (HKV * K_PACKED)) + (pid_hkv * K_PACKED)
-    kq_ptrs1 = k_q + base_tok1_q + pack_idx[:, None]
-    kq_tile1 = tl.load(kq_ptrs1, mask=(TRUE_K[:, None] & t_mask1[None, :]), other=0).to(tl.int32)
-    kq_tile1 = ((kq_tile1 >> pack_shifts[:, None]) & tl.full((), QMAX, tl.int32)).to(tl.float32)
-    k_tile1 = (kq_tile1 * scale_tile[:, None] + zp_tile[:, None]).to(tl.float16)
-    b_s1 = tl.dot(q_tile, k_tile1, out_dtype=tl.float32) * scale * RCP_LN2
+    base_tok1_q = pid_b * (T * HKV * K_PACKED) + offs_t1 * (HKV * K_PACKED) + (pid_hkv * K_PACKED)
+    tl.multiple_of(base_tok1_q, K_PACKED)
+    kq_ptrs1 = k_q + base_tok1_q[None, :] + offs_kp[:, None]
+    kq_packed1 = tl.load(kq_ptrs1, mask=t_mask1[None, :], other=0).to(tl.int32)
+    b_s1 = tl.dot(q_scaled0, ((kq_packed1 >> 0) & QMAX).to(tl.float16), out_dtype=tl.float32)
+    b_s1 += tl.dot(q_scaled1, ((kq_packed1 >> 2) & QMAX).to(tl.float16), out_dtype=tl.float32)
+    b_s1 += tl.dot(q_scaled2, ((kq_packed1 >> 4) & QMAX).to(tl.float16), out_dtype=tl.float32)
+    b_s1 += tl.dot(q_scaled3, ((kq_packed1 >> 6) & QMAX).to(tl.float16), out_dtype=tl.float32)
+    b_s1 = (b_s1 + q_zero_sum[:, None]) * scale * RCP_LN2
     b_s1 = tl.where(t_mask1[None, :], b_s1, NEG_INF)
     m1 = tl.max(b_s1, axis=1)
 
@@ -76,7 +108,7 @@ def attn_compute_threshold_qbits(
 
 @triton.jit
 def attn_forward_stage1_fused_threshold_qbits(
-    q, k_q, k_scale, k_zp, k_res, v,
+    q, k_q, k_scale, k_res, v,
     m_buf, l_buf, o_buf,
     mask_buf,
     scale, T, NTB, NTBS, delta,
@@ -98,6 +130,7 @@ def attn_forward_stage1_fused_threshold_qbits(
     NEG_INF = float("-inf")
     TRUE_K  = tl.full([K], True, tl.int1)
     QMAX = (1 << K_BITS) - 1
+    QZERO = QMAX / 2
     VALS_PER_BYTE: tl.constexpr = 8 // K_BITS
 
     s0 = pid_tb * BS
@@ -106,88 +139,136 @@ def attn_forward_stage1_fused_threshold_qbits(
 
     rows     = tl.arange(0, BM_DOT)
     row_mask = rows < G
-    offs_k   = tl.arange(0, K)
-    pack_idx = offs_k // VALS_PER_BYTE
-    pack_shifts = (offs_k % VALS_PER_BYTE) * K_BITS
+    offs_kp = tl.arange(0, K_PACKED)
+    offs_k0 = offs_kp * VALS_PER_BYTE + 0
+    offs_k1 = offs_kp * VALS_PER_BYTE + 1
+    offs_k2 = offs_kp * VALS_PER_BYTE + 2
+    offs_k3 = offs_kp * VALS_PER_BYTE + 3
+    mask_k0 = offs_k0 < K
+    mask_k1 = offs_k1 < K
+    mask_k2 = offs_k2 < K
+    mask_k3 = offs_k3 < K
 
-    q_ptrs   = q + pid_b * (HQ * K) + (base_hq + rows)[:, None] * K + offs_k[None, :]
-    q_tile   = tl.load(q_ptrs, mask=row_mask[:, None], other=0.0).to(tl.float16)
+    q_ptrs0 = q + pid_b * (HQ * K) + (base_hq + rows)[:, None] * K + offs_k0[None, :]
+    q_ptrs1 = q + pid_b * (HQ * K) + (base_hq + rows)[:, None] * K + offs_k1[None, :]
+    q_ptrs2 = q + pid_b * (HQ * K) + (base_hq + rows)[:, None] * K + offs_k2[None, :]
+    q_ptrs3 = q + pid_b * (HQ * K) + (base_hq + rows)[:, None] * K + offs_k3[None, :]
 
-    # Scale / zero do not depend on token; load once per (B, HKV)
-    scale_ptrs = k_scale + pid_b * (HKV * K) + pid_hkv * K + offs_k
-    zp_ptrs    = k_zp    + pid_b * (HKV * K) + pid_hkv * K + offs_k
-    scale_tile = tl.load(scale_ptrs, mask=TRUE_K, other=0.0).to(tl.float32)
-    zp_tile    = tl.load(zp_ptrs,    mask=TRUE_K, other=0.0).to(tl.float32)
+    scale_ptrs0 = k_scale + pid_b * (HKV * K) + pid_hkv * K + offs_k0
+    scale_ptrs1 = k_scale + pid_b * (HKV * K) + pid_hkv * K + offs_k1
+    scale_ptrs2 = k_scale + pid_b * (HKV * K) + pid_hkv * K + offs_k2
+    scale_ptrs3 = k_scale + pid_b * (HKV * K) + pid_hkv * K + offs_k3
+    scale0 = tl.load(scale_ptrs0, mask=mask_k0, other=0.0).to(tl.float32)
+    scale1 = tl.load(scale_ptrs1, mask=mask_k1, other=0.0).to(tl.float32)
+    scale2 = tl.load(scale_ptrs2, mask=mask_k2, other=0.0).to(tl.float32)
+    scale3 = tl.load(scale_ptrs3, mask=mask_k3, other=0.0).to(tl.float32)
+
+    q_tmp0 = tl.load(
+        q_ptrs0,
+        mask=row_mask[:, None] & mask_k0[None, :],
+        other=0.0,
+    ).to(tl.float16)
+    q_tmp1 = tl.load(
+        q_ptrs1,
+        mask=row_mask[:, None] & mask_k1[None, :],
+        other=0.0,
+    ).to(tl.float16)
+    q_tmp2 = tl.load(
+        q_ptrs2,
+        mask=row_mask[:, None] & mask_k2[None, :],
+        other=0.0,
+    ).to(tl.float16)
+    q_tmp3 = tl.load(
+        q_ptrs3,
+        mask=row_mask[:, None] & mask_k3[None, :],
+        other=0.0,
+    ).to(tl.float16)
+    q_zero_sum = tl.sum((q_tmp0 * scale0[None, :]).to(tl.float32), axis=1)
+    q_zero_sum += tl.sum((q_tmp1 * scale1[None, :]).to(tl.float32), axis=1)
+    q_zero_sum += tl.sum((q_tmp2 * scale2[None, :]).to(tl.float32), axis=1)
+    q_zero_sum += tl.sum((q_tmp3 * scale3[None, :]).to(tl.float32), axis=1)
+    q_zero_sum *= -QZERO
 
     if USE_EXT_TH:
         th_rows = tl.load(th_in + pid_b * HQ + (base_hq + rows), mask=row_mask, other=0.0)
     else:
+        q_scaled0 = q_tmp0 * scale0[None, :].to(tl.float16)
+        q_scaled1 = q_tmp1 * scale1[None, :].to(tl.float16)
+        q_scaled2 = q_tmp2 * scale2[None, :].to(tl.float16)
+        q_scaled3 = q_tmp3 * scale3[None, :].to(tl.float16)
         tb0 = 0
         offs_t0 = tb0 * T_BS + tl.arange(0, T_BS)
         t_mask0 = offs_t0 < T
-        base_tok0_q = pid_b * (T * HKV * K_PACKED) + (offs_t0[None, :] * (HKV * K_PACKED)) + (pid_hkv * K_PACKED)
-        kq_ptrs0 = k_q + base_tok0_q + pack_idx[:, None]
-        kq_tile0 = tl.load(kq_ptrs0, mask=(TRUE_K[:, None] & t_mask0[None, :]), other=0).to(tl.int32)
-        kq_tile0 = ((kq_tile0 >> pack_shifts[:, None]) & tl.full((), QMAX, tl.int32)).to(tl.float32)
-        k_tile0 = (kq_tile0 * scale_tile[:, None] + zp_tile[:, None]).to(tl.float16)
-        b_s0 = tl.dot(q_tile, k_tile0, out_dtype=tl.float32) * scale * RCP_LN2
+        base_tok0_q = pid_b * (T * HKV * K_PACKED) + offs_t0 * (HKV * K_PACKED) + (pid_hkv * K_PACKED)
+        tl.multiple_of(base_tok0_q, K_PACKED)
+        kq_ptrs0 = k_q + base_tok0_q[None, :] + offs_kp[:, None]
+        kq_packed0 = tl.load(kq_ptrs0, mask=t_mask0[None, :], other=0).to(tl.int32)
+        b_s0 = tl.dot(q_scaled0, ((kq_packed0 >> 0) & QMAX).to(tl.float16), out_dtype=tl.float32)
+        b_s0 += tl.dot(q_scaled1, ((kq_packed0 >> 2) & QMAX).to(tl.float16), out_dtype=tl.float32)
+        b_s0 += tl.dot(q_scaled2, ((kq_packed0 >> 4) & QMAX).to(tl.float16), out_dtype=tl.float32)
+        b_s0 += tl.dot(q_scaled3, ((kq_packed0 >> 6) & QMAX).to(tl.float16), out_dtype=tl.float32)
+        b_s0 = (b_s0 + q_zero_sum[:, None]) * scale * RCP_LN2
         b_s0 = tl.where(t_mask0[None, :], b_s0, NEG_INF)
         m0 = tl.max(b_s0, axis=1)
 
         tb1 = NTB - 1
         offs_t1 = tb1 * T_BS + tl.arange(0, T_BS)
         t_mask1 = offs_t1 < T
-        base_tok1_q = pid_b * (T * HKV * K_PACKED) + (offs_t1[None, :] * (HKV * K_PACKED)) + (pid_hkv * K_PACKED)
-        kq_ptrs1 = k_q + base_tok1_q + pack_idx[:, None]
-        kq_tile1 = tl.load(kq_ptrs1, mask=(TRUE_K[:, None] & t_mask1[None, :]), other=0).to(tl.int32)
-        kq_tile1 = ((kq_tile1 >> pack_shifts[:, None]) & tl.full((), QMAX, tl.int32)).to(tl.float32)
-        k_tile1 = (kq_tile1 * scale_tile[:, None] + zp_tile[:, None]).to(tl.float16)
-        b_s1 = tl.dot(q_tile, k_tile1, out_dtype=tl.float32) * scale * RCP_LN2
+        base_tok1_q = pid_b * (T * HKV * K_PACKED) + offs_t1 * (HKV * K_PACKED) + (pid_hkv * K_PACKED)
+        tl.multiple_of(base_tok1_q, K_PACKED)
+        kq_ptrs1 = k_q + base_tok1_q[None, :] + offs_kp[:, None]
+        kq_packed1 = tl.load(kq_ptrs1, mask=t_mask1[None, :], other=0).to(tl.int32)
+        b_s1 = tl.dot(q_scaled0, ((kq_packed1 >> 0) & QMAX).to(tl.float16), out_dtype=tl.float32)
+        b_s1 += tl.dot(q_scaled1, ((kq_packed1 >> 2) & QMAX).to(tl.float16), out_dtype=tl.float32)
+        b_s1 += tl.dot(q_scaled2, ((kq_packed1 >> 4) & QMAX).to(tl.float16), out_dtype=tl.float32)
+        b_s1 += tl.dot(q_scaled3, ((kq_packed1 >> 6) & QMAX).to(tl.float16), out_dtype=tl.float32)
+        b_s1 = (b_s1 + q_zero_sum[:, None]) * scale * RCP_LN2
         b_s1 = tl.where(t_mask1[None, :], b_s1, NEG_INF)
         m1 = tl.max(b_s1, axis=1)
 
         th_rows = tl.maximum(m0, m1) - delta
 
-    # ========== OPTIMIZATION: Dequant entire BS block once ==========
-    # Load and dequant entire BS block (all NSB sub-blocks) at once
-    # This reduces dequant operations from NSB times to 1 time
-    offs_t_block = s0 + tl.arange(0, BS)
-    t_mask_block = offs_t_block < T
-
-    base_tokblock_q = pid_b * (T * HKV * K_PACKED) + (offs_t_block[None, :] * (HKV * K_PACKED)) + (pid_hkv * K_PACKED)
-    kq_ptrsblock = k_q + base_tokblock_q + pack_idx[:, None]
-    kq_tileblock = tl.load(kq_ptrsblock, mask=(TRUE_K[:, None] & t_mask_block[None, :]), other=0).to(tl.int32)
-
-    # Unpack entire BS block: [K, BS]
-    kq_tileblock = ((kq_tileblock >> pack_shifts[:, None]) & tl.full((), QMAX, tl.int32)).to(tl.float32)
-
-    # Dequant entire BS block ONCE: [K, BS]
-    k_tile_dequant_full = (kq_tileblock * scale_tile[:, None] + zp_tile[:, None]).to(tl.float16)
-    # ================================================================
-
     for sb in tl.static_range(NSB):
         offs_t_sb = s0 + sb * SBS + tl.arange(0, SBS)
         t_mask_sb = offs_t_sb < T
 
-        # Extract sub-block from pre-dequantized K by loading with offset
-        # Since k_tile_dequant_full is [K, BS], we need columns [sb*SBS : sb*SBS+SBS]
-        k_offs_in_bs = sb * SBS + tl.arange(0, SBS)  # offsets within the BS block
-        k_mask_in_bs = k_offs_in_bs < BS
-
-        # Manually gather: create [K, SBS] by iterating over rows
-        k_tile_q = tl.zeros([K, SBS], dtype=tl.float16)
-        for k_row in range(K):
-            for s_col in range(SBS):
-                offset_in_full = k_offs_in_bs[s_col]
-                if k_mask_in_bs[s_col]:
-                    k_tile_q[k_row, s_col] = k_tile_dequant_full[k_row, offset_in_full]
-
-        b_s_q = tl.dot(q_tile, k_tile_q, out_dtype=tl.float32) * scale * RCP_LN2
+        base_toksb_q = pid_b * (T * HKV * K_PACKED) + offs_t_sb * (HKV * K_PACKED) + (pid_hkv * K_PACKED)
+        base_toksb_k = pid_b * (T * HKV * K) + offs_t_sb * (HKV * K) + (pid_hkv * K)
+        tl.multiple_of(base_toksb_q, K_PACKED)
+        tl.multiple_of(base_toksb_k, K)
+        kq_ptrssb = k_q + base_toksb_q[None, :] + offs_kp[:, None]
+        kq_packedsb = tl.load(kq_ptrssb, mask=t_mask_sb[None, :], other=0).to(tl.int32)
+        # Re-load q per sub-block to shorten its live range.
+        q_scaled0 = tl.load(
+            q_ptrs0,
+            mask=row_mask[:, None] & mask_k0[None, :],
+            other=0.0,
+        ).to(tl.float16) * scale0[None, :].to(tl.float16)
+        q_scaled1 = tl.load(
+            q_ptrs1,
+            mask=row_mask[:, None] & mask_k1[None, :],
+            other=0.0,
+        ).to(tl.float16) * scale1[None, :].to(tl.float16)
+        q_scaled2 = tl.load(
+            q_ptrs2,
+            mask=row_mask[:, None] & mask_k2[None, :],
+            other=0.0,
+        ).to(tl.float16) * scale2[None, :].to(tl.float16)
+        q_scaled3 = tl.load(
+            q_ptrs3,
+            mask=row_mask[:, None] & mask_k3[None, :],
+            other=0.0,
+        ).to(tl.float16) * scale3[None, :].to(tl.float16)
+        b_s_q = tl.dot(q_scaled0, ((kq_packedsb >> 0) & QMAX).to(tl.float16), out_dtype=tl.float32)
+        b_s_q += tl.dot(q_scaled1, ((kq_packedsb >> 2) & QMAX).to(tl.float16), out_dtype=tl.float32)
+        b_s_q += tl.dot(q_scaled2, ((kq_packedsb >> 4) & QMAX).to(tl.float16), out_dtype=tl.float32)
+        b_s_q += tl.dot(q_scaled3, ((kq_packedsb >> 6) & QMAX).to(tl.float16), out_dtype=tl.float32)
+        b_s_q = (b_s_q + q_zero_sum[:, None]) * scale * RCP_LN2
         b_s_act = tl.where(t_mask_sb[None, :], b_s_q, NEG_INF)
 
         m_rows_blk = tl.max(b_s_act, axis=1)
 
-        below = (m_rows_blk < th_rows) & row_mask
+        below   = (m_rows_blk < th_rows) & row_mask
         n_below = tl.sum(below.to(tl.int32), axis=0)
         n_valid = tl.sum(row_mask.to(tl.int32), axis=0)
         prune_blk = n_below == n_valid
@@ -197,16 +278,44 @@ def attn_forward_stage1_fused_threshold_qbits(
 
         if not prune_blk:
             if USE_FP8_RESIDUAL:
-                # Need to compute base_toksb_k for residual loading
-                base_toksb_k = pid_b * (T * HKV * K) + (offs_t_sb[None, :] * (HKV * K)) + (pid_hkv * K)
-                k_res_ptrssb = k_res + base_toksb_k + offs_k[:, None]
-                k_res_tile = tl.load(
-                    k_res_ptrssb,
-                    mask=(TRUE_K[:, None] & t_mask_sb[None, :]),
+                k_res_ptrs0 = k_res + base_toksb_k[None, :] + offs_k0[:, None]
+                k_res_ptrs1 = k_res + base_toksb_k[None, :] + offs_k1[:, None]
+                k_res_ptrs2 = k_res + base_toksb_k[None, :] + offs_k2[:, None]
+                k_res_ptrs3 = k_res + base_toksb_k[None, :] + offs_k3[:, None]
+                k_res0 = tl.load(
+                    k_res_ptrs0,
+                    mask=(mask_k0[:, None] & t_mask_sb[None, :]),
                     other=0.0,
                 ).to(tl.float16)
-                # Reuse selector b_s_q and add residual dot to avoid recomputing q·k_tile_q.
-                b_s_res = tl.dot(q_tile, k_res_tile, out_dtype=tl.float32) * scale * RCP_LN2
+                k_res1 = tl.load(
+                    k_res_ptrs1,
+                    mask=(mask_k1[:, None] & t_mask_sb[None, :]),
+                    other=0.0,
+                ).to(tl.float16)
+                k_res2 = tl.load(
+                    k_res_ptrs2,
+                    mask=(mask_k2[:, None] & t_mask_sb[None, :]),
+                    other=0.0,
+                ).to(tl.float16)
+                k_res3 = tl.load(
+                    k_res_ptrs3,
+                    mask=(mask_k3[:, None] & t_mask_sb[None, :]),
+                    other=0.0,
+                ).to(tl.float16)
+                # Reuse selector b_s_q; rescale residual by 1/scale to avoid storing q0..q3.
+                inv_scale0 = (1.0 / scale0).to(tl.float16)
+                inv_scale1 = (1.0 / scale1).to(tl.float16)
+                inv_scale2 = (1.0 / scale2).to(tl.float16)
+                inv_scale3 = (1.0 / scale3).to(tl.float16)
+                k_res0 = k_res0 * inv_scale0[:, None]
+                k_res1 = k_res1 * inv_scale1[:, None]
+                k_res2 = k_res2 * inv_scale2[:, None]
+                k_res3 = k_res3 * inv_scale3[:, None]
+                b_s_res = tl.dot(q_scaled0, k_res0, out_dtype=tl.float32)
+                b_s_res += tl.dot(q_scaled1, k_res1, out_dtype=tl.float32)
+                b_s_res += tl.dot(q_scaled2, k_res2, out_dtype=tl.float32)
+                b_s_res += tl.dot(q_scaled3, k_res3, out_dtype=tl.float32)
+                b_s_res = b_s_res * scale * RCP_LN2
                 b_s = b_s_q + b_s_res
                 b_s = tl.where(t_mask_sb[None, :], b_s, NEG_INF)
                 m_rows = tl.max(b_s, axis=1)
@@ -265,28 +374,39 @@ def attn_forward_stage2_masked(
     tl.store(o_ptrs, out_tile.to(o_ptrs.dtype.element_ty))
 
 
-def _normalize_scale_zero(k_scale: torch.Tensor, k_zero: torch.Tensor, expect_shape):
+def _normalize_scale(k_scale: torch.Tensor, expect_shape):
     """
-    Ensure scale / zero_point tensors are contiguous and have shape [B, HKV, K].
+    Ensure scale tensors are contiguous and have shape [B, HKV, K].
     """
     if k_scale.ndim == 4 and k_scale.shape[1] == 1:
         k_scale = k_scale.squeeze(1)
-    if k_zero.ndim == 4 and k_zero.shape[1] == 1:
-        k_zero = k_zero.squeeze(1)
 
-    if k_scale.shape != expect_shape or k_zero.shape != expect_shape:
+    if k_scale.shape != expect_shape:
         raise ValueError(
-            f"Unsupported k_scale/k_zero shapes: {k_scale.shape=} {k_zero.shape=}, expected {expect_shape}"
+            f"Unsupported k_scale shape: {k_scale.shape=}, expected {expect_shape}"
         )
 
-    return k_scale.contiguous(), k_zero.contiguous()
+    return k_scale.contiguous()
+
+
+
+def _kernel_kwargs(num_warps: int | None, num_stages: int | None) -> dict:
+    kwargs = {}
+    if num_warps is not None:
+        if num_warps <= 0:
+            raise ValueError(f"num_warps must be positive, got {num_warps}")
+        kwargs["num_warps"] = int(num_warps)
+    if num_stages is not None:
+        if num_stages <= 0:
+            raise ValueError(f"num_stages must be positive, got {num_stages}")
+        kwargs["num_stages"] = int(num_stages)
+    return kwargs
 
 
 def attn_forward_decode_quantized(
     q: torch.Tensor,           # [B, 1, HQ, K]
     k_q: torch.Tensor,         # [B, T, HKV, ceil(K / (8 / k_bits))], packed quantized ints
     k_scale: torch.Tensor,     # [B, HKV, K] (token dimension removed)
-    k_zero: torch.Tensor,      # same shape as k_scale
     v: torch.Tensor,           # [B, T, HKV, V]
     k_residual: torch.Tensor | None = None,  # [B, T, HKV, K], fp8 residual
     k_bits: int = 2,
@@ -297,6 +417,12 @@ def attn_forward_decode_quantized(
     return_skip_ratio: bool = False,
     precomputed_threshold: torch.Tensor | None = None,
     use_fp8_residual: bool = True,
+    num_warps_th: int | None = None,
+    num_stages_th: int | None = None,
+    num_warps_s1: int | None = None,
+    num_stages_s1: int | None = None,
+    num_warps_s2: int | None = None,
+    num_stages_s2: int | None = None,
     **kwargs,
 ):
     # import os
@@ -307,9 +433,9 @@ def attn_forward_decode_quantized(
         raise ValueError("k_residual must be a CUDA tensor when provided")
     if k_bits != 2:
         raise ValueError(f"attn_forward_decode_quantized currently supports 2-bit keys, got k_bits={k_bits}")
-    assert k_scale.is_cuda and k_zero.is_cuda, "k_scale/k_zero must be CUDA tensors"
-    if not k_scale.is_floating_point() or not k_zero.is_floating_point():
-        raise ValueError("k_scale and k_zero must be floating point tensors for dequantization")
+    assert k_scale.is_cuda, "k_scale must be a CUDA tensor"
+    if not k_scale.is_floating_point():
+        raise ValueError("k_scale must be a floating point tensor for dequantization")
     if k_q.is_floating_point():
         raise ValueError("k_q must contain integer quantized values (e.g., uint8/int8)")
     if k_residual is not None and not k_residual.is_floating_point():
@@ -338,7 +464,7 @@ def attn_forward_decode_quantized(
     G = HQ // HKV
 
     expect_shape = (B, HKV, K)
-    k_scale, k_zero = _normalize_scale_zero(k_scale, k_zero, expect_shape)
+    k_scale = _normalize_scale(k_scale, expect_shape)
 
     if scale is None:
         scale = 1.0 / math.sqrt(K)
@@ -372,23 +498,27 @@ def attn_forward_decode_quantized(
         use_ext_th = True
     else:
         threshold_buf = torch.empty((B, HQ), device=q.device, dtype=torch.float32)
+        th_kwargs = _kernel_kwargs(num_warps_th, num_stages_th)
         attn_compute_threshold_qbits[(B, HKV)](
-            q, k_q, k_scale, k_zero,
+            q, k_q, k_scale,
             threshold_buf,
             scale, T, NTB, delta,
             B=B, HKV=HKV, HQ=HQ, K=K, K_PACKED=K_packed, G=G,
             K_BITS=k_bits,
+            **th_kwargs,
         )
         use_ext_th = True
 
+    s1_kwargs = _kernel_kwargs(num_warps_s1, num_stages_s1)
     attn_forward_stage1_fused_threshold_qbits[(NTB, B, HKV)](
-        q, k_q, k_scale, k_zero, k_res, v,
+        q, k_q, k_scale, k_res, v,
         m_buf, l_buf, o_buf,
         mask_buf,
         scale, T, NTB, NTBS, delta,
         threshold_buf,
         B=B, HKV=HKV, HQ=HQ, K=K, K_PACKED=K_packed, V=V, G=G, BS=BS, SBS=SBS,
         K_BITS=k_bits, USE_EXT_TH=use_ext_th, USE_FP8_RESIDUAL=use_fp8_residual,
+        **s1_kwargs,
     )
 
     skip_ratio = None
@@ -397,11 +527,13 @@ def attn_forward_decode_quantized(
         total = mask_buf.numel()
         skip_ratio = float((1.0 - (kept.float() / float(total))).item())
 
+    s2_kwargs = _kernel_kwargs(num_warps_s2, num_stages_s2)
     attn_forward_stage2_masked[(B, HKV, G)](
         m_buf, l_buf, o_buf,
         mask_buf,
         o, NTBS,
         B=B, HKV=HKV, G=G, HQ=HQ, V=V,
+        **s2_kwargs,
     )
 
     if return_skip_ratio:
@@ -409,8 +541,8 @@ def attn_forward_decode_quantized(
     else:
         return o
 
-class CUDAGraphDecodeRunnerOptDequantOnce:
-    """Capture and replay the Q2FP8 decode kernel with static buffers (reuse b_s_q).
+class CUDAGraphDecodeRunnerQ2FP8:
+    """Capture and replay the Q2FP8 decode kernel with static buffers.
 
     This wrapper avoids per-step kernel launches by using torch.cuda.CUDAGraph.
     Output is written into a persistent tensor; callers should not assume it
@@ -422,7 +554,6 @@ class CUDAGraphDecodeRunnerOptDequantOnce:
         q: torch.Tensor,
         k_q: torch.Tensor,
         k_scale: torch.Tensor,
-        k_zero: torch.Tensor,
         v: torch.Tensor,
         *,
         k_residual: Optional[torch.Tensor] = None,
@@ -434,6 +565,12 @@ class CUDAGraphDecodeRunnerOptDequantOnce:
         delta: float = 5.0,
         use_fp8_residual: bool = True,
         warmup: int = 2,
+        num_warps_th: Optional[int] = None,
+        num_stages_th: Optional[int] = None,
+        num_warps_s1: Optional[int] = None,
+        num_stages_s1: Optional[int] = None,
+        num_warps_s2: Optional[int] = None,
+        num_stages_s2: Optional[int] = None,
     ) -> None:
         if not torch.cuda.is_available():
             raise RuntimeError("CUDA is required for CUDAGraph capture.")
@@ -448,6 +585,12 @@ class CUDAGraphDecodeRunnerOptDequantOnce:
         self._delta = delta
         self._use_fp8_residual = use_fp8_residual
         self._use_ext_th = precomputed_threshold is not None
+        self._num_warps_th = num_warps_th
+        self._num_stages_th = num_stages_th
+        self._num_warps_s1 = num_warps_s1
+        self._num_stages_s1 = num_stages_s1
+        self._num_warps_s2 = num_warps_s2
+        self._num_stages_s2 = num_stages_s2
 
         if self._use_fp8_residual and k_residual is None:
             raise ValueError("use_fp8_residual=True requires k_residual")
@@ -457,7 +600,6 @@ class CUDAGraphDecodeRunnerOptDequantOnce:
         self._static_q = torch.empty_like(q, device=self._device)
         self._static_k_q = torch.empty_like(k_q, device=self._device)
         self._static_k_scale = torch.empty_like(k_scale, device=self._device)
-        self._static_k_zero = torch.empty_like(k_zero, device=self._device)
         self._static_v = torch.empty_like(v, device=self._device)
         self._static_k_residual = None
         if self._use_fp8_residual:
@@ -473,7 +615,6 @@ class CUDAGraphDecodeRunnerOptDequantOnce:
         self._static_q.copy_(q)
         self._static_k_q.copy_(k_q)
         self._static_k_scale.copy_(k_scale)
-        self._static_k_zero.copy_(k_zero)
         self._static_v.copy_(v)
         if self._use_fp8_residual:
             self._static_k_residual.copy_(k_residual)
@@ -486,7 +627,6 @@ class CUDAGraphDecodeRunnerOptDequantOnce:
                 q=self._static_q,
                 k_q=self._static_k_q,
                 k_scale=self._static_k_scale,
-                k_zero=self._static_k_zero,
                 k_residual=self._static_k_residual,
                 v=self._static_v,
                 k_bits=self._k_bits,
@@ -497,6 +637,12 @@ class CUDAGraphDecodeRunnerOptDequantOnce:
                 return_skip_ratio=False,
                 precomputed_threshold=self._static_threshold,
                 use_fp8_residual=self._use_fp8_residual,
+                num_warps_th=self._num_warps_th,
+                num_stages_th=self._num_stages_th,
+                num_warps_s1=self._num_warps_s1,
+                num_stages_s1=self._num_stages_s1,
+                num_warps_s2=self._num_warps_s2,
+                num_stages_s2=self._num_stages_s2,
             )
         torch.cuda.synchronize(self._device)
 
@@ -507,7 +653,6 @@ class CUDAGraphDecodeRunnerOptDequantOnce:
                 q=self._static_q,
                 k_q=self._static_k_q,
                 k_scale=self._static_k_scale,
-                k_zero=self._static_k_zero,
                 k_residual=self._static_k_residual,
                 v=self._static_v,
                 k_bits=self._k_bits,
@@ -518,6 +663,12 @@ class CUDAGraphDecodeRunnerOptDequantOnce:
                 return_skip_ratio=False,
                 precomputed_threshold=self._static_threshold,
                 use_fp8_residual=self._use_fp8_residual,
+                num_warps_th=self._num_warps_th,
+                num_stages_th=self._num_stages_th,
+                num_warps_s1=self._num_warps_s1,
+                num_stages_s1=self._num_stages_s1,
+                num_warps_s2=self._num_warps_s2,
+                num_stages_s2=self._num_stages_s2,
             )
 
     @property
@@ -529,7 +680,6 @@ class CUDAGraphDecodeRunnerOptDequantOnce:
         q: torch.Tensor,
         k_q: torch.Tensor,
         k_scale: torch.Tensor,
-        k_zero: torch.Tensor,
         v: torch.Tensor,
         *,
         k_residual: Optional[torch.Tensor] = None,
@@ -546,7 +696,6 @@ class CUDAGraphDecodeRunnerOptDequantOnce:
         self._static_q.copy_(q)
         self._static_k_q.copy_(k_q)
         self._static_k_scale.copy_(k_scale)
-        self._static_k_zero.copy_(k_zero)
         self._static_v.copy_(v)
         if self._use_fp8_residual:
             self._static_k_residual.copy_(k_residual)
@@ -562,7 +711,6 @@ class CUDAGraphDecodeRunnerOptDequantOnce:
             q=self._static_q,
             k_q=self._static_k_q,
             k_scale=self._static_k_scale,
-            k_zero=self._static_k_zero,
             k_residual=self._static_k_residual,
             v=self._static_v,
             k_bits=self._k_bits,
@@ -573,6 +721,12 @@ class CUDAGraphDecodeRunnerOptDequantOnce:
             return_skip_ratio=True,
             precomputed_threshold=self._static_threshold,
             use_fp8_residual=self._use_fp8_residual,
+            num_warps_th=self._num_warps_th,
+            num_stages_th=self._num_stages_th,
+            num_warps_s1=self._num_warps_s1,
+            num_stages_s1=self._num_stages_s1,
+            num_warps_s2=self._num_warps_s2,
+            num_stages_s2=self._num_stages_s2,
         )
         return self._static_out, skip_ratio
 

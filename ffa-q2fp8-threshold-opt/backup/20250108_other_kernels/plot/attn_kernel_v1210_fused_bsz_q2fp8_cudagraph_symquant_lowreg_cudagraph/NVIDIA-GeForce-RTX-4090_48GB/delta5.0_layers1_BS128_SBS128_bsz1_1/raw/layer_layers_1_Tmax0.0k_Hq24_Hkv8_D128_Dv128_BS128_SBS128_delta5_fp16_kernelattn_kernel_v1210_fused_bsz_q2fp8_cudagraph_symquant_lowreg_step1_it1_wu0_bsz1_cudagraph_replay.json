@@ -1,0 +1,44 @@
+{
+  "meta": {
+    "layer_indices": [
+      1
+    ],
+    "T_full": 1,
+    "Hq": 24,
+    "Hkv": 8,
+    "D": 128,
+    "Dv": 128,
+    "BS": 128,
+    "SBS": 128,
+    "delta": 5.0,
+    "dtype": "fp16",
+    "step": 1,
+    "iters": 1,
+    "warmup": 0,
+    "attn_kernel": "attn_kernel_v1210_fused_bsz_q2fp8_cudagraph_symquant_lowreg",
+    "bsz": 1,
+    "cudagraph": true,
+    "cudagraph_replay_only": true,
+    "num_warps_th": null,
+    "num_stages_th": null,
+    "num_warps_s1": null,
+    "num_stages_s1": null,
+    "num_warps_s2": null,
+    "num_stages_s2": null
+  },
+  "lengths": [
+    1
+  ],
+  "q2_ms": [
+    0.22015999257564545
+  ],
+  "q2_cg_ms": [
+    0.054048001766204834
+  ],
+  "flash_ms": [
+    null
+  ],
+  "skip_ratios": [
+    0.0
+  ]
+}
