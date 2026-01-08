@@ -13,6 +13,23 @@ from transformers.models.llama.modeling_llama import apply_rotary_pos_emb
 #     repeat_kv
 # )
 
+# Quick-edit defaults for running without CLI overrides.
+DEFAULT_ARGS = {
+    "model_path": Path("/remote-home1/zgliu/models/Llama-3_2-3B"),
+    "tokenizer_path": None,
+    "opencompass_root": None,
+    "dataset_type": "longbench",
+    "dataset_path": None,
+    "line_start": 48,
+    "line_end": 68,
+    "line_idx": 50,
+    "repeat_text_num": 1,
+    "sample_len_k": 256,
+    "save_root": None,
+    "dtype": "fp16",
+    "device_map": "auto",
+}
+
 THIS_DIR = Path(__file__).resolve().parent
 if str(THIS_DIR) not in sys.path:
     sys.path.insert(0, str(THIS_DIR))
@@ -103,53 +120,51 @@ def parse_args():
     parser.add_argument(
         "--model-path",
         type=Path,
-        default=Path(
-            "/inspire/hdd/global_user/liuzhigeng-253108120105/models/Llama-3.1-8B"
-        ),
+        default=DEFAULT_ARGS["model_path"],
         help="Path to the HF model directory.",
     )
     parser.add_argument(
         "--tokenizer-path",
         type=Path,
-        default=None,
+        default=DEFAULT_ARGS["tokenizer_path"],
         help="Optional tokenizer path. Defaults to model path.",
     )
     parser.add_argument(
         "--opencompass-root",
         type=Path,
-        default=None,
+        default=DEFAULT_ARGS["opencompass_root"],
         help="Root path for huffkv-opencompass. Used to infer dataset defaults.",
     )
     parser.add_argument(
         "--dataset-type",
         choices=["longbench", "babilong"],
-        default="longbench",
+        default=DEFAULT_ARGS["dataset_type"],
         help="Which dataset loader to use.",
     )
     parser.add_argument(
         "--dataset-path",
         type=Path,
-        default=None,
+        default=DEFAULT_ARGS["dataset_path"],
         help="Explicit dataset path. Overrides the dataset-type default.",
     )
-    parser.add_argument("--line-start", type=int, default=48)
-    parser.add_argument("--line-end", type=int, default=68)
-    parser.add_argument("--line-idx", type=int, default=50)
-    parser.add_argument("--repeat-text-num", type=int, default=1)
-    parser.add_argument("--sample-len-k", type=int, default=256)
+    parser.add_argument("--line-start", type=int, default=DEFAULT_ARGS["line_start"])
+    parser.add_argument("--line-end", type=int, default=DEFAULT_ARGS["line_end"])
+    parser.add_argument("--line-idx", type=int, default=DEFAULT_ARGS["line_idx"])
+    parser.add_argument("--repeat-text-num", type=int, default=DEFAULT_ARGS["repeat_text_num"])
+    parser.add_argument("--sample-len-k", type=int, default=DEFAULT_ARGS["sample_len_k"])
     parser.add_argument(
         "--save-root",
         type=Path,
-        default=None,
-        help="Root folder to save results. Defaults to opencompass attn_analysis/result.",
+        default=DEFAULT_ARGS["save_root"],
+        help="Root folder to save results. Defaults to attn_analysis/result under this repo.",
     )
     parser.add_argument(
         "--dtype",
         choices=["fp16", "bf16", "fp32"],
-        default="fp16",
+        default=DEFAULT_ARGS["dtype"],
         help="Model load dtype.",
     )
-    parser.add_argument("--device-map", type=str, default="auto")
+    parser.add_argument("--device-map", type=str, default=DEFAULT_ARGS["device_map"])
 
     args = parser.parse_args()
 
@@ -160,12 +175,7 @@ def parse_args():
         )
     args.opencompass_root = opencompass_root
     if args.save_root is None:
-        if opencompass_root.exists():
-            args.save_root = (
-                opencompass_root / "opencompass/models/myModel/ffa/attn_analysis/result"
-            )
-        else:
-            args.save_root = THIS_DIR / "result"
+        args.save_root = THIS_DIR / "result"
     return args
 
 

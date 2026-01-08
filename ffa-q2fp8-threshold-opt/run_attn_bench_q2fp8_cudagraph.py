@@ -21,9 +21,7 @@ THIS_DIR = Path(__file__).resolve().parent
 if str(THIS_DIR) not in sys.path:
     sys.path.append(str(THIS_DIR))
 
-EXP_ROOT_DIR = Path(
-    "/inspire/hdd/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/huffkv-opencompass/opencompass/models/myModel/ffa/attn_analysis/result"
-)
+EXP_ROOT_DIR = THIS_DIR.parent / "attn_analysis" / "result"
 EXP_ROOT_SUBDIR = Path("Llama-3_2-3B/longbench_gov_report_48_68_256k")
 
 
