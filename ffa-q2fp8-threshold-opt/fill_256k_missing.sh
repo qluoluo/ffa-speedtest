@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Run missing 256k benchmarks for H100 (lr64_mask, base_compact, sym_mask, sym_lr64_compact).
+# Run missing 256k benchmarks locally (lr64_mask, base_compact, sym_mask, sym_lr64_compact).
 # Results are saved under plot/**/raw/*.json by the benchmark scripts.
 
 set -euo pipefail
@@ -25,27 +25,6 @@ if [[ ! -f "${BENCH_SYM}" ]]; then
     exit 1
 fi
 
-if [[ -z "${SKIP_H100_CHECK:-}" ]]; then
-    "${PYTHON}" - <<'PY'
-import sys
-try:
-    import torch
-except Exception as exc:
-    print(f"Failed to import torch: {exc}", file=sys.stderr)
-    sys.exit(1)
-
-if not torch.cuda.is_available():
-    print("CUDA is not available.", file=sys.stderr)
-    sys.exit(1)
-
-name = torch.cuda.get_device_properties(0).name
-print(f"Detected GPU: {name}")
-if "H100" not in name:
-    print("GPU is not H100. Set SKIP_H100_CHECK=1 to override.", file=sys.stderr)
-    sys.exit(1)
-PY
-fi
-
 BS="${BS:-128}"
 SBS="${SBS:-$BS}"
 DELTA="${DELTA:-5.0}"
@@ -67,6 +46,10 @@ COMMON_ARGS=(
     --iters "${ITERS}"
     --warmup "${WARMUP}"
 )
+
+if [[ "${FORCE:-1}" != "0" ]]; then
+    COMMON_ARGS+=(--force)
+fi
 
 if [[ "${NO_PLOT:-0}" != "0" ]]; then
     COMMON_ARGS+=(--no-plot)
@@ -116,4 +99,4 @@ if [[ "${#failures[@]}" -ne 0 ]]; then
     exit 1
 fi
 
-echo "All H100 256k benchmarks completed successfully."
+echo "All 256k benchmarks completed successfully."
