@@ -1,30 +1,40 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-KERNEL_NAME="${KERNEL_NAME:-attn_q2fp8_sym_lr64_compact}"
-
-DTYPE="${DTYPE:-fp16}"
-BS="${BS:-256}"
-SBS="${SBS:-256}"
-DELTA="${DELTA:-5.0}"
-LAYER="${LAYER:-1}"
-BSZ="${BSZ:-1}"
-MAX_LEN="${MAX_LEN:-262144}"
-STEP="${STEP:-${MAX_LEN}}"
-ITERS="${ITERS:-5}"
-WARMUP="${WARMUP:-1}"
-CG_WARMUP="${CG_WARMUP:-1}"
-FORCE="${FORCE:-0}"
-
-PYTHON_BIN="${PYTHON_BIN:-python}"
-NCU_BIN="${NCU_BIN:-ncu}"
-NCU_SET="${NCU_SET:-full}"
-KERNEL_FILTER="${KERNEL_FILTER:-regex:attn_}"
-OUT_DIR="${OUT_DIR:-${PWD}/ncu_reports}"
-NCU_OUTPUT="${NCU_OUTPUT:-${OUT_DIR}/${KERNEL_NAME}_T${MAX_LEN}}"
+export CUDA_VISIBLE_DEVICES=6
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BENCH_PY="${SCRIPT_DIR}/run_attn_bench_q2fp8_cudagraph.py"
+PYTHON_BIN="/remote-home1/zgliu/anaconda3/envs/ffa/bin/python"
+if [[ ! -x "${PYTHON_BIN}" ]]; then
+  echo "Python executable not found or not executable: ${PYTHON_BIN}" >&2
+  exit 1
+fi
+NCU_BIN="$(command -v ncu || true)"
+if [[ -z "${NCU_BIN}" ]]; then
+  echo "ncu executable not found in PATH." >&2
+  exit 1
+fi
+
+KERNEL_NAME="attn_q2fp8_sym_lr64_compact"
+
+DTYPE="fp16"
+BS="256"
+SBS="256"
+DELTA="5.0"
+LAYER="1"
+BSZ="1"
+MAX_LEN="262144"
+STEP="${MAX_LEN}"
+ITERS="5"
+WARMUP="1"
+CG_WARMUP="1"
+FORCE="0"
+
+NCU_SET="full"
+KERNEL_FILTER="regex:attn_"
+OUT_DIR="${SCRIPT_DIR}/ncu_reports"
+NCU_OUTPUT="${OUT_DIR}/${KERNEL_NAME}_T${MAX_LEN}"
 
 mkdir -p "${OUT_DIR}"
 

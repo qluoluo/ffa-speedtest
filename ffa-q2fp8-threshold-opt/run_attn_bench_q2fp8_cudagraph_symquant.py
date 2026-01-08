@@ -57,6 +57,11 @@ def parse_args():
         default=True,
         help="Measure CUDAGraph replay time only (exclude input copies).",
     )
+    p.add_argument(
+        "--with-q2",
+        action="store_true",
+        help="Also benchmark the non-CUDAGraph Q2FP8 baseline.",
+    )
     p.add_argument("--num-warps", type=int, default=None, help="Override Triton num_warps for all kernels.")
     p.add_argument("--num-stages", type=int, default=None, help="Override Triton num_stages for all kernels.")
     p.add_argument("--num-warps-th", type=int, default=None, help="Override num_warps for threshold kernel.")
@@ -261,8 +266,8 @@ def save_raw_cache(path, meta: dict, lengths, q2_ms, q2_cg_ms, flash_ms, skip_ra
     payload = {
         "meta": meta,
         "lengths": [int(x) for x in lengths],
-        "q2_ms": [float(x) for x in q2_ms],
-        "q2_cg_ms": [float(x) for x in q2_cg_ms],
+        "q2_ms": [None if x is None else float(x) for x in q2_ms],
+        "q2_cg_ms": [None if x is None else float(x) for x in q2_cg_ms],
         "flash_ms": [None if x is None else float(x) for x in flash_ms],
         "skip_ratios": [None if x is None else float(x) for x in skip_ratios],
     }
@@ -347,14 +352,6 @@ def plot_curve(
     out_dir.mkdir(parents=True, exist_ok=True)
     fig, ax1 = plt.subplots(figsize=(12, 8))
 
-    line_q2, = ax1.plot(
-        x_lengths,
-        q2_ms_list,
-        label="Q2FP8",
-        marker="o",
-        markersize=2,
-        color="tab:blue",
-    )
     line_q2_cg, = ax1.plot(
         x_lengths,
         q2_cg_ms_list,
@@ -363,8 +360,21 @@ def plot_curve(
         markersize=2,
         color="tab:purple",
     )
-    lines = [line_q2, line_q2_cg]
-    labels = ["Q2FP8", "Q2FP8 CUDAGraph"]
+    lines = []
+    labels = []
+    if q2_ms_list is not None and any(x is not None for x in q2_ms_list):
+        line_q2, = ax1.plot(
+            x_lengths,
+            q2_ms_list,
+            label="Q2FP8",
+            marker="o",
+            markersize=2,
+            color="tab:blue",
+        )
+        lines.append(line_q2)
+        labels.append("Q2FP8")
+    lines.append(line_q2_cg)
+    labels.append("Q2FP8 CUDAGraph")
 
     if flash_ms_list is not None and any(x is not None for x in flash_ms_list):
         line_flash, = ax1.plot(
@@ -447,6 +457,7 @@ def main():
     warmup = int(args.warmup)
     bsz = int(args.bsz)
     max_length = None if args.max_length is not None and args.max_length < 0 else args.max_length
+    run_q2 = bool(args.with_q2)
 
     def _norm_kernel_arg(val: int | None):
         if val is None:
@@ -532,8 +543,26 @@ def main():
             created_raw_dir = True
 
     try:
-        if cache_path.exists() and not args.force:
-            x_lengths, q2_ms_list, q2_cg_ms_list, flash_ms_list, skip_ratios, _meta = load_raw_cache(cache_path)
+        use_cache = cache_path.exists() and not args.force
+        cached_q2_ms_list = None
+        if use_cache:
+            (
+                x_lengths,
+                cached_q2_ms_list,
+                q2_cg_ms_list,
+                flash_ms_list,
+                skip_ratios,
+                _meta,
+            ) = load_raw_cache(cache_path)
+            cache_has_q2 = bool(cached_q2_ms_list) and all(x is not None for x in cached_q2_ms_list)
+            if run_q2 and not cache_has_q2:
+                print(f"[Info] Cached results missing Q2 baseline; rerunning to collect it.")
+                use_cache = False
+        if use_cache:
+            if run_q2:
+                q2_ms_list = cached_q2_ms_list
+            else:
+                q2_ms_list = [None] * len(q2_cg_ms_list)
             print(f"[Info] Loaded cached results from {cache_path}")
         else:
             if cache_path.exists() and args.force:
@@ -629,7 +658,9 @@ def main():
                 def run_flash():
                     return flash_attn_compute(q, k, v)
 
-                ms_q2 = benchmark(run_q2, iters=iters, warmup=warmup)
+                ms_q2 = None
+                if run_q2:
+                    ms_q2 = benchmark(run_q2, iters=iters, warmup=warmup)
                 ms_q2_cg = benchmark(run_q2_cg, iters=iters, warmup=warmup)
                 ms_flash = None
                 if flash_attn_compute is not None:
@@ -659,6 +690,7 @@ def main():
                 bsz=int(bsz),
                 cudagraph=True,
                 cudagraph_replay_only=bool(args.cg_replay_only),
+                q2_baseline=bool(run_q2),
                 num_warps_th=num_warps_th,
                 num_stages_th=num_stages_th,
                 num_warps_s1=num_warps_s1,
@@ -689,15 +721,20 @@ def main():
                 gpu_label=gpu_label,
             )
 
-        speedup_str = ""
+        speedup_parts = []
         if flash_ms_list[-1] is not None:
-            speedup = flash_ms_list[-1] / q2_ms_list[-1] if q2_ms_list[-1] > 0 else float("inf")
-            speedup_cg = flash_ms_list[-1] / q2_cg_ms_list[-1] if q2_cg_ms_list[-1] > 0 else float("inf")
-            speedup_str = f", Speedup={speedup:.2f}x, Speedup_CG={speedup_cg:.2f}x"
+            if q2_ms_list[-1] is not None and q2_ms_list[-1] > 0:
+                speedup = flash_ms_list[-1] / q2_ms_list[-1]
+                speedup_parts.append(f"Speedup={speedup:.2f}x")
+            if q2_cg_ms_list[-1] > 0:
+                speedup_cg = flash_ms_list[-1] / q2_cg_ms_list[-1]
+                speedup_parts.append(f"Speedup_CG={speedup_cg:.2f}x")
+        speedup_str = f", {', '.join(speedup_parts)}" if speedup_parts else ""
         print(
             f"[Result] Layers {layer_range_str} | bsz={bsz} | T={to_k_str(T_full)} | "
             f"BS={BS} SBS={SBS} delta={delta} | "
-            f"Q2={q2_ms_list[-1]:.3f} ms, Q2_CG={q2_cg_ms_list[-1]:.3f} ms"
+            + (f"Q2={q2_ms_list[-1]:.3f} ms, " if q2_ms_list[-1] is not None else "")
+            + f"Q2_CG={q2_cg_ms_list[-1]:.3f} ms"
             + (f", Flash={flash_ms_list[-1]:.3f} ms" if flash_ms_list[-1] is not None else "")
             + speedup_str
         )
