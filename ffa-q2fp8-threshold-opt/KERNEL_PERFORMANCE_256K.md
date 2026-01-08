@@ -7,20 +7,39 @@
 - 基线：`attn_q2fp8_base_mask`（相同 GPU 与 meta 配置）。
 - `N/A` 表示该项没有对应数据。
 - 其余 kernel 与结果已移至 `backup/20250108_other_kernels/`。
+- 默认对比配置：BS=128, SBS=128, bsz=1, delta=5.0, step=4096（除非表中另标注）。
+
+## Kernel 版本差异（代码层面）
+| kernel | 量化方式 | K 维度处理 | keep 列表 | Stage2 遍历 | 备注 |
+| --- | --- | --- | --- | --- | --- |
+| `attn_q2fp8_base_mask` | 非对称（scale+zero-point） | K_PACKED 展开 | mask_buf | 扫描全部 NTBS | baseline |
+| `attn_q2fp8_lr64_mask` | 非对称 | BK=64 分块 | mask_buf | 扫描全部 NTBS | 低寄存器路径 |
+| `attn_q2fp8_sym_mask` | 对称（仅 scale） | K_PACKED 展开 | mask_buf | 扫描全部 NTBS | 去掉 zero-point |
+| `attn_q2fp8_base_compact` | 非对称 | K_PACKED 展开 | kept_indices/kept_counts | 仅遍历 kept | 紧凑列表 |
+| `attn_q2fp8_lr64_compact` | 非对称 | BK=64 分块 | kept_indices/kept_counts | 仅遍历 kept | 低寄存器 + 紧凑列表 |
+| `attn_q2fp8_sym_lr64_compact` | 对称（仅 scale） | BK=64 分块 | kept_indices/kept_counts | 仅遍历 kept | 对称量化 + 低寄存器 + 紧凑列表 |
+
+备注：compact 版本默认 `MAX_KEPT = ceil(0.2 * NTBS)`，且至少 32。
 
 ## NVIDIA-GeForce-RTX-4090_48GB
 
 ### 结果
 | kernel | BS/SBS | bsz | layers | q2_cg_ms@256k | flash_ms@256k | 相对基线 | 相对flash |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| `attn_kernel/attn_q2fp8_base_mask.py` | 128/128 | 1 | 1 | 0.254781 | 1.117606 | 1.000 | 0.228 |
+| `attn_kernel/attn_q2fp8_base_mask.py` | 128/128 | 1 | 1 | 0.256547 | 1.115281 | 1.000 | 0.230 |
+| `attn_kernel/attn_q2fp8_lr64_mask.py` | 128/128 | 1 | 1 | 0.242016 | 1.114302 | 0.943 | 0.217 |
+| `attn_kernel/attn_q2fp8_sym_mask.py` | 128/128 | 1 | 1 | 0.221540 | 1.114411 | 0.864 | 0.199 |
+| `attn_kernel/attn_q2fp8_base_compact.py` | 128/128 | 1 | 1 | 0.225438 | 1.114405 | 0.879 | 0.202 |
+| `attn_kernel/attn_q2fp8_lr64_compact.py` | 128/128 | 1 | 1 | 0.216936 | 1.115757 | 0.846 | 0.194 |
+| `attn_kernel/attn_q2fp8_sym_lr64_compact.py` | 128/128 | 1 | 1 | 0.191838 | 1.114577 | 0.748 | 0.172 |
 | `attn_kernel/attn_q2fp8_base_mask.py` | 128/128 | 2 | 1-2 | 0.527991 | 2.207033 | 1.000 | 0.239 |
-| `attn_kernel/attn_q2fp8_sym_mask.py` | 128/128 | 1 | 1 | 0.221411 | 1.114454 | 0.869 | 0.199 |
-| `attn_kernel/attn_q2fp8_lr64_compact.py` | 128/128 | 1 | 1 | 0.188983 | 1.120860 | 0.742 | 0.169 |
 
-### 潜力结论
-- 优先：`attn_q2fp8_lr64_compact`（0.742x）。
-- 候选：`attn_q2fp8_sym_mask`（0.869x）。
+注：bsz=2 行为历史基线数据，未在本次重新跑。
+
+### 性能总结
+- 最快：`attn_q2fp8_sym_lr64_compact`（0.191838 ms，0.748x），较基线约快 25%。
+- 紧凑列表带来的收益大于低寄存器分块：`base_compact` 0.879x vs `lr64_mask` 0.943x。
+- 对称量化本身收益明显：`sym_mask` 0.864x；叠加低寄存器 + 紧凑列表后进一步提升到 0.748x。
 
 ## NVIDIA-H100-80GB-HBM3_80GB
 
@@ -30,9 +49,12 @@
 | `attn_kernel/attn_q2fp8_base_mask.py` | 128/128 | 1 | 1 | 0.259155 | 0.355217 | 1.000 | 0.730 |
 | `attn_kernel/attn_q2fp8_base_mask.py` | 256/256 | 1 | 1 | 0.240535 | 0.355023 | 1.000 | 0.678 |
 | `attn_kernel/attn_q2fp8_base_mask.py` | 256/256 | 4 | 1-2-3-4 | 0.957358 | 1.348051 | 1.000 | 0.710 |
+| `attn_kernel/attn_q2fp8_lr64_mask.py` | 128/128 | 1 | 1 | N/A | N/A | N/A | N/A |
 | `attn_kernel/attn_q2fp8_sym_mask.py` | 128/128 | 1 | 1 | N/A | N/A | N/A | N/A |
+| `attn_kernel/attn_q2fp8_base_compact.py` | 128/128 | 1 | 1 | N/A | N/A | N/A | N/A |
 | `attn_kernel/attn_q2fp8_lr64_compact.py` | 128/128 | 1 | 1 | 0.209329 | 0.354954 | 0.808 | 0.590 |
+| `attn_kernel/attn_q2fp8_sym_lr64_compact.py` | 128/128 | 1 | 1 | N/A | N/A | N/A | N/A |
 
-### 潜力结论
-- 优先：`attn_q2fp8_lr64_compact`（0.808x）。
-- 待补：`attn_q2fp8_sym_mask`（H100 256k 数据缺失）。
+### 性能总结
+- 仅确认 `attn_q2fp8_lr64_compact` 优于基线（0.808x）。
+- `lr64_mask`、`base_compact`、`sym_mask` 在 H100 上尚未补齐 256k 数据。
