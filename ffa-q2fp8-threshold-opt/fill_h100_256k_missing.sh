@@ -68,7 +68,7 @@ COMMON_ARGS=(
     --warmup "${WARMUP}"
 )
 
-if [[ "${NO_PLOT:-1}" != "0" ]]; then
+if [[ "${NO_PLOT:-0}" != "0" ]]; then
     COMMON_ARGS+=(--no-plot)
 fi
 if [[ "${NO_FLASH:-0}" != "0" ]]; then
