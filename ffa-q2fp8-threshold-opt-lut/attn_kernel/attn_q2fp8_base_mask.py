@@ -1,13 +1,4 @@
-# 相比 attn_q2fp8_base_mask.py 的优化点：
-# - K 维度按 BK=64 分块（低寄存器路径），替代完整的 K_PACKED 展开。
-# - Stage1 输出紧凑的 kept_indices/kept_counts 列表，避免完整 mask_buf：
-#   1) 对每个 (B, HKV) 与每个子块 sb 计算该块的 m_rows_blk（BM_DOT 行的最大分数）。
-#   2) 若所有行都低于阈值 th_rows（n_below == n_valid），则直接剪枝该块。
-#   3) 否则写入该块的 m/l/o，并用 atomic_add 对 kept_counts 递增，
-#      将块索引 tb_sb 追加到 kept_indices（最多 MAX_KEPT，默认取 NTBS 的 20% 向上取整，至少 32）。
-# - Stage2 仅遍历 kept_counts 指定数量的块索引（kept_indices[0:n_kept]），
-#   不再对全部 NTBS 扫描，从而减少无效读取。
-# CUDAGraph wrapper for Q2FP8 decode kernel (stage1 compact low-reg BK=64 variant).
+# CUDAGraph wrapper for Q2FP8 decode kernel with LUT-based 2-bit unpack.
 from __future__ import annotations
 
 import math
@@ -19,9 +10,23 @@ import triton.language as tl
 
 QUANT_MODE = "asym"
 
+_Q2_LUT_CACHE: dict[tuple[str, torch.dtype], torch.Tensor] = {}
+
+
+def _get_q2_unpack_lut(device: torch.device, dtype: torch.dtype) -> torch.Tensor:
+    key = (str(device), dtype)
+    lut = _Q2_LUT_CACHE.get(key)
+    if lut is None:
+        table = torch.arange(256, device=device, dtype=torch.int16)
+        shifts = torch.arange(4, device=device, dtype=torch.int16) * 2
+        lut = ((table[:, None] >> shifts[None, :]) & 0x3).to(dtype)
+        _Q2_LUT_CACHE[key] = lut
+    return lut
+
+
 @triton.jit
 def attn_compute_threshold_qbits(
-    q, k_q, k_scale, k_zp,
+    q, k_q, k_scale, k_zp, k_lut,
     th_out,
     scale, T, NTB, delta,
     B: tl.constexpr, HKV: tl.constexpr, HQ: tl.constexpr, K: tl.constexpr, K_PACKED: tl.constexpr,
@@ -29,7 +34,6 @@ def attn_compute_threshold_qbits(
     BM_DOT: tl.constexpr = 16,
     T_BS: tl.constexpr = 16,
     K_BITS: tl.constexpr = 2,
-    BK: tl.constexpr = 64,
 ):
     # 2D grid = (B, HKV)
     pid_b = tl.program_id(0)
@@ -37,62 +41,95 @@ def attn_compute_threshold_qbits(
 
     RCP_LN2 = 1.4426950408889634
     NEG_INF = float("-inf")
-    QMAX = (1 << K_BITS) - 1
+    TRUE_K = tl.full([K], True, tl.int1)
     VALS_PER_BYTE: tl.constexpr = 8 // K_BITS
 
     base_hq = pid_hkv * G
     rows = tl.arange(0, BM_DOT)
     row_mask = rows < G
+    offs_kp = tl.arange(0, K_PACKED)
+    offs_k0 = offs_kp * VALS_PER_BYTE + 0
+    offs_k1 = offs_kp * VALS_PER_BYTE + 1
+    offs_k2 = offs_kp * VALS_PER_BYTE + 2
+    offs_k3 = offs_kp * VALS_PER_BYTE + 3
+    mask_k0 = offs_k0 < K
+    mask_k1 = offs_k1 < K
+    mask_k2 = offs_k2 < K
+    mask_k3 = offs_k3 < K
 
-    # Preload base pointers for scale/zero since they are reused in BK blocks.
-    scale_base = k_scale + pid_b * (HKV * K) + pid_hkv * K
-    zp_base = k_zp + pid_b * (HKV * K) + pid_hkv * K
+    q_ptrs0 = q + pid_b * (HQ * K) + (base_hq + rows)[:, None] * K + offs_k0[None, :]
+    q_ptrs1 = q + pid_b * (HQ * K) + (base_hq + rows)[:, None] * K + offs_k1[None, :]
+    q_ptrs2 = q + pid_b * (HQ * K) + (base_hq + rows)[:, None] * K + offs_k2[None, :]
+    q_ptrs3 = q + pid_b * (HQ * K) + (base_hq + rows)[:, None] * K + offs_k3[None, :]
+    q0 = tl.load(q_ptrs0, mask=row_mask[:, None] & mask_k0[None, :], other=0.0).to(tl.float16)
+    q1 = tl.load(q_ptrs1, mask=row_mask[:, None] & mask_k1[None, :], other=0.0).to(tl.float16)
+    q2 = tl.load(q_ptrs2, mask=row_mask[:, None] & mask_k2[None, :], other=0.0).to(tl.float16)
+    q3 = tl.load(q_ptrs3, mask=row_mask[:, None] & mask_k3[None, :], other=0.0).to(tl.float16)
+
+    scale_ptrs0 = k_scale + pid_b * (HKV * K) + pid_hkv * K + offs_k0
+    scale_ptrs1 = k_scale + pid_b * (HKV * K) + pid_hkv * K + offs_k1
+    scale_ptrs2 = k_scale + pid_b * (HKV * K) + pid_hkv * K + offs_k2
+    scale_ptrs3 = k_scale + pid_b * (HKV * K) + pid_hkv * K + offs_k3
+    zp_ptrs0 = k_zp + pid_b * (HKV * K) + pid_hkv * K + offs_k0
+    zp_ptrs1 = k_zp + pid_b * (HKV * K) + pid_hkv * K + offs_k1
+    zp_ptrs2 = k_zp + pid_b * (HKV * K) + pid_hkv * K + offs_k2
+    zp_ptrs3 = k_zp + pid_b * (HKV * K) + pid_hkv * K + offs_k3
+    scale0 = tl.load(scale_ptrs0, mask=mask_k0, other=0.0).to(tl.float32)
+    scale1 = tl.load(scale_ptrs1, mask=mask_k1, other=0.0).to(tl.float32)
+    scale2 = tl.load(scale_ptrs2, mask=mask_k2, other=0.0).to(tl.float32)
+    scale3 = tl.load(scale_ptrs3, mask=mask_k3, other=0.0).to(tl.float32)
+    zp0 = tl.load(zp_ptrs0, mask=mask_k0, other=0.0).to(tl.float32)
+    zp1 = tl.load(zp_ptrs1, mask=mask_k1, other=0.0).to(tl.float32)
+    zp2 = tl.load(zp_ptrs2, mask=mask_k2, other=0.0).to(tl.float32)
+    zp3 = tl.load(zp_ptrs3, mask=mask_k3, other=0.0).to(tl.float32)
+
+    q_scaled0 = q0 * scale0[None, :].to(tl.float16)
+    q_scaled1 = q1 * scale1[None, :].to(tl.float16)
+    q_scaled2 = q2 * scale2[None, :].to(tl.float16)
+    q_scaled3 = q3 * scale3[None, :].to(tl.float16)
+    q_zero_sum = tl.sum(q0.to(tl.float32) * zp0[None, :], axis=1)
+    q_zero_sum += tl.sum(q1.to(tl.float32) * zp1[None, :], axis=1)
+    q_zero_sum += tl.sum(q2.to(tl.float32) * zp2[None, :], axis=1)
+    q_zero_sum += tl.sum(q3.to(tl.float32) * zp3[None, :], axis=1)
 
     tb0 = 0
     offs_t0 = tb0 * T_BS + tl.arange(0, T_BS)
     t_mask0 = offs_t0 < T
     base_tok0_q = pid_b * (T * HKV * K_PACKED) + offs_t0 * (HKV * K_PACKED) + (pid_hkv * K_PACKED)
     tl.multiple_of(base_tok0_q, K_PACKED)
+    kq_ptrs0 = k_q + base_tok0_q[None, :] + offs_kp[:, None]
+    kq_packed0 = tl.load(kq_ptrs0, mask=t_mask0[None, :], other=0).to(tl.int32)
+    kq_idx0 = kq_packed0 & 0xFF
+    kq_lut0 = k_lut + kq_idx0 * 4
+    kq0_0 = tl.load(kq_lut0 + 0)
+    kq0_1 = tl.load(kq_lut0 + 1)
+    kq0_2 = tl.load(kq_lut0 + 2)
+    kq0_3 = tl.load(kq_lut0 + 3)
+    b_s0 = tl.dot(q_scaled0, kq0_0, out_dtype=tl.float32)
+    b_s0 += tl.dot(q_scaled1, kq0_1, out_dtype=tl.float32)
+    b_s0 += tl.dot(q_scaled2, kq0_2, out_dtype=tl.float32)
+    b_s0 += tl.dot(q_scaled3, kq0_3, out_dtype=tl.float32)
+    b_s0 = (b_s0 + q_zero_sum[:, None]) * scale * RCP_LN2
+    b_s0 = tl.where(t_mask0[None, :], b_s0, NEG_INF)
+    m0 = tl.max(b_s0, axis=1)
 
     tb1 = NTB - 1
     offs_t1 = tb1 * T_BS + tl.arange(0, T_BS)
     t_mask1 = offs_t1 < T
     base_tok1_q = pid_b * (T * HKV * K_PACKED) + offs_t1 * (HKV * K_PACKED) + (pid_hkv * K_PACKED)
     tl.multiple_of(base_tok1_q, K_PACKED)
-
-    b_s0 = tl.zeros([BM_DOT, T_BS], tl.float32)
-    b_s1 = tl.zeros([BM_DOT, T_BS], tl.float32)
-    q_zero_sum = tl.zeros([BM_DOT], tl.float32)
-
-    offs_k_base = tl.arange(0, BK)
-    for k_start in tl.static_range(0, K, BK):
-        offs_k = k_start + offs_k_base
-        k_mask = offs_k < K
-        pack_idx = offs_k // VALS_PER_BYTE
-        pack_shifts = (offs_k % VALS_PER_BYTE) * K_BITS
-
-        q_ptrs = q + pid_b * (HQ * K) + (base_hq + rows)[:, None] * K + offs_k[None, :]
-        q_sub = tl.load(q_ptrs, mask=row_mask[:, None] & k_mask[None, :], other=0.0).to(tl.float16)
-
-        scale_sub = tl.load(scale_base + offs_k, mask=k_mask, other=0.0).to(tl.float32)
-        zp_sub = tl.load(zp_base + offs_k, mask=k_mask, other=0.0).to(tl.float32)
-        q_zero_sum += tl.sum(q_sub.to(tl.float32) * zp_sub[None, :], axis=1)
-        q_scaled_sub = q_sub * scale_sub[None, :].to(tl.float16)
-
-        kq_ptrs0 = k_q + base_tok0_q[None, :] + pack_idx[:, None]
-        kq_tile0 = tl.load(kq_ptrs0, mask=k_mask[:, None] & t_mask0[None, :], other=0).to(tl.int32)
-        kq_tile0 = ((kq_tile0 >> pack_shifts[:, None]) & QMAX).to(tl.float16)
-        b_s0 += tl.dot(q_scaled_sub, kq_tile0, out_dtype=tl.float32)
-
-        kq_ptrs1 = k_q + base_tok1_q[None, :] + pack_idx[:, None]
-        kq_tile1 = tl.load(kq_ptrs1, mask=k_mask[:, None] & t_mask1[None, :], other=0).to(tl.int32)
-        kq_tile1 = ((kq_tile1 >> pack_shifts[:, None]) & QMAX).to(tl.float16)
-        b_s1 += tl.dot(q_scaled_sub, kq_tile1, out_dtype=tl.float32)
-
-    b_s0 = (b_s0 + q_zero_sum[:, None]) * scale * RCP_LN2
-    b_s0 = tl.where(t_mask0[None, :], b_s0, NEG_INF)
-    m0 = tl.max(b_s0, axis=1)
-
+    kq_ptrs1 = k_q + base_tok1_q[None, :] + offs_kp[:, None]
+    kq_packed1 = tl.load(kq_ptrs1, mask=t_mask1[None, :], other=0).to(tl.int32)
+    kq_idx1 = kq_packed1 & 0xFF
+    kq_lut1 = k_lut + kq_idx1 * 4
+    kq1_0 = tl.load(kq_lut1 + 0)
+    kq1_1 = tl.load(kq_lut1 + 1)
+    kq1_2 = tl.load(kq_lut1 + 2)
+    kq1_3 = tl.load(kq_lut1 + 3)
+    b_s1 = tl.dot(q_scaled0, kq1_0, out_dtype=tl.float32)
+    b_s1 += tl.dot(q_scaled1, kq1_1, out_dtype=tl.float32)
+    b_s1 += tl.dot(q_scaled2, kq1_2, out_dtype=tl.float32)
+    b_s1 += tl.dot(q_scaled3, kq1_3, out_dtype=tl.float32)
     b_s1 = (b_s1 + q_zero_sum[:, None]) * scale * RCP_LN2
     b_s1 = tl.where(t_mask1[None, :], b_s1, NEG_INF)
     m1 = tl.max(b_s1, axis=1)
@@ -103,10 +140,10 @@ def attn_compute_threshold_qbits(
 
 
 @triton.jit
-def attn_forward_stage1_fused_threshold_qbits_compact(
-    q, k_q, k_scale, k_zp, k_res, v,
+def attn_forward_stage1_fused_threshold_qbits(
+    q, k_q, k_scale, k_zp, k_lut, k_res, v,
     m_buf, l_buf, o_buf,
-    kept_indices, kept_counts,
+    mask_buf,
     scale, T, NTB, NTBS, delta,
     th_in,
     B: tl.constexpr, HKV: tl.constexpr, HQ: tl.constexpr, K: tl.constexpr, K_PACKED: tl.constexpr, V: tl.constexpr,
@@ -116,8 +153,6 @@ def attn_forward_stage1_fused_threshold_qbits_compact(
     K_BITS: tl.constexpr = 2,
     USE_EXT_TH: tl.constexpr = False,
     USE_FP8_RESIDUAL: tl.constexpr = False,
-    MAX_KEPT: tl.constexpr = 256,
-    BK: tl.constexpr = 64,
 ):
     # 3D grid = (NTB, B, HKV)
     pid_tb = tl.program_id(0)
@@ -126,85 +161,106 @@ def attn_forward_stage1_fused_threshold_qbits_compact(
 
     RCP_LN2 = 1.4426950408889634
     NEG_INF = float("-inf")
-    QMAX = (1 << K_BITS) - 1
+    TRUE_K  = tl.full([K], True, tl.int1)
     VALS_PER_BYTE: tl.constexpr = 8 // K_BITS
 
     s0 = pid_tb * BS
     NSB: tl.constexpr = (BS + SBS - 1) // SBS
     base_hq = pid_hkv * G
 
-    rows = tl.arange(0, BM_DOT)
+    rows     = tl.arange(0, BM_DOT)
     row_mask = rows < G
+    offs_kp = tl.arange(0, K_PACKED)
+    offs_k0 = offs_kp * VALS_PER_BYTE + 0
+    offs_k1 = offs_kp * VALS_PER_BYTE + 1
+    offs_k2 = offs_kp * VALS_PER_BYTE + 2
+    offs_k3 = offs_kp * VALS_PER_BYTE + 3
+    mask_k0 = offs_k0 < K
+    mask_k1 = offs_k1 < K
+    mask_k2 = offs_k2 < K
+    mask_k3 = offs_k3 < K
 
-    # Preload base pointers for scale/zero since they are reused in BK blocks.
-    scale_base = k_scale + pid_b * (HKV * K) + pid_hkv * K
-    zp_base = k_zp + pid_b * (HKV * K) + pid_hkv * K
+    q_ptrs0 = q + pid_b * (HQ * K) + (base_hq + rows)[:, None] * K + offs_k0[None, :]
+    q_ptrs1 = q + pid_b * (HQ * K) + (base_hq + rows)[:, None] * K + offs_k1[None, :]
+    q_ptrs2 = q + pid_b * (HQ * K) + (base_hq + rows)[:, None] * K + offs_k2[None, :]
+    q_ptrs3 = q + pid_b * (HQ * K) + (base_hq + rows)[:, None] * K + offs_k3[None, :]
+    q0 = tl.load(q_ptrs0, mask=row_mask[:, None] & mask_k0[None, :], other=0.0).to(tl.float16)
+    q1 = tl.load(q_ptrs1, mask=row_mask[:, None] & mask_k1[None, :], other=0.0).to(tl.float16)
+    q2 = tl.load(q_ptrs2, mask=row_mask[:, None] & mask_k2[None, :], other=0.0).to(tl.float16)
+    q3 = tl.load(q_ptrs3, mask=row_mask[:, None] & mask_k3[None, :], other=0.0).to(tl.float16)
+
+    scale_ptrs0 = k_scale + pid_b * (HKV * K) + pid_hkv * K + offs_k0
+    scale_ptrs1 = k_scale + pid_b * (HKV * K) + pid_hkv * K + offs_k1
+    scale_ptrs2 = k_scale + pid_b * (HKV * K) + pid_hkv * K + offs_k2
+    scale_ptrs3 = k_scale + pid_b * (HKV * K) + pid_hkv * K + offs_k3
+    zp_ptrs0 = k_zp + pid_b * (HKV * K) + pid_hkv * K + offs_k0
+    zp_ptrs1 = k_zp + pid_b * (HKV * K) + pid_hkv * K + offs_k1
+    zp_ptrs2 = k_zp + pid_b * (HKV * K) + pid_hkv * K + offs_k2
+    zp_ptrs3 = k_zp + pid_b * (HKV * K) + pid_hkv * K + offs_k3
+    scale0 = tl.load(scale_ptrs0, mask=mask_k0, other=0.0).to(tl.float32)
+    scale1 = tl.load(scale_ptrs1, mask=mask_k1, other=0.0).to(tl.float32)
+    scale2 = tl.load(scale_ptrs2, mask=mask_k2, other=0.0).to(tl.float32)
+    scale3 = tl.load(scale_ptrs3, mask=mask_k3, other=0.0).to(tl.float32)
+    zp0 = tl.load(zp_ptrs0, mask=mask_k0, other=0.0).to(tl.float32)
+    zp1 = tl.load(zp_ptrs1, mask=mask_k1, other=0.0).to(tl.float32)
+    zp2 = tl.load(zp_ptrs2, mask=mask_k2, other=0.0).to(tl.float32)
+    zp3 = tl.load(zp_ptrs3, mask=mask_k3, other=0.0).to(tl.float32)
+
+    q_scaled0 = q0 * scale0[None, :].to(tl.float16)
+    q_scaled1 = q1 * scale1[None, :].to(tl.float16)
+    q_scaled2 = q2 * scale2[None, :].to(tl.float16)
+    q_scaled3 = q3 * scale3[None, :].to(tl.float16)
+    q_zero_sum = tl.sum(q0.to(tl.float32) * zp0[None, :], axis=1)
+    q_zero_sum += tl.sum(q1.to(tl.float32) * zp1[None, :], axis=1)
+    q_zero_sum += tl.sum(q2.to(tl.float32) * zp2[None, :], axis=1)
+    q_zero_sum += tl.sum(q3.to(tl.float32) * zp3[None, :], axis=1)
 
     if USE_EXT_TH:
         th_rows = tl.load(th_in + pid_b * HQ + (base_hq + rows), mask=row_mask, other=0.0)
     else:
-        th_rows = tl.zeros([BM_DOT], tl.float32)
-
-    # Precompute q·zero-point once per (B, HKV).
-    q_zero_sum = tl.zeros([BM_DOT], tl.float32)
-    offs_k_base = tl.arange(0, BK)
-    for k_start in tl.static_range(0, K, BK):
-        offs_k = k_start + offs_k_base
-        k_mask = offs_k < K
-        q_ptrs = q + pid_b * (HQ * K) + (base_hq + rows)[:, None] * K + offs_k[None, :]
-        q_sub = tl.load(q_ptrs, mask=row_mask[:, None] & k_mask[None, :], other=0.0).to(tl.float16)
-        zp_sub = tl.load(zp_base + offs_k, mask=k_mask, other=0.0).to(tl.float32)
-        q_zero_sum += tl.sum(q_sub.to(tl.float32) * zp_sub[None, :], axis=1)
-
-    if not USE_EXT_TH:
         tb0 = 0
         offs_t0 = tb0 * T_BS + tl.arange(0, T_BS)
         t_mask0 = offs_t0 < T
         base_tok0_q = pid_b * (T * HKV * K_PACKED) + offs_t0 * (HKV * K_PACKED) + (pid_hkv * K_PACKED)
         tl.multiple_of(base_tok0_q, K_PACKED)
+        kq_ptrs0 = k_q + base_tok0_q[None, :] + offs_kp[:, None]
+        kq_packed0 = tl.load(kq_ptrs0, mask=t_mask0[None, :], other=0).to(tl.int32)
+        kq_idx0 = kq_packed0 & 0xFF
+        kq_lut0 = k_lut + kq_idx0 * 4
+        kq0_0 = tl.load(kq_lut0 + 0)
+        kq0_1 = tl.load(kq_lut0 + 1)
+        kq0_2 = tl.load(kq_lut0 + 2)
+        kq0_3 = tl.load(kq_lut0 + 3)
+        b_s0 = tl.dot(q_scaled0, kq0_0, out_dtype=tl.float32)
+        b_s0 += tl.dot(q_scaled1, kq0_1, out_dtype=tl.float32)
+        b_s0 += tl.dot(q_scaled2, kq0_2, out_dtype=tl.float32)
+        b_s0 += tl.dot(q_scaled3, kq0_3, out_dtype=tl.float32)
+        b_s0 = (b_s0 + q_zero_sum[:, None]) * scale * RCP_LN2
+        b_s0 = tl.where(t_mask0[None, :], b_s0, NEG_INF)
+        m0 = tl.max(b_s0, axis=1)
 
         tb1 = NTB - 1
         offs_t1 = tb1 * T_BS + tl.arange(0, T_BS)
         t_mask1 = offs_t1 < T
         base_tok1_q = pid_b * (T * HKV * K_PACKED) + offs_t1 * (HKV * K_PACKED) + (pid_hkv * K_PACKED)
         tl.multiple_of(base_tok1_q, K_PACKED)
-
-        b_s0 = tl.zeros([BM_DOT, T_BS], tl.float32)
-        b_s1 = tl.zeros([BM_DOT, T_BS], tl.float32)
-
-        for k_start in tl.static_range(0, K, BK):
-            offs_k = k_start + offs_k_base
-            k_mask = offs_k < K
-            pack_idx = offs_k // VALS_PER_BYTE
-            pack_shifts = (offs_k % VALS_PER_BYTE) * K_BITS
-
-            q_ptrs = q + pid_b * (HQ * K) + (base_hq + rows)[:, None] * K + offs_k[None, :]
-            q_sub = tl.load(q_ptrs, mask=row_mask[:, None] & k_mask[None, :], other=0.0).to(tl.float16)
-            scale_sub = tl.load(scale_base + offs_k, mask=k_mask, other=0.0).to(tl.float32)
-            q_scaled_sub = q_sub * scale_sub[None, :].to(tl.float16)
-
-            kq_ptrs0 = k_q + base_tok0_q[None, :] + pack_idx[:, None]
-            kq_tile0 = tl.load(kq_ptrs0, mask=k_mask[:, None] & t_mask0[None, :], other=0).to(tl.int32)
-            kq_tile0 = ((kq_tile0 >> pack_shifts[:, None]) & QMAX).to(tl.float16)
-            b_s0 += tl.dot(q_scaled_sub, kq_tile0, out_dtype=tl.float32)
-
-            kq_ptrs1 = k_q + base_tok1_q[None, :] + pack_idx[:, None]
-            kq_tile1 = tl.load(kq_ptrs1, mask=k_mask[:, None] & t_mask1[None, :], other=0).to(tl.int32)
-            kq_tile1 = ((kq_tile1 >> pack_shifts[:, None]) & QMAX).to(tl.float16)
-            b_s1 += tl.dot(q_scaled_sub, kq_tile1, out_dtype=tl.float32)
-
-        b_s0 = (b_s0 + q_zero_sum[:, None]) * scale * RCP_LN2
-        b_s0 = tl.where(t_mask0[None, :], b_s0, NEG_INF)
-        m0 = tl.max(b_s0, axis=1)
-
+        kq_ptrs1 = k_q + base_tok1_q[None, :] + offs_kp[:, None]
+        kq_packed1 = tl.load(kq_ptrs1, mask=t_mask1[None, :], other=0).to(tl.int32)
+        kq_idx1 = kq_packed1 & 0xFF
+        kq_lut1 = k_lut + kq_idx1 * 4
+        kq1_0 = tl.load(kq_lut1 + 0)
+        kq1_1 = tl.load(kq_lut1 + 1)
+        kq1_2 = tl.load(kq_lut1 + 2)
+        kq1_3 = tl.load(kq_lut1 + 3)
+        b_s1 = tl.dot(q_scaled0, kq1_0, out_dtype=tl.float32)
+        b_s1 += tl.dot(q_scaled1, kq1_1, out_dtype=tl.float32)
+        b_s1 += tl.dot(q_scaled2, kq1_2, out_dtype=tl.float32)
+        b_s1 += tl.dot(q_scaled3, kq1_3, out_dtype=tl.float32)
         b_s1 = (b_s1 + q_zero_sum[:, None]) * scale * RCP_LN2
         b_s1 = tl.where(t_mask1[None, :], b_s1, NEG_INF)
         m1 = tl.max(b_s1, axis=1)
 
         th_rows = tl.maximum(m0, m1) - delta
-
-    keep_base = kept_indices + pid_b * (HKV * MAX_KEPT) + pid_hkv * MAX_KEPT
-    count_ptr = kept_counts + pid_b * HKV + pid_hkv
 
     for sb in tl.static_range(NSB):
         offs_t_sb = s0 + sb * SBS + tl.arange(0, SBS)
@@ -214,31 +270,24 @@ def attn_forward_stage1_fused_threshold_qbits_compact(
         base_toksb_k = pid_b * (T * HKV * K) + offs_t_sb * (HKV * K) + (pid_hkv * K)
         tl.multiple_of(base_toksb_q, K_PACKED)
         tl.multiple_of(base_toksb_k, K)
-
-        b_s_q = tl.zeros([BM_DOT, SBS], tl.float32)
-        for k_start in tl.static_range(0, K, BK):
-            offs_k = k_start + offs_k_base
-            k_mask = offs_k < K
-            pack_idx = offs_k // VALS_PER_BYTE
-            pack_shifts = (offs_k % VALS_PER_BYTE) * K_BITS
-
-            q_ptrs = q + pid_b * (HQ * K) + (base_hq + rows)[:, None] * K + offs_k[None, :]
-            q_sub = tl.load(q_ptrs, mask=row_mask[:, None] & k_mask[None, :], other=0.0).to(tl.float16)
-            scale_sub = tl.load(scale_base + offs_k, mask=k_mask, other=0.0).to(tl.float32)
-            q_scaled_sub = q_sub * scale_sub[None, :].to(tl.float16)
-
-            kq_ptrssb = k_q + base_toksb_q[None, :] + pack_idx[:, None]
-            kq_tilesb = tl.load(kq_ptrssb, mask=k_mask[:, None] & t_mask_sb[None, :], other=0).to(tl.int32)
-            kq_tilesb = ((kq_tilesb >> pack_shifts[:, None]) & QMAX).to(tl.float16)
-            b_s_q += tl.dot(q_scaled_sub, kq_tilesb, out_dtype=tl.float32)
-
-        b_s_q = b_s_q + q_zero_sum[:, None]
-        b_s_q_scaled = b_s_q * scale * RCP_LN2
-        b_s_act = tl.where(t_mask_sb[None, :], b_s_q_scaled, NEG_INF)
+        kq_ptrssb = k_q + base_toksb_q[None, :] + offs_kp[:, None]
+        kq_packedsb = tl.load(kq_ptrssb, mask=t_mask_sb[None, :], other=0).to(tl.int32)
+        kq_idxsb = kq_packedsb & 0xFF
+        kq_lutsb = k_lut + kq_idxsb * 4
+        kqsb0 = tl.load(kq_lutsb + 0)
+        kqsb1 = tl.load(kq_lutsb + 1)
+        kqsb2 = tl.load(kq_lutsb + 2)
+        kqsb3 = tl.load(kq_lutsb + 3)
+        b_s_q = tl.dot(q_scaled0, kqsb0, out_dtype=tl.float32)
+        b_s_q += tl.dot(q_scaled1, kqsb1, out_dtype=tl.float32)
+        b_s_q += tl.dot(q_scaled2, kqsb2, out_dtype=tl.float32)
+        b_s_q += tl.dot(q_scaled3, kqsb3, out_dtype=tl.float32)
+        b_s_q = (b_s_q + q_zero_sum[:, None]) * scale * RCP_LN2
+        b_s_act = tl.where(t_mask_sb[None, :], b_s_q, NEG_INF)
 
         m_rows_blk = tl.max(b_s_act, axis=1)
 
-        below = (m_rows_blk < th_rows) & row_mask
+        below   = (m_rows_blk < th_rows) & row_mask
         n_below = tl.sum(below.to(tl.int32), axis=0)
         n_valid = tl.sum(row_mask.to(tl.int32), axis=0)
         prune_blk = n_below == n_valid
@@ -248,35 +297,51 @@ def attn_forward_stage1_fused_threshold_qbits_compact(
 
         if not prune_blk:
             if USE_FP8_RESIDUAL:
-                b_s_res = tl.zeros([BM_DOT, SBS], tl.float32)
-                for k_start in tl.static_range(0, K, BK):
-                    offs_k = k_start + offs_k_base
-                    k_mask = offs_k < K
-                    q_ptrs = q + pid_b * (HQ * K) + (base_hq + rows)[:, None] * K + offs_k[None, :]
-                    q_sub = tl.load(q_ptrs, mask=row_mask[:, None] & k_mask[None, :], other=0.0).to(tl.float16)
-                    k_res_ptrssb = k_res + base_toksb_k[None, :] + offs_k[:, None]
-                    k_res_tile = tl.load(
-                        k_res_ptrssb,
-                        mask=k_mask[:, None] & t_mask_sb[None, :],
-                        other=0.0,
-                    ).to(tl.float16)
-                    b_s_res += tl.dot(q_sub, k_res_tile, out_dtype=tl.float32)
-
-                b_s = (b_s_q + b_s_res) * scale * RCP_LN2
+                k_res_ptrs0 = k_res + base_toksb_k[None, :] + offs_k0[:, None]
+                k_res_ptrs1 = k_res + base_toksb_k[None, :] + offs_k1[:, None]
+                k_res_ptrs2 = k_res + base_toksb_k[None, :] + offs_k2[:, None]
+                k_res_ptrs3 = k_res + base_toksb_k[None, :] + offs_k3[:, None]
+                k_res0 = tl.load(
+                    k_res_ptrs0,
+                    mask=(mask_k0[:, None] & t_mask_sb[None, :]),
+                    other=0.0,
+                ).to(tl.float16)
+                k_res1 = tl.load(
+                    k_res_ptrs1,
+                    mask=(mask_k1[:, None] & t_mask_sb[None, :]),
+                    other=0.0,
+                ).to(tl.float16)
+                k_res2 = tl.load(
+                    k_res_ptrs2,
+                    mask=(mask_k2[:, None] & t_mask_sb[None, :]),
+                    other=0.0,
+                ).to(tl.float16)
+                k_res3 = tl.load(
+                    k_res_ptrs3,
+                    mask=(mask_k3[:, None] & t_mask_sb[None, :]),
+                    other=0.0,
+                ).to(tl.float16)
+                # Reuse selector b_s_q and add residual dot to avoid recomputing q·k_tile_q.
+                b_s_res = tl.dot(q0, k_res0, out_dtype=tl.float32)
+                b_s_res += tl.dot(q1, k_res1, out_dtype=tl.float32)
+                b_s_res += tl.dot(q2, k_res2, out_dtype=tl.float32)
+                b_s_res += tl.dot(q3, k_res3, out_dtype=tl.float32)
+                b_s_res = b_s_res * scale * RCP_LN2
+                b_s = b_s_q + b_s_res
                 b_s = tl.where(t_mask_sb[None, :], b_s, NEG_INF)
                 m_rows = tl.max(b_s, axis=1)
             else:
-                b_s = b_s_q_scaled
+                b_s = b_s_q
                 m_rows = m_rows_blk
 
-            b_p = tl.where(t_mask_sb[None, :], tl.exp2(b_s - m_rows[:, None]), 0.0)
+            b_p    = tl.where(t_mask_sb[None, :], tl.exp2(b_s - m_rows[:, None]), 0.0)
             l_rows = tl.sum(b_p, axis=1)
 
             need_v = tl.sum(t_mask_sb.to(tl.int32), axis=0) > 0
             o_tile = tl.zeros([BM_DOT, V], tl.float32)
             if need_v:
                 v_ptrs = v + pid_b * (T * HKV * V) + (offs_t_sb[:, None] * (HKV * V)) + (pid_hkv * V) + v_offs[None, :]
-                b_v = tl.load(v_ptrs, mask=t_mask_sb[:, None], other=0.0).to(tl.float16)
+                b_v    = tl.load(v_ptrs, mask=t_mask_sb[:, None], other=0.0).to(tl.float16)
                 o_tile = tl.dot(b_p.to(tl.float16), b_v, out_dtype=tl.float32)
 
             m_ptrs = m_buf + pid_b * (HQ * NTBS) + (base_hq + rows) * NTBS + tb_sb
@@ -285,48 +350,35 @@ def attn_forward_stage1_fused_threshold_qbits_compact(
             tl.store(m_ptrs, m_rows, mask=row_mask)
             tl.store(l_ptrs, l_rows, mask=row_mask)
             tl.store(o_ptrs, o_tile, mask=row_mask[:, None])
-
-            idx = tl.atomic_add(count_ptr, tl.full((), 1, tl.int32))
-            tl.store(keep_base + idx, tb_sb, mask=idx < MAX_KEPT)
+            tl.store(mask_buf + pid_b * (HKV * NTBS) + pid_hkv * NTBS + tb_sb, tl.full((), 1, tl.int8))
 
 
 @triton.jit
-def attn_forward_stage2_compact(
-    m_buf, l_buf, o_buf, kept_indices, kept_counts, o, NTBS,
+def attn_forward_stage2_masked(
+    m_buf, l_buf, o_buf, mask_buf, o, NTBS,
     B: tl.constexpr, HKV: tl.constexpr, G: tl.constexpr, HQ: tl.constexpr, V: tl.constexpr,
-    MAX_KEPT: tl.constexpr,
 ):
     pid_b = tl.program_id(0)
     pid_hkv = tl.program_id(1)
     g = tl.program_id(2)
     pid_hq = pid_hkv * G + g
-
     v_offs = tl.arange(0, V)
     neg_inf = tl.full((), float('-inf'), tl.float32)
     b_m = neg_inf
     b_acc = tl.zeros((), tl.float32)
     b_o = tl.zeros([V], tl.float32)
-
-    n_kept = tl.load(kept_counts + pid_b * HKV + pid_hkv)
-    keep_base = kept_indices + pid_b * (HKV * MAX_KEPT) + pid_hkv * MAX_KEPT
-
-    for i in range(MAX_KEPT):
-        mask_i = i < n_kept
-        tb = tl.load(keep_base + i, mask=mask_i, other=0)
-        m_b = tl.load(m_buf + pid_b * (HQ * NTBS) + pid_hq * NTBS + tb, mask=mask_i, other=neg_inf)
-        l_b = tl.load(l_buf + pid_b * (HQ * NTBS) + pid_hq * NTBS + tb, mask=mask_i, other=0.0)
-        o_b = tl.load(
-            o_buf + pid_b * (HQ * NTBS * V) + pid_hq * (NTBS * V) + tb * V + v_offs,
-            mask=mask_i,
-            other=0.0,
-        )
-        new_m = tl.maximum(b_m, m_b)
-        r_prev = tl.exp2(b_m - new_m)
-        r_blk = tl.exp2(m_b - new_m)
-        b_acc = b_acc * r_prev + l_b * r_blk
-        b_o = b_o * r_prev + o_b * r_blk
-        b_m = new_m
-
+    for tb in range(0, NTBS):
+        keep = tl.load(mask_buf + pid_b * (HKV * NTBS) + pid_hkv * NTBS + tb).to(tl.int1)
+        if keep:
+            m_b = tl.load(m_buf + pid_b * (HQ * NTBS) + pid_hq * NTBS + tb)
+            l_b = tl.load(l_buf + pid_b * (HQ * NTBS) + pid_hq * NTBS + tb)
+            o_b = tl.load(o_buf + pid_b * (HQ * NTBS * V) + pid_hq * (NTBS * V) + tb * V + v_offs)
+            new_m = tl.maximum(b_m, m_b)
+            r_prev = tl.exp2(b_m - new_m)
+            r_blk = tl.exp2(m_b - new_m)
+            b_acc = b_acc * r_prev + l_b * r_blk
+            b_o = b_o * r_prev + o_b * r_blk
+            b_m = new_m
     is_empty = b_acc == 0.0
     out_tile = tl.where(is_empty, tl.zeros([V], tl.float32), b_o / b_acc)
     o_ptrs = o + pid_b * (HQ * V) + pid_hq * V + v_offs
@@ -364,30 +416,6 @@ def _kernel_kwargs(num_warps: int | None, num_stages: int | None) -> dict:
     return kwargs
 
 
-def _record_kernel_time(kernel_times: dict | None, name: str, fn, device) -> None:
-    if kernel_times is None:
-        fn()
-        return
-    torch.cuda.synchronize(device)
-    start = torch.cuda.Event(enable_timing=True)
-    end = torch.cuda.Event(enable_timing=True)
-    start.record()
-    fn()
-    end.record()
-    end.synchronize()
-    kernel_times[name] = start.elapsed_time(end)
-
-
-def _resolve_max_kept(max_kept: int | None, ntbs: int, ratio: float) -> int:
-    if max_kept is not None:
-        if max_kept <= 0:
-            raise ValueError(f"max_kept must be positive, got {max_kept}")
-        return int(max_kept)
-    if not (0.0 < ratio <= 1.0):
-        raise ValueError(f"max_kept_ratio must be in (0, 1], got {ratio}")
-    return max(32, min(ntbs, int(math.ceil(ntbs * ratio))))
-
-
 def attn_forward_decode_quantized(
     q: torch.Tensor,           # [B, 1, HQ, K]
     k_q: torch.Tensor,         # [B, T, HKV, ceil(K / (8 / k_bits))], packed quantized ints
@@ -409,9 +437,6 @@ def attn_forward_decode_quantized(
     num_stages_s1: int | None = None,
     num_warps_s2: int | None = None,
     num_stages_s2: int | None = None,
-    max_kept: int | None = None,
-    max_kept_ratio: float = 0.2,
-    return_kernel_timings: bool = False,
     **kwargs,
 ):
     # import os
@@ -464,8 +489,6 @@ def attn_forward_decode_quantized(
     NSB = triton.cdiv(BS, SBS)
     NTBS = NTB * NSB
 
-    max_kept = _resolve_max_kept(max_kept, NTBS, max_kept_ratio)
-
     assert q.is_contiguous() and k_q.is_contiguous() and v.is_contiguous()
     if use_fp8_residual and k_residual is None:
         raise ValueError("use_fp8_residual=True requires k_residual")
@@ -474,16 +497,15 @@ def attn_forward_decode_quantized(
     
     q = q.contiguous()
     k_q = k_q.contiguous()
+    k_lut = _get_q2_unpack_lut(k_q.device, torch.float16)
     use_fp8_residual = use_fp8_residual and (k_residual is not None)
     k_res = k_residual.contiguous() if use_fp8_residual else k_q
     v = v.contiguous()
-    kernel_times = {} if return_kernel_timings else None
     o = torch.empty((B, HQ, V), device=q.device, dtype=q.dtype)
     m_buf = torch.empty((B, HQ, NTBS), device=q.device, dtype=torch.float32)
     l_buf = torch.empty((B, HQ, NTBS), device=q.device, dtype=torch.float32)
     o_buf = torch.empty((B, HQ, NTBS, V), device=q.device, dtype=torch.float32)
-    kept_indices = torch.empty((B, HKV, max_kept), device=q.device, dtype=torch.int32)
-    kept_counts = torch.zeros((B, HKV), device=q.device, dtype=torch.int32)
+    mask_buf = torch.zeros((B, HKV, NTBS), device=q.device, dtype=torch.int8)
 
     if precomputed_threshold is not None:
         assert precomputed_threshold.is_cuda and precomputed_threshold.shape == (B, HQ)
@@ -492,59 +514,47 @@ def attn_forward_decode_quantized(
     else:
         threshold_buf = torch.empty((B, HQ), device=q.device, dtype=torch.float32)
         th_kwargs = _kernel_kwargs(num_warps_th, num_stages_th)
-        def _launch_threshold():
-            attn_compute_threshold_qbits[(B, HKV)](
-                q, k_q, k_scale, k_zero,
-                threshold_buf,
-                scale, T, NTB, delta,
-                B=B, HKV=HKV, HQ=HQ, K=K, K_PACKED=K_packed, G=G,
-                K_BITS=k_bits,
-                **th_kwargs,
-            )
-        _record_kernel_time(kernel_times, "threshold", _launch_threshold, q.device)
+        attn_compute_threshold_qbits[(B, HKV)](
+            q, k_q, k_scale, k_zero, k_lut,
+            threshold_buf,
+            scale, T, NTB, delta,
+            B=B, HKV=HKV, HQ=HQ, K=K, K_PACKED=K_packed, G=G,
+            K_BITS=k_bits,
+            **th_kwargs,
+        )
         use_ext_th = True
-    if kernel_times is not None and precomputed_threshold is not None:
-        kernel_times["threshold"] = None
 
     s1_kwargs = _kernel_kwargs(num_warps_s1, num_stages_s1)
-    def _launch_stage1():
-        attn_forward_stage1_fused_threshold_qbits_compact[(NTB, B, HKV)](
-            q, k_q, k_scale, k_zero, k_res, v,
-            m_buf, l_buf, o_buf,
-            kept_indices, kept_counts,
-            scale, T, NTB, NTBS, delta,
-            threshold_buf,
-            B=B, HKV=HKV, HQ=HQ, K=K, K_PACKED=K_packed, V=V, G=G, BS=BS, SBS=SBS,
-            K_BITS=k_bits, USE_EXT_TH=use_ext_th, USE_FP8_RESIDUAL=use_fp8_residual, MAX_KEPT=max_kept,
-            **s1_kwargs,
-        )
-    _record_kernel_time(kernel_times, "stage1", _launch_stage1, q.device)
+    attn_forward_stage1_fused_threshold_qbits[(NTB, B, HKV)](
+        q, k_q, k_scale, k_zero, k_lut, k_res, v,
+        m_buf, l_buf, o_buf,
+        mask_buf,
+        scale, T, NTB, NTBS, delta,
+        threshold_buf,
+        B=B, HKV=HKV, HQ=HQ, K=K, K_PACKED=K_packed, V=V, G=G, BS=BS, SBS=SBS,
+        K_BITS=k_bits, USE_EXT_TH=use_ext_th, USE_FP8_RESIDUAL=use_fp8_residual,
+        **s1_kwargs,
+    )
 
     skip_ratio = None
     if return_skip_ratio:
-        kept = kept_counts.sum()
-        total = float(kept_counts.numel() * NTBS)
-        skip_ratio = float((1.0 - (kept.float() / total)).item())
+        kept = mask_buf.to(torch.int32).sum()
+        total = mask_buf.numel()
+        skip_ratio = float((1.0 - (kept.float() / float(total))).item())
 
     s2_kwargs = _kernel_kwargs(num_warps_s2, num_stages_s2)
-    def _launch_stage2():
-        attn_forward_stage2_compact[(B, HKV, G)](
-            m_buf, l_buf, o_buf,
-            kept_indices, kept_counts,
-            o, NTBS,
-            B=B, HKV=HKV, G=G, HQ=HQ, V=V,
-            MAX_KEPT=max_kept,
-            **s2_kwargs,
-        )
-    _record_kernel_time(kernel_times, "stage2", _launch_stage2, q.device)
+    attn_forward_stage2_masked[(B, HKV, G)](
+        m_buf, l_buf, o_buf,
+        mask_buf,
+        o, NTBS,
+        B=B, HKV=HKV, G=G, HQ=HQ, V=V,
+        **s2_kwargs,
+    )
 
     if return_skip_ratio:
-        if return_kernel_timings:
-            return o, skip_ratio, kernel_times
         return o, skip_ratio
-    if return_kernel_timings:
-        return o, kernel_times
-    return o
+    else:
+        return o
 
 class CUDAGraphDecodeRunnerQ2FP8:
     """Capture and replay the Q2FP8 decode kernel with static buffers.
@@ -569,8 +579,6 @@ class CUDAGraphDecodeRunnerQ2FP8:
         BS: int = 128,
         SBS: Optional[int] = None,
         delta: float = 5.0,
-        max_kept: int | None = None,
-        max_kept_ratio: float = 0.2,
         use_fp8_residual: bool = True,
         warmup: int = 2,
         num_warps_th: Optional[int] = None,
@@ -604,13 +612,6 @@ class CUDAGraphDecodeRunnerQ2FP8:
             raise ValueError("use_fp8_residual=True requires k_residual")
         if self._use_ext_th and precomputed_threshold is None:
             raise ValueError("precomputed_threshold is required when use_ext_th=True")
-
-        _, T, _, _ = k_q.shape
-        sbs = BS if SBS is None else SBS
-        ntb = triton.cdiv(T, BS)
-        nsb = triton.cdiv(BS, sbs)
-        ntbs = ntb * nsb
-        self._max_kept = _resolve_max_kept(max_kept, ntbs, max_kept_ratio)
 
         self._static_q = torch.empty_like(q, device=self._device)
         self._static_k_q = torch.empty_like(k_q, device=self._device)
@@ -652,7 +653,6 @@ class CUDAGraphDecodeRunnerQ2FP8:
                 BS=self._BS,
                 SBS=self._SBS,
                 delta=self._delta,
-                max_kept=self._max_kept,
                 return_skip_ratio=False,
                 precomputed_threshold=self._static_threshold,
                 use_fp8_residual=self._use_fp8_residual,
@@ -680,7 +680,6 @@ class CUDAGraphDecodeRunnerQ2FP8:
                 BS=self._BS,
                 SBS=self._SBS,
                 delta=self._delta,
-                max_kept=self._max_kept,
                 return_skip_ratio=False,
                 precomputed_threshold=self._static_threshold,
                 use_fp8_residual=self._use_fp8_residual,
@@ -742,7 +741,6 @@ class CUDAGraphDecodeRunnerQ2FP8:
             BS=self._BS,
             SBS=self._SBS,
             delta=self._delta,
-            max_kept=self._max_kept,
             return_skip_ratio=True,
             precomputed_threshold=self._static_threshold,
             use_fp8_residual=self._use_fp8_residual,

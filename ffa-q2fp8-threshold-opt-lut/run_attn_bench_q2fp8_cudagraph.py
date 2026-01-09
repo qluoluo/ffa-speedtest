@@ -1,4 +1,4 @@
-# Benchmarking & plotting for Q2FP8 decode with CUDAGraph (symmetric quantization).
+# Benchmarking & plotting for Q2FP8 decode with CUDAGraph.
 import argparse
 import importlib
 import inspect
@@ -28,7 +28,7 @@ EXP_ROOT_SUBDIR = Path("Llama-3_2-3B/longbench_gov_report_48_68_256k")
 
 
 def parse_args():
-    p = argparse.ArgumentParser(description="Benchmark Q2FP8 decode with CUDAGraph (symmetric quantization).")
+    p = argparse.ArgumentParser(description="Benchmark Q2FP8 decode with CUDAGraph.")
     p.add_argument("--dtype", type=str, default="fp16", choices=["fp16", "bf16", "fp32"])
     p.add_argument("--BS", type=int, default=128)
     p.add_argument("--SBS", type=int, default=None)
@@ -38,8 +38,8 @@ def parse_args():
     p.add_argument(
         "--attn-kernel",
         type=str,
-        default="attn_q2fp8_sym_mask",
-        help="Kernel module name under attn_kernel/ (e.g. attn_q2fp8_sym_mask).",
+        default="attn_q2fp8_base_mask",
+        help="Kernel module name under attn_kernel/ (e.g. attn_q2fp8_base_mask).",
     )
     p.add_argument(
         "--max-length",
@@ -89,6 +89,36 @@ def convert_layout(q_rope_1: torch.Tensor, k_rope: torch.Tensor, v: torch.Tensor
     k = k_rope.permute(0, 2, 1, 3).contiguous()
     v = v.permute(0, 2, 1, 3).contiguous()
     return q, k, v
+
+
+def quantize_k_2bit_fp8_residual(k: torch.Tensor, fp8_dtype: torch.dtype = torch.float8_e5m2):
+    # Scale/zero are per (B, HKV, K); token dimension is removed and broadcasted later.
+    k_min = k.amin(dim=1)
+    k_max = k.amax(dim=1)
+    scale = ((k_max - k_min).clamp_min(1e-6) / 3.0).contiguous()
+    zero = k_min.contiguous()
+    k_q = torch.round((k - zero[:, None, :, :]) / scale[:, None, :, :]).clamp(0, 3).to(torch.uint8)
+    k_dequant = (
+        k_q.to(torch.float32) * scale[:, None, :, :].to(torch.float32) + zero[:, None, :, :].to(torch.float32)
+    )
+    k_residual = (k.to(torch.float32) - k_dequant).to(fp8_dtype).contiguous()
+
+    # Pack 4x2-bit values into a single byte to avoid storing each 2-bit value as uint8
+    B, T, HKV, K = k_q.shape
+    values_per_byte = 4  # 8 bits / 2 bits
+    k_packed_len = (K + values_per_byte - 1) // values_per_byte
+    pad = k_packed_len * values_per_byte - K
+    if pad:
+        pad_tensor = torch.zeros((B, T, HKV, pad), device=k_q.device, dtype=k_q.dtype)
+        k_q = torch.cat([k_q, pad_tensor], dim=-1)
+    k_q = k_q.view(B, T, HKV, k_packed_len, values_per_byte)
+    k_q_packed = (
+        k_q[..., 0]
+        | (k_q[..., 1] << 2)
+        | (k_q[..., 2] << 4)
+        | (k_q[..., 3] << 6)
+    ).contiguous()
+    return k_q_packed, scale, zero, k_residual
 
 
 def quantize_k_2bit_fp8_residual_symmetric(
@@ -162,6 +192,24 @@ def load_kernel_components(kernel_path: str):
     attn_forward_decode = getattr(kernel_module, "attn_forward_decode_quantized")
     cudagraph_runner = _resolve_cudagraph_runner(kernel_module)
     return kernel_module, attn_forward_decode, cudagraph_runner
+
+
+def resolve_quant_mode(kernel_module, attn_forward_decode_quantized, attn_kernel_name: str) -> str:
+    mode = getattr(kernel_module, "QUANT_MODE", None)
+    if mode is not None:
+        norm = str(mode).strip().lower()
+        if norm in ("sym", "symmetric"):
+            return "sym"
+        if norm in ("asym", "asymmetric"):
+            return "asym"
+        raise ValueError(f"Unsupported QUANT_MODE '{mode}' in {attn_kernel_name}")
+
+    sig = inspect.signature(attn_forward_decode_quantized)
+    if "k_zero" in sig.parameters:
+        return "asym"
+    if "sym" in attn_kernel_name:
+        return "sym"
+    return "sym"
 
 
 def _filter_kwargs_for_signature(func, kwargs: dict) -> dict:
@@ -447,6 +495,7 @@ def main():
     attn_kernel_name = kernel_module.__name__.split(".")[-1]
     if attn_kernel_name.endswith("_cudagraph"):
         attn_kernel_name = attn_kernel_name[: -len("_cudagraph")]
+    quant_mode = resolve_quant_mode(kernel_module, attn_forward_decode_quantized, attn_kernel_name)
 
     dtype = map_dtype(args.dtype)
     BS = int(args.BS)
@@ -482,6 +531,7 @@ def main():
     gpu_tag, gpu_name, gpu_mem_gb, gpu_idx = get_gpu_info()
     gpu_label = f"{gpu_name} ({gpu_mem_gb}GB)"
     print(f"[Info] Using GPU[{gpu_idx}]: {gpu_label}")
+    print(f"[Info] Quant mode: {quant_mode}")
 
     q_rope_full, k_rope_full, v_full = load_layer_batch(layer_data_root, layer_indices, dtype, max_length)
 
@@ -576,31 +626,55 @@ def main():
 
                 q, k, v = convert_layout(q_rope_1, k_rope, v)
                 q_1 = q.unsqueeze(1)  # [B, 1, Hq, K]
-                k_q, k_scale, k_residual = quantize_k_2bit_fp8_residual_symmetric(k)
+                k_q_asym, k_scale_asym, k_zero_asym, k_residual_asym = quantize_k_2bit_fp8_residual(k)
+                k_q_sym, k_scale_sym, k_residual_sym = quantize_k_2bit_fp8_residual_symmetric(k)
 
-                # One forward to obtain skip ratio and validate shapes
-                _, skip_ratio = attn_forward_decode_quantized(
+                if quant_mode == "sym":
+                    k_q = k_q_sym
+                    k_scale = k_scale_sym
+                    k_zero = None
+                    k_residual = k_residual_sym
+                else:
+                    k_q = k_q_asym
+                    k_scale = k_scale_asym
+                    k_zero = k_zero_asym
+                    k_residual = k_residual_asym
+
+                quant_inputs = dict(
                     q=q_1,
                     k_q=k_q,
                     k_scale=k_scale,
-                    k_residual=k_residual,
                     v=v,
-                    k_bits=2,
-                    scale=scale,
-                    BS=BS,
-                    SBS=SBS,
-                    delta=delta,
-                    return_skip_ratio=True,
-                    num_warps_th=num_warps_th,
-                    num_stages_th=num_stages_th,
-                    num_warps_s1=num_warps_s1,
-                    num_stages_s1=num_stages_s1,
-                    num_warps_s2=num_warps_s2,
-                    num_stages_s2=num_stages_s2,
+                    k_residual=k_residual,
                 )
+                if k_zero is not None:
+                    quant_inputs["k_zero"] = k_zero
+
+                def _run_attn(return_skip_ratio: bool):
+                    call_kwargs = dict(
+                        **quant_inputs,
+                        k_bits=2,
+                        scale=scale,
+                        BS=BS,
+                        SBS=SBS,
+                        delta=delta,
+                        return_skip_ratio=return_skip_ratio,
+                        num_warps_th=num_warps_th,
+                        num_stages_th=num_stages_th,
+                        num_warps_s1=num_warps_s1,
+                        num_stages_s1=num_stages_s1,
+                        num_warps_s2=num_warps_s2,
+                        num_stages_s2=num_stages_s2,
+                    )
+                    return attn_forward_decode_quantized(
+                        **_filter_kwargs_for_signature(attn_forward_decode_quantized, call_kwargs)
+                    )
+
+                # One forward to obtain skip ratio and validate shapes
+                _, skip_ratio = _run_attn(return_skip_ratio=True)
 
                 runner_kwargs = dict(
-                    k_residual=k_residual,
+                    **quant_inputs,
                     k_bits=2,
                     scale=scale,
                     BS=BS,
@@ -616,43 +690,17 @@ def main():
                     num_stages_s2=num_stages_s2,
                 )
                 runner = cudagraph_runner(
-                    q_1,
-                    k_q,
-                    k_scale,
-                    v,
                     **_filter_kwargs_for_signature(cudagraph_runner.__init__, runner_kwargs),
                 )
 
                 def run_q2():
-                    return attn_forward_decode_quantized(
-                        q=q_1,
-                        k_q=k_q,
-                        k_scale=k_scale,
-                        k_residual=k_residual,
-                        v=v,
-                        k_bits=2,
-                        scale=scale,
-                        BS=BS,
-                        SBS=SBS,
-                        delta=delta,
-                        return_skip_ratio=False,
-                        num_warps_th=num_warps_th,
-                        num_stages_th=num_stages_th,
-                        num_warps_s1=num_warps_s1,
-                        num_stages_s1=num_stages_s1,
-                        num_warps_s2=num_warps_s2,
-                        num_stages_s2=num_stages_s2,
-                    )
+                    return _run_attn(return_skip_ratio=False)
 
                 def run_q2_cg():
                     if args.cg_replay_only:
                         return runner.replay_only()
                     return runner(
-                        q_1,
-                        k_q,
-                        k_scale,
-                        v,
-                        k_residual=k_residual,
+                        **_filter_kwargs_for_signature(runner.replay, quant_inputs),
                     )
 
                 def run_flash():
@@ -687,6 +735,7 @@ def main():
                 iters=int(iters),
                 warmup=int(warmup),
                 attn_kernel=attn_kernel_name,
+                quant_mode=quant_mode,
                 bsz=int(bsz),
                 cudagraph=True,
                 cudagraph_replay_only=bool(args.cg_replay_only),

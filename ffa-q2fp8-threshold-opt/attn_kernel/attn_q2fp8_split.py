@@ -1,4 +1,4 @@
-# CUDAGraph wrapper for Q2FP8 decode kernel (symmetric quantization).
+# Split Stage1 into scan + compute kernels for Q2FP8 decode.
 from __future__ import annotations
 
 import math
@@ -8,11 +8,12 @@ import torch
 import triton
 import triton.language as tl
 
-QUANT_MODE = "sym"
+QUANT_MODE = "asym"
+
 
 @triton.jit
 def attn_compute_threshold_qbits(
-    q, k_q, k_scale,
+    q, k_q, k_scale, k_zp,
     th_out,
     scale, T, NTB, delta,
     B: tl.constexpr, HKV: tl.constexpr, HQ: tl.constexpr, K: tl.constexpr, K_PACKED: tl.constexpr,
@@ -27,9 +28,7 @@ def attn_compute_threshold_qbits(
 
     RCP_LN2 = 1.4426950408889634
     NEG_INF = float("-inf")
-    TRUE_K = tl.full([K], True, tl.int1)
     QMAX = (1 << K_BITS) - 1
-    QZERO = QMAX / 2
     VALS_PER_BYTE: tl.constexpr = 8 // K_BITS
 
     base_hq = pid_hkv * G
@@ -58,20 +57,27 @@ def attn_compute_threshold_qbits(
     scale_ptrs1 = k_scale + pid_b * (HKV * K) + pid_hkv * K + offs_k1
     scale_ptrs2 = k_scale + pid_b * (HKV * K) + pid_hkv * K + offs_k2
     scale_ptrs3 = k_scale + pid_b * (HKV * K) + pid_hkv * K + offs_k3
+    zp_ptrs0 = k_zp + pid_b * (HKV * K) + pid_hkv * K + offs_k0
+    zp_ptrs1 = k_zp + pid_b * (HKV * K) + pid_hkv * K + offs_k1
+    zp_ptrs2 = k_zp + pid_b * (HKV * K) + pid_hkv * K + offs_k2
+    zp_ptrs3 = k_zp + pid_b * (HKV * K) + pid_hkv * K + offs_k3
     scale0 = tl.load(scale_ptrs0, mask=mask_k0, other=0.0).to(tl.float32)
     scale1 = tl.load(scale_ptrs1, mask=mask_k1, other=0.0).to(tl.float32)
     scale2 = tl.load(scale_ptrs2, mask=mask_k2, other=0.0).to(tl.float32)
     scale3 = tl.load(scale_ptrs3, mask=mask_k3, other=0.0).to(tl.float32)
+    zp0 = tl.load(zp_ptrs0, mask=mask_k0, other=0.0).to(tl.float32)
+    zp1 = tl.load(zp_ptrs1, mask=mask_k1, other=0.0).to(tl.float32)
+    zp2 = tl.load(zp_ptrs2, mask=mask_k2, other=0.0).to(tl.float32)
+    zp3 = tl.load(zp_ptrs3, mask=mask_k3, other=0.0).to(tl.float32)
 
     q_scaled0 = q0 * scale0[None, :].to(tl.float16)
     q_scaled1 = q1 * scale1[None, :].to(tl.float16)
     q_scaled2 = q2 * scale2[None, :].to(tl.float16)
     q_scaled3 = q3 * scale3[None, :].to(tl.float16)
-    q_zero_sum = tl.sum(q_scaled0.to(tl.float32), axis=1)
-    q_zero_sum += tl.sum(q_scaled1.to(tl.float32), axis=1)
-    q_zero_sum += tl.sum(q_scaled2.to(tl.float32), axis=1)
-    q_zero_sum += tl.sum(q_scaled3.to(tl.float32), axis=1)
-    q_zero_sum *= -QZERO
+    q_zero_sum = tl.sum(q0.to(tl.float32) * zp0[None, :], axis=1)
+    q_zero_sum += tl.sum(q1.to(tl.float32) * zp1[None, :], axis=1)
+    q_zero_sum += tl.sum(q2.to(tl.float32) * zp2[None, :], axis=1)
+    q_zero_sum += tl.sum(q3.to(tl.float32) * zp3[None, :], axis=1)
 
     tb0 = 0
     offs_t0 = tb0 * T_BS + tl.arange(0, T_BS)
@@ -117,19 +123,17 @@ def attn_compute_threshold_qbits(
 
 
 @triton.jit
-def attn_forward_stage1_fused_threshold_qbits(
-    q, k_q, k_scale, k_res, v,
-    m_buf, l_buf, o_buf,
-    mask_buf,
-    scale, T, NTB, NTBS, delta,
+def attn_scan_2bit(
+    q, k_q, k_scale, k_zp,
+    indices_buffer, count_buffer,
+    scale, T, NTB, delta,
     th_in,
-    B: tl.constexpr, HKV: tl.constexpr, HQ: tl.constexpr, K: tl.constexpr, K_PACKED: tl.constexpr, V: tl.constexpr,
+    B: tl.constexpr, HKV: tl.constexpr, HQ: tl.constexpr, K: tl.constexpr, K_PACKED: tl.constexpr,
     G: tl.constexpr, BS: tl.constexpr, SBS: tl.constexpr,
     BM_DOT: tl.constexpr = 16,
     T_BS: tl.constexpr = 16,
     K_BITS: tl.constexpr = 2,
     USE_EXT_TH: tl.constexpr = False,
-    USE_FP8_RESIDUAL: tl.constexpr = False,
 ):
     # 3D grid = (NTB, B, HKV)
     pid_tb = tl.program_id(0)
@@ -138,16 +142,14 @@ def attn_forward_stage1_fused_threshold_qbits(
 
     RCP_LN2 = 1.4426950408889634
     NEG_INF = float("-inf")
-    TRUE_K  = tl.full([K], True, tl.int1)
     QMAX = (1 << K_BITS) - 1
-    QZERO = QMAX / 2
     VALS_PER_BYTE: tl.constexpr = 8 // K_BITS
 
     s0 = pid_tb * BS
     NSB: tl.constexpr = (BS + SBS - 1) // SBS
     base_hq = pid_hkv * G
 
-    rows     = tl.arange(0, BM_DOT)
+    rows = tl.arange(0, BM_DOT)
     row_mask = rows < G
     offs_kp = tl.arange(0, K_PACKED)
     offs_k0 = offs_kp * VALS_PER_BYTE + 0
@@ -172,20 +174,27 @@ def attn_forward_stage1_fused_threshold_qbits(
     scale_ptrs1 = k_scale + pid_b * (HKV * K) + pid_hkv * K + offs_k1
     scale_ptrs2 = k_scale + pid_b * (HKV * K) + pid_hkv * K + offs_k2
     scale_ptrs3 = k_scale + pid_b * (HKV * K) + pid_hkv * K + offs_k3
+    zp_ptrs0 = k_zp + pid_b * (HKV * K) + pid_hkv * K + offs_k0
+    zp_ptrs1 = k_zp + pid_b * (HKV * K) + pid_hkv * K + offs_k1
+    zp_ptrs2 = k_zp + pid_b * (HKV * K) + pid_hkv * K + offs_k2
+    zp_ptrs3 = k_zp + pid_b * (HKV * K) + pid_hkv * K + offs_k3
     scale0 = tl.load(scale_ptrs0, mask=mask_k0, other=0.0).to(tl.float32)
     scale1 = tl.load(scale_ptrs1, mask=mask_k1, other=0.0).to(tl.float32)
     scale2 = tl.load(scale_ptrs2, mask=mask_k2, other=0.0).to(tl.float32)
     scale3 = tl.load(scale_ptrs3, mask=mask_k3, other=0.0).to(tl.float32)
+    zp0 = tl.load(zp_ptrs0, mask=mask_k0, other=0.0).to(tl.float32)
+    zp1 = tl.load(zp_ptrs1, mask=mask_k1, other=0.0).to(tl.float32)
+    zp2 = tl.load(zp_ptrs2, mask=mask_k2, other=0.0).to(tl.float32)
+    zp3 = tl.load(zp_ptrs3, mask=mask_k3, other=0.0).to(tl.float32)
 
     q_scaled0 = q0 * scale0[None, :].to(tl.float16)
     q_scaled1 = q1 * scale1[None, :].to(tl.float16)
     q_scaled2 = q2 * scale2[None, :].to(tl.float16)
     q_scaled3 = q3 * scale3[None, :].to(tl.float16)
-    q_zero_sum = tl.sum(q_scaled0.to(tl.float32), axis=1)
-    q_zero_sum += tl.sum(q_scaled1.to(tl.float32), axis=1)
-    q_zero_sum += tl.sum(q_scaled2.to(tl.float32), axis=1)
-    q_zero_sum += tl.sum(q_scaled3.to(tl.float32), axis=1)
-    q_zero_sum *= -QZERO
+    q_zero_sum = tl.sum(q0.to(tl.float32) * zp0[None, :], axis=1)
+    q_zero_sum += tl.sum(q1.to(tl.float32) * zp1[None, :], axis=1)
+    q_zero_sum += tl.sum(q2.to(tl.float32) * zp2[None, :], axis=1)
+    q_zero_sum += tl.sum(q3.to(tl.float32) * zp3[None, :], axis=1)
 
     if USE_EXT_TH:
         th_rows = tl.load(th_in + pid_b * HQ + (base_hq + rows), mask=row_mask, other=0.0)
@@ -230,10 +239,122 @@ def attn_forward_stage1_fused_threshold_qbits(
 
         th_rows = tl.maximum(m0, m1) - delta
 
+    n_valid = tl.sum(row_mask.to(tl.int32), axis=0)
+
     for sb in tl.static_range(NSB):
         offs_t_sb = s0 + sb * SBS + tl.arange(0, SBS)
         t_mask_sb = offs_t_sb < T
 
+        base_toksb_q = pid_b * (T * HKV * K_PACKED) + offs_t_sb * (HKV * K_PACKED) + (pid_hkv * K_PACKED)
+        tl.multiple_of(base_toksb_q, K_PACKED)
+        kq_ptrssb = k_q + base_toksb_q[None, :] + offs_kp[:, None]
+        kq_packedsb = tl.load(kq_ptrssb, mask=t_mask_sb[None, :], other=0).to(tl.int32)
+        kqsb0 = ((kq_packedsb >> 0) & QMAX).to(tl.float16)
+        kqsb1 = ((kq_packedsb >> 2) & QMAX).to(tl.float16)
+        kqsb2 = ((kq_packedsb >> 4) & QMAX).to(tl.float16)
+        kqsb3 = ((kq_packedsb >> 6) & QMAX).to(tl.float16)
+        b_s_q = tl.dot(q_scaled0, kqsb0, out_dtype=tl.float32)
+        b_s_q += tl.dot(q_scaled1, kqsb1, out_dtype=tl.float32)
+        b_s_q += tl.dot(q_scaled2, kqsb2, out_dtype=tl.float32)
+        b_s_q += tl.dot(q_scaled3, kqsb3, out_dtype=tl.float32)
+        b_s_q = (b_s_q + q_zero_sum[:, None]) * scale * RCP_LN2
+        b_s_act = tl.where(t_mask_sb[None, :], b_s_q, NEG_INF)
+
+        m_rows_blk = tl.max(b_s_act, axis=1)
+        below = (m_rows_blk < th_rows) & row_mask
+        n_below = tl.sum(below.to(tl.int32), axis=0)
+        prune_blk = n_below == n_valid
+
+        if not prune_blk:
+            tb_sb = pid_tb * NSB + sb
+            idx = tl.atomic_add(count_buffer, tl.full((), 1, tl.int32))
+            base_ptr = indices_buffer + idx * 3
+            tl.store(base_ptr + 0, pid_b)
+            tl.store(base_ptr + 1, pid_hkv)
+            tl.store(base_ptr + 2, tb_sb)
+
+
+@triton.jit
+def attn_compute_sparse_refine(
+    q, k_q, k_scale, k_zp, k_res, v,
+    indices_buffer, count_buffer,
+    m_buf, l_buf, o_buf, mask_buf,
+    scale, T, NTBS,
+    B: tl.constexpr, HKV: tl.constexpr, HQ: tl.constexpr, K: tl.constexpr, K_PACKED: tl.constexpr, V: tl.constexpr,
+    G: tl.constexpr, BS: tl.constexpr, SBS: tl.constexpr,
+    BM_DOT: tl.constexpr = 16,
+    K_BITS: tl.constexpr = 2,
+    USE_FP8_RESIDUAL: tl.constexpr = False,
+):
+    pid = tl.program_id(0)
+    total = tl.load(count_buffer)
+    valid = pid < total
+    if valid:
+        base_ptr = indices_buffer + pid * 3
+        pid_b = tl.load(base_ptr + 0)
+        pid_hkv = tl.load(base_ptr + 1)
+        tb_sb = tl.load(base_ptr + 2)
+
+        NSB: tl.constexpr = (BS + SBS - 1) // SBS
+        tb = tb_sb // NSB
+        sb = tb_sb - tb * NSB
+        s0 = tb * BS
+
+        RCP_LN2 = 1.4426950408889634
+        NEG_INF = float("-inf")
+        QMAX = (1 << K_BITS) - 1
+        VALS_PER_BYTE: tl.constexpr = 8 // K_BITS
+
+        base_hq = pid_hkv * G
+        rows = tl.arange(0, BM_DOT)
+        row_mask = rows < G
+        offs_kp = tl.arange(0, K_PACKED)
+        offs_k0 = offs_kp * VALS_PER_BYTE + 0
+        offs_k1 = offs_kp * VALS_PER_BYTE + 1
+        offs_k2 = offs_kp * VALS_PER_BYTE + 2
+        offs_k3 = offs_kp * VALS_PER_BYTE + 3
+        mask_k0 = offs_k0 < K
+        mask_k1 = offs_k1 < K
+        mask_k2 = offs_k2 < K
+        mask_k3 = offs_k3 < K
+
+        q_ptrs0 = q + pid_b * (HQ * K) + (base_hq + rows)[:, None] * K + offs_k0[None, :]
+        q_ptrs1 = q + pid_b * (HQ * K) + (base_hq + rows)[:, None] * K + offs_k1[None, :]
+        q_ptrs2 = q + pid_b * (HQ * K) + (base_hq + rows)[:, None] * K + offs_k2[None, :]
+        q_ptrs3 = q + pid_b * (HQ * K) + (base_hq + rows)[:, None] * K + offs_k3[None, :]
+        q0 = tl.load(q_ptrs0, mask=row_mask[:, None] & mask_k0[None, :], other=0.0).to(tl.float16)
+        q1 = tl.load(q_ptrs1, mask=row_mask[:, None] & mask_k1[None, :], other=0.0).to(tl.float16)
+        q2 = tl.load(q_ptrs2, mask=row_mask[:, None] & mask_k2[None, :], other=0.0).to(tl.float16)
+        q3 = tl.load(q_ptrs3, mask=row_mask[:, None] & mask_k3[None, :], other=0.0).to(tl.float16)
+
+        scale_ptrs0 = k_scale + pid_b * (HKV * K) + pid_hkv * K + offs_k0
+        scale_ptrs1 = k_scale + pid_b * (HKV * K) + pid_hkv * K + offs_k1
+        scale_ptrs2 = k_scale + pid_b * (HKV * K) + pid_hkv * K + offs_k2
+        scale_ptrs3 = k_scale + pid_b * (HKV * K) + pid_hkv * K + offs_k3
+        zp_ptrs0 = k_zp + pid_b * (HKV * K) + pid_hkv * K + offs_k0
+        zp_ptrs1 = k_zp + pid_b * (HKV * K) + pid_hkv * K + offs_k1
+        zp_ptrs2 = k_zp + pid_b * (HKV * K) + pid_hkv * K + offs_k2
+        zp_ptrs3 = k_zp + pid_b * (HKV * K) + pid_hkv * K + offs_k3
+        scale0 = tl.load(scale_ptrs0, mask=mask_k0, other=0.0).to(tl.float32)
+        scale1 = tl.load(scale_ptrs1, mask=mask_k1, other=0.0).to(tl.float32)
+        scale2 = tl.load(scale_ptrs2, mask=mask_k2, other=0.0).to(tl.float32)
+        scale3 = tl.load(scale_ptrs3, mask=mask_k3, other=0.0).to(tl.float32)
+        zp0 = tl.load(zp_ptrs0, mask=mask_k0, other=0.0).to(tl.float32)
+        zp1 = tl.load(zp_ptrs1, mask=mask_k1, other=0.0).to(tl.float32)
+        zp2 = tl.load(zp_ptrs2, mask=mask_k2, other=0.0).to(tl.float32)
+        zp3 = tl.load(zp_ptrs3, mask=mask_k3, other=0.0).to(tl.float32)
+
+        q_scaled0 = q0 * scale0[None, :].to(tl.float16)
+        q_scaled1 = q1 * scale1[None, :].to(tl.float16)
+        q_scaled2 = q2 * scale2[None, :].to(tl.float16)
+        q_scaled3 = q3 * scale3[None, :].to(tl.float16)
+        q_zero_sum = tl.sum(q0.to(tl.float32) * zp0[None, :], axis=1)
+        q_zero_sum += tl.sum(q1.to(tl.float32) * zp1[None, :], axis=1)
+        q_zero_sum += tl.sum(q2.to(tl.float32) * zp2[None, :], axis=1)
+        q_zero_sum += tl.sum(q3.to(tl.float32) * zp3[None, :], axis=1)
+
+        offs_t_sb = s0 + sb * SBS + tl.arange(0, SBS)
+        t_mask_sb = offs_t_sb < T
         base_toksb_q = pid_b * (T * HKV * K_PACKED) + offs_t_sb * (HKV * K_PACKED) + (pid_hkv * K_PACKED)
         base_toksb_k = pid_b * (T * HKV * K) + offs_t_sb * (HKV * K) + (pid_hkv * K)
         tl.multiple_of(base_toksb_q, K_PACKED)
@@ -249,74 +370,61 @@ def attn_forward_stage1_fused_threshold_qbits(
         b_s_q += tl.dot(q_scaled2, kqsb2, out_dtype=tl.float32)
         b_s_q += tl.dot(q_scaled3, kqsb3, out_dtype=tl.float32)
         b_s_q = (b_s_q + q_zero_sum[:, None]) * scale * RCP_LN2
-        b_s_act = tl.where(t_mask_sb[None, :], b_s_q, NEG_INF)
 
-        m_rows_blk = tl.max(b_s_act, axis=1)
+        if USE_FP8_RESIDUAL:
+            k_res_ptrs0 = k_res + base_toksb_k[None, :] + offs_k0[:, None]
+            k_res_ptrs1 = k_res + base_toksb_k[None, :] + offs_k1[:, None]
+            k_res_ptrs2 = k_res + base_toksb_k[None, :] + offs_k2[:, None]
+            k_res_ptrs3 = k_res + base_toksb_k[None, :] + offs_k3[:, None]
+            k_res0 = tl.load(
+                k_res_ptrs0,
+                mask=(mask_k0[:, None] & t_mask_sb[None, :]),
+                other=0.0,
+            ).to(tl.float16)
+            k_res1 = tl.load(
+                k_res_ptrs1,
+                mask=(mask_k1[:, None] & t_mask_sb[None, :]),
+                other=0.0,
+            ).to(tl.float16)
+            k_res2 = tl.load(
+                k_res_ptrs2,
+                mask=(mask_k2[:, None] & t_mask_sb[None, :]),
+                other=0.0,
+            ).to(tl.float16)
+            k_res3 = tl.load(
+                k_res_ptrs3,
+                mask=(mask_k3[:, None] & t_mask_sb[None, :]),
+                other=0.0,
+            ).to(tl.float16)
+            b_s_res = tl.dot(q0, k_res0, out_dtype=tl.float32)
+            b_s_res += tl.dot(q1, k_res1, out_dtype=tl.float32)
+            b_s_res += tl.dot(q2, k_res2, out_dtype=tl.float32)
+            b_s_res += tl.dot(q3, k_res3, out_dtype=tl.float32)
+            b_s_res = b_s_res * scale * RCP_LN2
+            b_s = b_s_q + b_s_res
+        else:
+            b_s = b_s_q
 
-        below   = (m_rows_blk < th_rows) & row_mask
-        n_below = tl.sum(below.to(tl.int32), axis=0)
-        n_valid = tl.sum(row_mask.to(tl.int32), axis=0)
-        prune_blk = n_below == n_valid
+        b_s = tl.where(t_mask_sb[None, :], b_s, NEG_INF)
+        m_rows = tl.max(b_s, axis=1)
+        b_p = tl.where(t_mask_sb[None, :], tl.exp2(b_s - m_rows[:, None]), 0.0)
+        l_rows = tl.sum(b_p, axis=1)
 
-        tb_sb = pid_tb * NSB + sb
         v_offs = tl.arange(0, V)
+        need_v = tl.sum(t_mask_sb.to(tl.int32), axis=0) > 0
+        o_tile = tl.zeros([BM_DOT, V], tl.float32)
+        if need_v:
+            v_ptrs = v + pid_b * (T * HKV * V) + (offs_t_sb[:, None] * (HKV * V)) + (pid_hkv * V) + v_offs[None, :]
+            b_v = tl.load(v_ptrs, mask=t_mask_sb[:, None], other=0.0).to(tl.float16)
+            o_tile = tl.dot(b_p.to(tl.float16), b_v, out_dtype=tl.float32)
 
-        if not prune_blk:
-            if USE_FP8_RESIDUAL:
-                k_res_ptrs0 = k_res + base_toksb_k[None, :] + offs_k0[:, None]
-                k_res_ptrs1 = k_res + base_toksb_k[None, :] + offs_k1[:, None]
-                k_res_ptrs2 = k_res + base_toksb_k[None, :] + offs_k2[:, None]
-                k_res_ptrs3 = k_res + base_toksb_k[None, :] + offs_k3[:, None]
-                k_res0 = tl.load(
-                    k_res_ptrs0,
-                    mask=(mask_k0[:, None] & t_mask_sb[None, :]),
-                    other=0.0,
-                ).to(tl.float16)
-                k_res1 = tl.load(
-                    k_res_ptrs1,
-                    mask=(mask_k1[:, None] & t_mask_sb[None, :]),
-                    other=0.0,
-                ).to(tl.float16)
-                k_res2 = tl.load(
-                    k_res_ptrs2,
-                    mask=(mask_k2[:, None] & t_mask_sb[None, :]),
-                    other=0.0,
-                ).to(tl.float16)
-                k_res3 = tl.load(
-                    k_res_ptrs3,
-                    mask=(mask_k3[:, None] & t_mask_sb[None, :]),
-                    other=0.0,
-                ).to(tl.float16)
-                # Reuse selector b_s_q and add residual dot to avoid recomputing q·k_tile_q.
-                b_s_res = tl.dot(q0, k_res0, out_dtype=tl.float32)
-                b_s_res += tl.dot(q1, k_res1, out_dtype=tl.float32)
-                b_s_res += tl.dot(q2, k_res2, out_dtype=tl.float32)
-                b_s_res += tl.dot(q3, k_res3, out_dtype=tl.float32)
-                b_s_res = b_s_res * scale * RCP_LN2
-                b_s = b_s_q + b_s_res
-                b_s = tl.where(t_mask_sb[None, :], b_s, NEG_INF)
-                m_rows = tl.max(b_s, axis=1)
-            else:
-                b_s = b_s_q
-                m_rows = m_rows_blk
-
-            b_p    = tl.where(t_mask_sb[None, :], tl.exp2(b_s - m_rows[:, None]), 0.0)
-            l_rows = tl.sum(b_p, axis=1)
-
-            need_v = tl.sum(t_mask_sb.to(tl.int32), axis=0) > 0
-            o_tile = tl.zeros([BM_DOT, V], tl.float32)
-            if need_v:
-                v_ptrs = v + pid_b * (T * HKV * V) + (offs_t_sb[:, None] * (HKV * V)) + (pid_hkv * V) + v_offs[None, :]
-                b_v    = tl.load(v_ptrs, mask=t_mask_sb[:, None], other=0.0).to(tl.float16)
-                o_tile = tl.dot(b_p.to(tl.float16), b_v, out_dtype=tl.float32)
-
-            m_ptrs = m_buf + pid_b * (HQ * NTBS) + (base_hq + rows) * NTBS + tb_sb
-            l_ptrs = l_buf + pid_b * (HQ * NTBS) + (base_hq + rows) * NTBS + tb_sb
-            o_ptrs = o_buf + pid_b * (HQ * NTBS * V) + (base_hq + rows)[:, None] * (NTBS * V) + tb_sb * V + v_offs[None, :]
-            tl.store(m_ptrs, m_rows, mask=row_mask)
-            tl.store(l_ptrs, l_rows, mask=row_mask)
-            tl.store(o_ptrs, o_tile, mask=row_mask[:, None])
-            tl.store(mask_buf + pid_b * (HKV * NTBS) + pid_hkv * NTBS + tb_sb, tl.full((), 1, tl.int8))
+        m_ptrs = m_buf + pid_b * (HQ * NTBS) + (base_hq + rows) * NTBS + tb_sb
+        l_ptrs = l_buf + pid_b * (HQ * NTBS) + (base_hq + rows) * NTBS + tb_sb
+        o_ptrs = o_buf + pid_b * (HQ * NTBS * V) + (base_hq + rows)[:, None] * (NTBS * V) + tb_sb * V + v_offs[None, :]
+        tl.store(m_ptrs, m_rows, mask=row_mask)
+        tl.store(l_ptrs, l_rows, mask=row_mask)
+        tl.store(o_ptrs, o_tile, mask=row_mask[:, None])
+        tl.store(mask_buf + pid_b * (HKV * NTBS) + pid_hkv * NTBS + tb_sb, tl.full((), 1, tl.int8))
 
 
 @triton.jit
@@ -351,19 +459,21 @@ def attn_forward_stage2_masked(
     tl.store(o_ptrs, out_tile.to(o_ptrs.dtype.element_ty))
 
 
-def _normalize_scale(k_scale: torch.Tensor, expect_shape):
+def _normalize_scale_zero(k_scale: torch.Tensor, k_zero: torch.Tensor, expect_shape):
     """
-    Ensure scale tensors are contiguous and have shape [B, HKV, K].
+    Ensure scale / zero_point tensors are contiguous and have shape [B, HKV, K].
     """
     if k_scale.ndim == 4 and k_scale.shape[1] == 1:
         k_scale = k_scale.squeeze(1)
+    if k_zero.ndim == 4 and k_zero.shape[1] == 1:
+        k_zero = k_zero.squeeze(1)
 
-    if k_scale.shape != expect_shape:
+    if k_scale.shape != expect_shape or k_zero.shape != expect_shape:
         raise ValueError(
-            f"Unsupported k_scale shape: {k_scale.shape=}, expected {expect_shape}"
+            f"Unsupported k_scale/k_zero shapes: {k_scale.shape=} {k_zero.shape=}, expected {expect_shape}"
         )
 
-    return k_scale.contiguous()
+    return k_scale.contiguous(), k_zero.contiguous()
 
 
 
@@ -394,10 +504,11 @@ def _record_kernel_time(kernel_times: dict | None, name: str, fn, device) -> Non
     kernel_times[name] = start.elapsed_time(end)
 
 
-def attn_forward_decode_quantized(
+def attn_forward_decode_split(
     q: torch.Tensor,           # [B, 1, HQ, K]
     k_q: torch.Tensor,         # [B, T, HKV, ceil(K / (8 / k_bits))], packed quantized ints
     k_scale: torch.Tensor,     # [B, HKV, K] (token dimension removed)
+    k_zero: torch.Tensor,      # same shape as k_scale
     v: torch.Tensor,           # [B, T, HKV, V]
     k_residual: torch.Tensor | None = None,  # [B, T, HKV, K], fp8 residual
     k_bits: int = 2,
@@ -410,24 +521,23 @@ def attn_forward_decode_quantized(
     use_fp8_residual: bool = True,
     num_warps_th: int | None = None,
     num_stages_th: int | None = None,
-    num_warps_s1: int | None = None,
-    num_stages_s1: int | None = None,
+    num_warps_scan: int | None = None,
+    num_stages_scan: int | None = None,
+    num_warps_refine: int | None = None,
+    num_stages_refine: int | None = None,
     num_warps_s2: int | None = None,
     num_stages_s2: int | None = None,
     return_kernel_timings: bool = False,
     **kwargs,
 ):
-    # import os
-    # print(f"ENTER {__file__} attn_forward_decode_quantized")
-    
     assert q.is_cuda and k_q.is_cuda and v.is_cuda
     if k_residual is not None and not k_residual.is_cuda:
         raise ValueError("k_residual must be a CUDA tensor when provided")
     if k_bits != 2:
-        raise ValueError(f"attn_forward_decode_quantized currently supports 2-bit keys, got k_bits={k_bits}")
-    assert k_scale.is_cuda, "k_scale must be a CUDA tensor"
-    if not k_scale.is_floating_point():
-        raise ValueError("k_scale must be a floating point tensor for dequantization")
+        raise ValueError(f"attn_forward_decode_split currently supports 2-bit keys, got k_bits={k_bits}")
+    assert k_scale.is_cuda and k_zero.is_cuda, "k_scale/k_zero must be CUDA tensors"
+    if not k_scale.is_floating_point() or not k_zero.is_floating_point():
+        raise ValueError("k_scale and k_zero must be floating point tensors for dequantization")
     if k_q.is_floating_point():
         raise ValueError("k_q must contain integer quantized values (e.g., uint8/int8)")
     if k_residual is not None and not k_residual.is_floating_point():
@@ -456,7 +566,7 @@ def attn_forward_decode_quantized(
     G = HQ // HKV
 
     expect_shape = (B, HKV, K)
-    k_scale = _normalize_scale(k_scale, expect_shape)
+    k_scale, k_zero = _normalize_scale_zero(k_scale, k_zero, expect_shape)
 
     if scale is None:
         scale = 1.0 / math.sqrt(K)
@@ -472,7 +582,7 @@ def attn_forward_decode_quantized(
         raise ValueError("use_fp8_residual=True requires k_residual")
     if k_residual is not None:
         assert k_residual.is_contiguous()
-    
+
     q = q.contiguous()
     k_q = k_q.contiguous()
     use_fp8_residual = use_fp8_residual and (k_residual is not None)
@@ -484,6 +594,8 @@ def attn_forward_decode_quantized(
     l_buf = torch.empty((B, HQ, NTBS), device=q.device, dtype=torch.float32)
     o_buf = torch.empty((B, HQ, NTBS, V), device=q.device, dtype=torch.float32)
     mask_buf = torch.zeros((B, HKV, NTBS), device=q.device, dtype=torch.int8)
+    indices_buffer = torch.empty((B * HKV * NTBS, 3), device=q.device, dtype=torch.int32)
+    count_buffer = torch.zeros((1,), device=q.device, dtype=torch.int32)
 
     if precomputed_threshold is not None:
         assert precomputed_threshold.is_cuda and precomputed_threshold.shape == (B, HQ)
@@ -494,7 +606,7 @@ def attn_forward_decode_quantized(
         th_kwargs = _kernel_kwargs(num_warps_th, num_stages_th)
         def _launch_threshold():
             attn_compute_threshold_qbits[(B, HKV)](
-                q, k_q, k_scale,
+                q, k_q, k_scale, k_zero,
                 threshold_buf,
                 scale, T, NTB, delta,
                 B=B, HKV=HKV, HQ=HQ, K=K, K_PACKED=K_packed, G=G,
@@ -506,25 +618,38 @@ def attn_forward_decode_quantized(
     if kernel_times is not None and precomputed_threshold is not None:
         kernel_times["threshold"] = None
 
-    s1_kwargs = _kernel_kwargs(num_warps_s1, num_stages_s1)
-    def _launch_stage1():
-        attn_forward_stage1_fused_threshold_qbits[(NTB, B, HKV)](
-            q, k_q, k_scale, k_res, v,
-            m_buf, l_buf, o_buf,
-            mask_buf,
-            scale, T, NTB, NTBS, delta,
+    scan_kwargs = _kernel_kwargs(num_warps_scan, num_stages_scan)
+    def _launch_scan():
+        attn_scan_2bit[(NTB, B, HKV)](
+            q, k_q, k_scale, k_zero,
+            indices_buffer, count_buffer,
+            scale, T, NTB, delta,
             threshold_buf,
-            B=B, HKV=HKV, HQ=HQ, K=K, K_PACKED=K_packed, V=V, G=G, BS=BS, SBS=SBS,
-            K_BITS=k_bits, USE_EXT_TH=use_ext_th, USE_FP8_RESIDUAL=use_fp8_residual,
-            **s1_kwargs,
+            B=B, HKV=HKV, HQ=HQ, K=K, K_PACKED=K_packed, G=G, BS=BS, SBS=SBS,
+            K_BITS=k_bits, USE_EXT_TH=use_ext_th,
+            **scan_kwargs,
         )
-    _record_kernel_time(kernel_times, "stage1", _launch_stage1, q.device)
+    _record_kernel_time(kernel_times, "scan", _launch_scan, q.device)
+
+    refine_kwargs = _kernel_kwargs(num_warps_refine, num_stages_refine)
+    max_tasks = indices_buffer.shape[0]
+    def _launch_refine():
+        attn_compute_sparse_refine[(max_tasks,)](
+            q, k_q, k_scale, k_zero, k_res, v,
+            indices_buffer, count_buffer,
+            m_buf, l_buf, o_buf, mask_buf,
+            scale, T, NTBS,
+            B=B, HKV=HKV, HQ=HQ, K=K, K_PACKED=K_packed, V=V, G=G, BS=BS, SBS=SBS,
+            K_BITS=k_bits, USE_FP8_RESIDUAL=use_fp8_residual,
+            **refine_kwargs,
+        )
+    _record_kernel_time(kernel_times, "refine", _launch_refine, q.device)
 
     skip_ratio = None
     if return_skip_ratio:
-        kept = mask_buf.to(torch.int32).sum()
-        total = mask_buf.numel()
-        skip_ratio = float((1.0 - (kept.float() / float(total))).item())
+        kept = int(count_buffer.item())
+        total = indices_buffer.shape[0]
+        skip_ratio = float(1.0 - (float(kept) / float(total)))
 
     s2_kwargs = _kernel_kwargs(num_warps_s2, num_stages_s2)
     def _launch_stage2():
@@ -545,19 +670,16 @@ def attn_forward_decode_quantized(
         return o, kernel_times
     return o
 
-class CUDAGraphDecodeRunnerQ2FP8:
-    """Capture and replay the Q2FP8 decode kernel with static buffers.
 
-    This wrapper avoids per-step kernel launches by using torch.cuda.CUDAGraph.
-    Output is written into a persistent tensor; callers should not assume it
-    survives across replays.
-    """
+class CUDAGraphDecodeRunnerQ2FP8Split:
+    """Capture and replay the split Q2FP8 decode kernels with static buffers."""
 
     def __init__(
         self,
         q: torch.Tensor,
         k_q: torch.Tensor,
         k_scale: torch.Tensor,
+        k_zero: torch.Tensor,
         v: torch.Tensor,
         *,
         k_residual: Optional[torch.Tensor] = None,
@@ -571,8 +693,10 @@ class CUDAGraphDecodeRunnerQ2FP8:
         warmup: int = 2,
         num_warps_th: Optional[int] = None,
         num_stages_th: Optional[int] = None,
-        num_warps_s1: Optional[int] = None,
-        num_stages_s1: Optional[int] = None,
+        num_warps_scan: Optional[int] = None,
+        num_stages_scan: Optional[int] = None,
+        num_warps_refine: Optional[int] = None,
+        num_stages_refine: Optional[int] = None,
         num_warps_s2: Optional[int] = None,
         num_stages_s2: Optional[int] = None,
     ) -> None:
@@ -591,8 +715,10 @@ class CUDAGraphDecodeRunnerQ2FP8:
         self._use_ext_th = precomputed_threshold is not None
         self._num_warps_th = num_warps_th
         self._num_stages_th = num_stages_th
-        self._num_warps_s1 = num_warps_s1
-        self._num_stages_s1 = num_stages_s1
+        self._num_warps_scan = num_warps_scan
+        self._num_stages_scan = num_stages_scan
+        self._num_warps_refine = num_warps_refine
+        self._num_stages_refine = num_stages_refine
         self._num_warps_s2 = num_warps_s2
         self._num_stages_s2 = num_stages_s2
 
@@ -604,6 +730,7 @@ class CUDAGraphDecodeRunnerQ2FP8:
         self._static_q = torch.empty_like(q, device=self._device)
         self._static_k_q = torch.empty_like(k_q, device=self._device)
         self._static_k_scale = torch.empty_like(k_scale, device=self._device)
+        self._static_k_zero = torch.empty_like(k_zero, device=self._device)
         self._static_v = torch.empty_like(v, device=self._device)
         self._static_k_residual = None
         if self._use_fp8_residual:
@@ -615,22 +742,22 @@ class CUDAGraphDecodeRunnerQ2FP8:
                 precomputed_threshold, device=self._device
             )
 
-        # Seed static buffers once to avoid uninitialized data in capture.
         self._static_q.copy_(q)
         self._static_k_q.copy_(k_q)
         self._static_k_scale.copy_(k_scale)
+        self._static_k_zero.copy_(k_zero)
         self._static_v.copy_(v)
         if self._use_fp8_residual:
             self._static_k_residual.copy_(k_residual)
         if self._use_ext_th:
             self._static_threshold.copy_(precomputed_threshold)
 
-        # Warmup to trigger Triton JIT before graph capture.
         for _ in range(max(1, warmup)):
-            attn_forward_decode_quantized(
+            attn_forward_decode_split(
                 q=self._static_q,
                 k_q=self._static_k_q,
                 k_scale=self._static_k_scale,
+                k_zero=self._static_k_zero,
                 k_residual=self._static_k_residual,
                 v=self._static_v,
                 k_bits=self._k_bits,
@@ -643,8 +770,10 @@ class CUDAGraphDecodeRunnerQ2FP8:
                 use_fp8_residual=self._use_fp8_residual,
                 num_warps_th=self._num_warps_th,
                 num_stages_th=self._num_stages_th,
-                num_warps_s1=self._num_warps_s1,
-                num_stages_s1=self._num_stages_s1,
+                num_warps_scan=self._num_warps_scan,
+                num_stages_scan=self._num_stages_scan,
+                num_warps_refine=self._num_warps_refine,
+                num_stages_refine=self._num_stages_refine,
                 num_warps_s2=self._num_warps_s2,
                 num_stages_s2=self._num_stages_s2,
             )
@@ -653,10 +782,11 @@ class CUDAGraphDecodeRunnerQ2FP8:
         self._graph = torch.cuda.CUDAGraph()
         self._pool = torch.cuda.graphs.graph_pool_handle()
         with torch.cuda.graph(self._graph, pool=self._pool):
-            self._static_out = attn_forward_decode_quantized(
+            self._static_out = attn_forward_decode_split(
                 q=self._static_q,
                 k_q=self._static_k_q,
                 k_scale=self._static_k_scale,
+                k_zero=self._static_k_zero,
                 k_residual=self._static_k_residual,
                 v=self._static_v,
                 k_bits=self._k_bits,
@@ -669,8 +799,10 @@ class CUDAGraphDecodeRunnerQ2FP8:
                 use_fp8_residual=self._use_fp8_residual,
                 num_warps_th=self._num_warps_th,
                 num_stages_th=self._num_stages_th,
-                num_warps_s1=self._num_warps_s1,
-                num_stages_s1=self._num_stages_s1,
+                num_warps_scan=self._num_warps_scan,
+                num_stages_scan=self._num_stages_scan,
+                num_warps_refine=self._num_warps_refine,
+                num_stages_refine=self._num_stages_refine,
                 num_warps_s2=self._num_warps_s2,
                 num_stages_s2=self._num_stages_s2,
             )
@@ -684,6 +816,7 @@ class CUDAGraphDecodeRunnerQ2FP8:
         q: torch.Tensor,
         k_q: torch.Tensor,
         k_scale: torch.Tensor,
+        k_zero: torch.Tensor,
         v: torch.Tensor,
         *,
         k_residual: Optional[torch.Tensor] = None,
@@ -700,6 +833,7 @@ class CUDAGraphDecodeRunnerQ2FP8:
         self._static_q.copy_(q)
         self._static_k_q.copy_(k_q)
         self._static_k_scale.copy_(k_scale)
+        self._static_k_zero.copy_(k_zero)
         self._static_v.copy_(v)
         if self._use_fp8_residual:
             self._static_k_residual.copy_(k_residual)
@@ -710,11 +844,11 @@ class CUDAGraphDecodeRunnerQ2FP8:
         if not return_skip_ratio:
             return self._static_out
 
-        # NOTE: Skip ratio computation is not captured; it re-runs the kernel once.
-        _, skip_ratio = attn_forward_decode_quantized(
+        _, skip_ratio = attn_forward_decode_split(
             q=self._static_q,
             k_q=self._static_k_q,
             k_scale=self._static_k_scale,
+            k_zero=self._static_k_zero,
             k_residual=self._static_k_residual,
             v=self._static_v,
             k_bits=self._k_bits,
@@ -727,8 +861,10 @@ class CUDAGraphDecodeRunnerQ2FP8:
             use_fp8_residual=self._use_fp8_residual,
             num_warps_th=self._num_warps_th,
             num_stages_th=self._num_stages_th,
-            num_warps_s1=self._num_warps_s1,
-            num_stages_s1=self._num_stages_s1,
+            num_warps_scan=self._num_warps_scan,
+            num_stages_scan=self._num_stages_scan,
+            num_warps_refine=self._num_warps_refine,
+            num_stages_refine=self._num_stages_refine,
             num_warps_s2=self._num_warps_s2,
             num_stages_s2=self._num_stages_s2,
         )
@@ -740,3 +876,8 @@ class CUDAGraphDecodeRunnerQ2FP8:
         """Replay without updating static inputs."""
         self._graph.replay()
         return self._static_out
+
+
+# Benchmark harness compatibility aliases.
+attn_forward_decode_quantized = attn_forward_decode_split
+CUDAGraphDecodeRunnerQ2FP8 = CUDAGraphDecodeRunnerQ2FP8Split

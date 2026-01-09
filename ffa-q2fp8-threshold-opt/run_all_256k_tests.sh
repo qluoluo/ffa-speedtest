@@ -13,15 +13,10 @@ if ! command -v "${PYTHON}" >/dev/null 2>&1; then
     exit 1
 fi
 
-BENCH_BASE="${SCRIPT_DIR}/run_attn_bench_q2fp8_cudagraph.py"
-BENCH_SYM="${SCRIPT_DIR}/run_attn_bench_q2fp8_cudagraph_symquant.py"
+BENCH_SCRIPT="${SCRIPT_DIR}/run_attn_bench_q2fp8_cudagraph.py"
 
-if [[ ! -f "${BENCH_BASE}" ]]; then
-    echo "Benchmark script not found: ${BENCH_BASE}" >&2
-    exit 1
-fi
-if [[ ! -f "${BENCH_SYM}" ]]; then
-    echo "Benchmark script not found: ${BENCH_SYM}" >&2
+if [[ ! -f "${BENCH_SCRIPT}" ]]; then
+    echo "Benchmark script not found: ${BENCH_SCRIPT}" >&2
     exit 1
 fi
 
@@ -75,22 +70,22 @@ run_bench() {
 }
 
 run_bench "attn_q2fp8_lr64_mask" \
-    "${PYTHON}" "${BENCH_BASE}" \
+    "${PYTHON}" "${BENCH_SCRIPT}" \
     --attn-kernel attn_q2fp8_lr64_mask \
     "${COMMON_ARGS[@]}" "${EXTRA_ARGS[@]}"
 
 run_bench "attn_q2fp8_base_compact" \
-    "${PYTHON}" "${BENCH_BASE}" \
+    "${PYTHON}" "${BENCH_SCRIPT}" \
     --attn-kernel attn_q2fp8_base_compact \
     "${COMMON_ARGS[@]}" "${EXTRA_ARGS[@]}"
 
 run_bench "attn_q2fp8_sym_mask (symquant)" \
-    "${PYTHON}" "${BENCH_SYM}" \
+    "${PYTHON}" "${BENCH_SCRIPT}" \
     --attn-kernel attn_q2fp8_sym_mask \
     "${COMMON_ARGS[@]}" "${EXTRA_ARGS[@]}"
 
 run_bench "attn_q2fp8_sym_lr64_compact (symquant)" \
-    "${PYTHON}" "${BENCH_SYM}" \
+    "${PYTHON}" "${BENCH_SCRIPT}" \
     --attn-kernel attn_q2fp8_sym_lr64_compact \
     "${COMMON_ARGS[@]}" "${EXTRA_ARGS[@]}"
 

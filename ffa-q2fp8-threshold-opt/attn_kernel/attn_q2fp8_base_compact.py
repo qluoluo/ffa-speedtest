@@ -11,6 +11,8 @@ import torch
 import triton
 import triton.language as tl
 
+QUANT_MODE = "asym"
+
 @triton.jit
 def attn_compute_threshold_qbits(
     q, k_q, k_scale, k_zp,
@@ -407,6 +409,20 @@ def _kernel_kwargs(num_warps: int | None, num_stages: int | None) -> dict:
     return kwargs
 
 
+def _record_kernel_time(kernel_times: dict | None, name: str, fn, device) -> None:
+    if kernel_times is None:
+        fn()
+        return
+    torch.cuda.synchronize(device)
+    start = torch.cuda.Event(enable_timing=True)
+    end = torch.cuda.Event(enable_timing=True)
+    start.record()
+    fn()
+    end.record()
+    end.synchronize()
+    kernel_times[name] = start.elapsed_time(end)
+
+
 def _resolve_max_kept(max_kept: int | None, ntbs: int, ratio: float) -> int:
     if max_kept is not None:
         if max_kept <= 0:
@@ -440,6 +456,7 @@ def attn_forward_decode_quantized(
     num_stages_s2: int | None = None,
     max_kept: int | None = None,
     max_kept_ratio: float = 0.2,
+    return_kernel_timings: bool = False,
     **kwargs,
 ):
     # import os
@@ -504,6 +521,7 @@ def attn_forward_decode_quantized(
     use_fp8_residual = use_fp8_residual and (k_residual is not None)
     k_res = k_residual.contiguous() if use_fp8_residual else k_q
     v = v.contiguous()
+    kernel_times = {} if return_kernel_timings else None
     o = torch.empty((B, HQ, V), device=q.device, dtype=q.dtype)
     m_buf = torch.empty((B, HQ, NTBS), device=q.device, dtype=torch.float32)
     l_buf = torch.empty((B, HQ, NTBS), device=q.device, dtype=torch.float32)
@@ -518,27 +536,33 @@ def attn_forward_decode_quantized(
     else:
         threshold_buf = torch.empty((B, HQ), device=q.device, dtype=torch.float32)
         th_kwargs = _kernel_kwargs(num_warps_th, num_stages_th)
-        attn_compute_threshold_qbits[(B, HKV)](
-            q, k_q, k_scale, k_zero,
-            threshold_buf,
-            scale, T, NTB, delta,
-            B=B, HKV=HKV, HQ=HQ, K=K, K_PACKED=K_packed, G=G,
-            K_BITS=k_bits,
-            **th_kwargs,
-        )
+        def _launch_threshold():
+            attn_compute_threshold_qbits[(B, HKV)](
+                q, k_q, k_scale, k_zero,
+                threshold_buf,
+                scale, T, NTB, delta,
+                B=B, HKV=HKV, HQ=HQ, K=K, K_PACKED=K_packed, G=G,
+                K_BITS=k_bits,
+                **th_kwargs,
+            )
+        _record_kernel_time(kernel_times, "threshold", _launch_threshold, q.device)
         use_ext_th = True
+    if kernel_times is not None and precomputed_threshold is not None:
+        kernel_times["threshold"] = None
 
     s1_kwargs = _kernel_kwargs(num_warps_s1, num_stages_s1)
-    attn_forward_stage1_fused_threshold_qbits[(NTB, B, HKV)](
-        q, k_q, k_scale, k_zero, k_res, v,
-        m_buf, l_buf, o_buf,
-        kept_indices, kept_counts,
-        scale, T, NTB, NTBS, delta,
-        threshold_buf,
-        B=B, HKV=HKV, HQ=HQ, K=K, K_PACKED=K_packed, V=V, G=G, BS=BS, SBS=SBS,
-        K_BITS=k_bits, USE_EXT_TH=use_ext_th, USE_FP8_RESIDUAL=use_fp8_residual, MAX_KEPT=max_kept,
-        **s1_kwargs,
-    )
+    def _launch_stage1():
+        attn_forward_stage1_fused_threshold_qbits[(NTB, B, HKV)](
+            q, k_q, k_scale, k_zero, k_res, v,
+            m_buf, l_buf, o_buf,
+            kept_indices, kept_counts,
+            scale, T, NTB, NTBS, delta,
+            threshold_buf,
+            B=B, HKV=HKV, HQ=HQ, K=K, K_PACKED=K_packed, V=V, G=G, BS=BS, SBS=SBS,
+            K_BITS=k_bits, USE_EXT_TH=use_ext_th, USE_FP8_RESIDUAL=use_fp8_residual, MAX_KEPT=max_kept,
+            **s1_kwargs,
+        )
+    _record_kernel_time(kernel_times, "stage1", _launch_stage1, q.device)
 
     skip_ratio = None
     if return_skip_ratio:
@@ -547,19 +571,24 @@ def attn_forward_decode_quantized(
         skip_ratio = float((1.0 - (kept.float() / total)).item())
 
     s2_kwargs = _kernel_kwargs(num_warps_s2, num_stages_s2)
-    attn_forward_stage2_compact[(B, HKV, G)](
-        m_buf, l_buf, o_buf,
-        kept_indices, kept_counts,
-        o, NTBS,
-        B=B, HKV=HKV, G=G, HQ=HQ, V=V,
-        MAX_KEPT=max_kept,
-        **s2_kwargs,
-    )
+    def _launch_stage2():
+        attn_forward_stage2_compact[(B, HKV, G)](
+            m_buf, l_buf, o_buf,
+            kept_indices, kept_counts,
+            o, NTBS,
+            B=B, HKV=HKV, G=G, HQ=HQ, V=V,
+            MAX_KEPT=max_kept,
+            **s2_kwargs,
+        )
+    _record_kernel_time(kernel_times, "stage2", _launch_stage2, q.device)
 
     if return_skip_ratio:
+        if return_kernel_timings:
+            return o, skip_ratio, kernel_times
         return o, skip_ratio
-    else:
-        return o
+    if return_kernel_timings:
+        return o, kernel_times
+    return o
 
 class CUDAGraphDecodeRunnerQ2FP8:
     """Capture and replay the Q2FP8 decode kernel with static buffers.
