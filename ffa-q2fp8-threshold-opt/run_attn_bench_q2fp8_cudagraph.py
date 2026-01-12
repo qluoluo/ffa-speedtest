@@ -613,7 +613,23 @@ def main():
                 _, kernel_profile = profile_out
             elif len(profile_out) == 3:
                 _, _, kernel_profile = profile_out
-        return length, kernel_profile
+        if kernel_profile is None:
+            return length, None
+        total_ms = sum(ms for ms in kernel_profile.values() if ms is not None)
+        pct = {}
+        if total_ms > 0:
+            for name, ms in kernel_profile.items():
+                pct[name] = None if ms is None else (ms / total_ms) * 100.0
+        else:
+            for name in kernel_profile.keys():
+                pct[name] = None
+        profile = {
+            "length": int(length),
+            "total_ms": float(total_ms),
+            "ms": kernel_profile,
+            "pct": pct,
+        }
+        return length, profile
 
     plot_root_dir, raw_data_dir = build_plot_dirs(
         attn_kernel_name, gpu_tag, BS, SBS, delta, layer_indices, bsz, max_length, THIS_DIR
@@ -689,6 +705,10 @@ def main():
                 kernel_profile_length, kernel_profile = profile_internal_kernels(
                     lengths[-1], quant_inputs, warmup=True
                 )
+                if kernel_profile is not None and "kernel_profile" not in _meta:
+                    _meta["kernel_profile"] = kernel_profile
+                    save_raw_cache(cache_path, _meta, x_lengths, q2_ms_list, q2_cg_ms_list, flash_ms_list, skip_ratios)
+                    print(f"[Info] Updated cached results with kernel profile at {cache_path}")
         else:
             if cache_path.exists() and args.force:
                 print(f"[Info] Force rerun enabled; ignoring cached results at {cache_path}")
@@ -797,6 +817,8 @@ def main():
                 num_warps_s2=num_warps_s2,
                 num_stages_s2=num_stages_s2,
             )
+            if kernel_profile is not None:
+                meta["kernel_profile"] = kernel_profile
             ensure_raw_dir()
             save_raw_cache(cache_path, meta, x_lengths, q2_ms_list, q2_cg_ms_list, flash_ms_list, skip_ratios)
             print(f"[Info] Saved raw benchmark data to {cache_path}")
@@ -839,11 +861,20 @@ def main():
         )
         if kernel_profile is not None:
             parts = []
-            for name, ms in kernel_profile.items():
+            total_ms = float(kernel_profile.get("total_ms", 0.0))
+            ms_map = kernel_profile.get("ms", {})
+            pct_map = kernel_profile.get("pct", {})
+            for name, ms in ms_map.items():
                 if ms is None:
                     parts.append(f"{name}=skipped")
-                else:
+                    continue
+                pct = pct_map.get(name)
+                if pct is None or total_ms <= 0:
                     parts.append(f"{name}={ms:.3f} ms")
+                else:
+                    parts.append(f"{name}={ms:.3f} ms ({pct:.1f}%)")
+            if total_ms > 0:
+                parts.append(f"total={total_ms:.3f} ms")
             if parts:
                 prof_len = to_k_str(kernel_profile_length) if kernel_profile_length else "n/a"
                 print(f"[KernelProfile] T={prof_len} | " + ", ".join(parts))
