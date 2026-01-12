@@ -1,6 +1,6 @@
 ---
 name: auto-git-commit
-description: 智能 Git 提交助手。自动读取 git diff 分析变更内容并生成中文 Commit Message；在提交前强制扫描大文件（>10MB），若发现则暂停并询问处理方式，防止仓库膨胀。
+description: 智能 Git 提交助手。自动读取 git diff 分析变更内容并生成中文 Commit Message；在提交前强制扫描大文件（>20MB），若发现则暂停并询问处理方式，防止仓库膨胀。
 ---
 
 # Auto Git Commit Skill
@@ -11,7 +11,7 @@ description: 智能 Git 提交助手。自动读取 git diff 分析变更内容�
 ## 执行步骤
 
 1. **大文件预扫描（安全熔断）**
-   - **操作**: 使用 `find . -type f -not -path '*/.*' -size +10M` (或等效 Python 逻辑) 扫描当前目录下未被 `.gitignore` 排除的大于 10MB 的文件。
+   - **操作**: 使用 `find . -type f -not -path '*/.*' -size +20M` (或等效 Python 逻辑) 扫描当前目录下未被 `.gitignore` 排除的大于 20MB 的文件。
    - **判断逻辑**:
      - **若存在大文件**: 立即停止自动流程，输出文件列表（含路径与大小），并向用户发起询问：
        > "⚠️ 检测到以下大文件（可能为模型权重或数据集），请指示：
@@ -56,5 +56,5 @@ description: 智能 Git 提交助手。自动读取 git diff 分析变更内容�
 ## 约束
 - **自动化优先**: 除非遇到大文件或 Merge 冲突，否则不需请求用户确认，直接生成并提交。
 - **中文强制**: Commit Message 必须使用中文，专业术语（如 Transformer, PyTorch）保留英文。
-- **安全第一**: 严禁在未确认情况下提交 `>10MB` 的二进制文件。
+- **安全第一**: 严禁在未确认情况下提交 `>20MB` 的二进制文件。
 - **信息脱敏**: 生成 Message 时忽略 Diff 中的 API Key 或密码等敏感信息。
