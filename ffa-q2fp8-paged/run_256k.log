@@ -1,38 +1,0 @@
-[Info] Using GPU[0]: NVIDIA GeForce RTX 4090 (48GB)
-
-================================================================================
-Benchmark Configuration
-================================================================================
-  Max length: 256K (262144)
-  Step: 32K (32768)
-  Page size: 128
-  Delta: 5.0
-  Num heads Q/KV: 32/8
-  Head dimension: 128
-  Warmup/Iters: 5/20
-  Dtype: torch.float16
-================================================================================
-
-[Info] Testing 8 lengths: 32K to 256K
-
-================================================================================
-Running Benchmarks
-================================================================================
-
-Benchmarking:   0%|          | 0/8 [00:00<?, ?it/s]Benchmarking:  12%|█▎        | 1/8 [00:05<00:35,  5.13s/it]Benchmarking:  25%|██▌       | 2/8 [00:14<00:45,  7.66s/it]Benchmarking:  38%|███▊      | 3/8 [00:28<00:52, 10.60s/it]Benchmarking:  50%|█████     | 4/8 [00:48<00:56, 14.17s/it]Benchmarking:  62%|██████▎   | 5/8 [01:12<00:53, 17.76s/it]Benchmarking:  75%|███████▌  | 6/8 [01:41<00:42, 21.44s/it]Benchmarking:  88%|████████▊ | 7/8 [02:14<00:25, 25.26s/it]Benchmarking: 100%|██████████| 8/8 [02:51<00:00, 29.05s/it]Benchmarking: 100%|██████████| 8/8 [02:51<00:00, 21.41s/it]
-, Speedup=N/A, Prune=0.0%
-, Speedup=N/A, Prune=0.0%
-, Speedup=N/A, Prune=0.0%
-
-[Info] Saved results to /inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-speedtest/ffa-q2fp8-paged/plot/paged_q2fp8_256k/NVIDIA-GeForce-RTX-4090_48GB/results_max256K_page128_delta5.0.json
-[Info] Saved plot to /inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-speedtest/ffa-q2fp8-paged/plot/paged_q2fp8_256k/NVIDIA-GeForce-RTX-4090_48GB/performance_max256K_page128_delta5.0.png
-
-================================================================================
-Benchmark Summary
-================================================================================
-  Total lengths tested: 8
-  Paged Q2FP8 avg time: 833.164 ms
-  Average prune ratio: 0.00%
-  Peak memory: 2.71 GB
-================================================================================
-
