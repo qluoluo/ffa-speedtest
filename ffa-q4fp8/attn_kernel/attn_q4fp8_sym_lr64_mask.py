@@ -1,11 +1,7 @@
-# 速度优先：对称量化 + 低寄存器 BK=64 + 紧凑 keep 列表。
-# - 对称量化：仅使用 k_scale（无 zero-point），用 QZERO 抵消量化偏置。
-# - K 维度按 BK=64 分块（低寄存器路径），替代完整的 K_PACKED 展开。
-# - Stage1 先算阈值 th_rows，再按 (tb, sb) 计算块内每个 row 的最大值；
-#   若所有 row 都低于阈值则 prune，否则写入 m/l/o，并写出 block_mask (0/1)。
-# - Host 侧对 block_mask 做 cumsum 得到 kept_counts + 写入位置，再用 scatter kernel 填充 kept_indices（无原子操作）。
-# - Stage2 仅遍历 kept_indices[0:n_kept] 合并输出，不需要扫描全 NTBS；列表顺序不保证，但不影响最终归约。
-# CUDAGraph wrapper for Q2FP8 decode kernel (sym + compact + low-reg BK=64).
+# Low-reg BK=64 variant with mask-based keep list (no compact indices).
+# - K dimension processed in BK=64 tiles to reduce live registers.
+# - Stage1 uses mask_buf to mark kept blocks; Stage2 scans all NTBS like baseline.
+# CUDAGraph wrapper for Q4FP8 decode kernel (stage1 low-reg BK=64 + mask).
 from __future__ import annotations
 
 import math
@@ -26,7 +22,7 @@ def attn_compute_threshold_qbits(
     G: tl.constexpr,
     BM_DOT: tl.constexpr = 16,
     T_BS: tl.constexpr = 16,
-    K_BITS: tl.constexpr = 2,
+    K_BITS: tl.constexpr = 4,
     BK: tl.constexpr = 64,
 ):
     # 2D grid = (B, HKV)
@@ -101,20 +97,19 @@ def attn_compute_threshold_qbits(
 
 
 @triton.jit
-def attn_forward_stage1_fused_threshold_qbits_compact(
+def attn_forward_stage1_fused_threshold_qbits_lowreg_mask(
     q, k_q, k_scale, k_res, v,
     m_buf, l_buf, o_buf,
-    mask_buf, stride_mask_b, stride_mask_h, stride_mask_n,
+    mask_buf,
     scale, T, NTB, NTBS, delta,
     th_in,
     B: tl.constexpr, HKV: tl.constexpr, HQ: tl.constexpr, K: tl.constexpr, K_PACKED: tl.constexpr, V: tl.constexpr,
     G: tl.constexpr, BS: tl.constexpr, SBS: tl.constexpr,
     BM_DOT: tl.constexpr = 16,
     T_BS: tl.constexpr = 16,
-    K_BITS: tl.constexpr = 2,
+    K_BITS: tl.constexpr = 4,
     USE_EXT_TH: tl.constexpr = False,
     USE_FP8_RESIDUAL: tl.constexpr = False,
-    MAX_KEPT: tl.constexpr = 256,
     BK: tl.constexpr = 64,
 ):
     # 3D grid = (NTB, B, HKV)
@@ -203,8 +198,6 @@ def attn_forward_stage1_fused_threshold_qbits_compact(
 
         th_rows = tl.maximum(m0, m1) - delta
 
-    mask_base = mask_buf + pid_b * stride_mask_b + pid_hkv * stride_mask_h
-
     for sb in tl.static_range(NSB):
         offs_t_sb = s0 + sb * SBS + tl.arange(0, SBS)
         t_mask_sb = offs_t_sb < T
@@ -243,8 +236,6 @@ def attn_forward_stage1_fused_threshold_qbits_compact(
         prune_blk = n_below == n_valid
 
         tb_sb = pid_tb * NSB + sb
-        keep_flag = tl.where(prune_blk, 0, 1).to(tl.int8)
-        tl.store(mask_base + tb_sb * stride_mask_n, keep_flag)
         v_offs = tl.arange(0, V)
 
         if not prune_blk:
@@ -286,42 +277,13 @@ def attn_forward_stage1_fused_threshold_qbits_compact(
             tl.store(m_ptrs, m_rows, mask=row_mask)
             tl.store(l_ptrs, l_rows, mask=row_mask)
             tl.store(o_ptrs, o_tile, mask=row_mask[:, None])
+            tl.store(mask_buf + pid_b * (HKV * NTBS) + pid_hkv * NTBS + tb_sb, tl.full((), 1, tl.int8))
 
 
 @triton.jit
-def attn_scatter_indices_kernel(
-    mask_ptr, offsets_ptr, indices_ptr,
-    stride_mask_b, stride_mask_h, stride_mask_n,
-    stride_off_b, stride_off_h, stride_off_n,
-    stride_idx_b, stride_idx_h, stride_idx_k,
-    NTBS,
-    MAX_KEPT: tl.constexpr,
-    BLOCK: tl.constexpr = 256,
-):
-    pid_blk = tl.program_id(0)
-    pid_b = tl.program_id(1)
-    pid_hkv = tl.program_id(2)
-
-    block_start = pid_blk * BLOCK
-    offs = block_start + tl.arange(0, BLOCK)
-    mask = offs < NTBS
-
-    mask_ptrs = mask_ptr + pid_b * stride_mask_b + pid_hkv * stride_mask_h + offs * stride_mask_n
-    off_ptrs = offsets_ptr + pid_b * stride_off_b + pid_hkv * stride_off_h + offs * stride_off_n
-    vals_mask = tl.load(mask_ptrs, mask=mask, other=0).to(tl.int32)
-    vals_offs = tl.load(off_ptrs, mask=mask, other=0).to(tl.int32)
-
-    write_pos = tl.where(vals_mask > 0, vals_offs - 1, 0)
-    in_bounds = mask & (vals_mask > 0) & (write_pos < MAX_KEPT)
-    out_ptrs = indices_ptr + pid_b * stride_idx_b + pid_hkv * stride_idx_h + write_pos * stride_idx_k
-    tl.store(out_ptrs, offs, mask=in_bounds)
-
-
-@triton.jit
-def attn_forward_stage2_compact(
-    m_buf, l_buf, o_buf, kept_indices, kept_counts, o, NTBS,
+def attn_forward_stage2_masked(
+    m_buf, l_buf, o_buf, mask_buf, o, NTBS,
     B: tl.constexpr, HKV: tl.constexpr, G: tl.constexpr, HQ: tl.constexpr, V: tl.constexpr,
-    MAX_KEPT: tl.constexpr,
 ):
     pid_b = tl.program_id(0)
     pid_hkv = tl.program_id(1)
@@ -334,25 +296,18 @@ def attn_forward_stage2_compact(
     b_acc = tl.zeros((), tl.float32)
     b_o = tl.zeros([V], tl.float32)
 
-    n_kept = tl.load(kept_counts + pid_b * HKV + pid_hkv)
-    keep_base = kept_indices + pid_b * (HKV * MAX_KEPT) + pid_hkv * MAX_KEPT
-
-    for i in range(MAX_KEPT):
-        mask_i = i < n_kept
-        tb = tl.load(keep_base + i, mask=mask_i, other=0)
-        m_b = tl.load(m_buf + pid_b * (HQ * NTBS) + pid_hq * NTBS + tb, mask=mask_i, other=neg_inf)
-        l_b = tl.load(l_buf + pid_b * (HQ * NTBS) + pid_hq * NTBS + tb, mask=mask_i, other=0.0)
-        o_b = tl.load(
-            o_buf + pid_b * (HQ * NTBS * V) + pid_hq * (NTBS * V) + tb * V + v_offs,
-            mask=mask_i,
-            other=0.0,
-        )
-        new_m = tl.maximum(b_m, m_b)
-        r_prev = tl.exp2(b_m - new_m)
-        r_blk = tl.exp2(m_b - new_m)
-        b_acc = b_acc * r_prev + l_b * r_blk
-        b_o = b_o * r_prev + o_b * r_blk
-        b_m = new_m
+    for tb in range(0, NTBS):
+        keep = tl.load(mask_buf + pid_b * (HKV * NTBS) + pid_hkv * NTBS + tb).to(tl.int1)
+        if keep:
+            m_b = tl.load(m_buf + pid_b * (HQ * NTBS) + pid_hq * NTBS + tb)
+            l_b = tl.load(l_buf + pid_b * (HQ * NTBS) + pid_hq * NTBS + tb)
+            o_b = tl.load(o_buf + pid_b * (HQ * NTBS * V) + pid_hq * (NTBS * V) + tb * V + v_offs)
+            new_m = tl.maximum(b_m, m_b)
+            r_prev = tl.exp2(b_m - new_m)
+            r_blk = tl.exp2(m_b - new_m)
+            b_acc = b_acc * r_prev + l_b * r_blk
+            b_o = b_o * r_prev + o_b * r_blk
+            b_m = new_m
 
     is_empty = b_acc == 0.0
     out_tile = tl.where(is_empty, tl.zeros([V], tl.float32), b_o / b_acc)
@@ -362,7 +317,7 @@ def attn_forward_stage2_compact(
 
 def _normalize_scale(k_scale: torch.Tensor, expect_shape):
     """
-    Ensure scale tensor is contiguous and has shape [B, HKV, K].
+    Ensure scale tensors are contiguous and have shape [B, HKV, K].
     """
     if k_scale.ndim == 4 and k_scale.shape[1] == 1:
         k_scale = k_scale.squeeze(1)
@@ -403,23 +358,13 @@ def _record_kernel_time(kernel_times: dict | None, name: str, fn, device) -> Non
     kernel_times[name] = start.elapsed_time(end)
 
 
-def _resolve_max_kept(max_kept: int | None, ntbs: int, ratio: float) -> int:
-    if max_kept is not None:
-        if max_kept <= 0:
-            raise ValueError(f"max_kept must be positive, got {max_kept}")
-        return int(max_kept)
-    if not (0.0 < ratio <= 1.0):
-        raise ValueError(f"max_kept_ratio must be in (0, 1], got {ratio}")
-    return max(32, min(ntbs, int(math.ceil(ntbs * ratio))))
-
-
 def attn_forward_decode_quantized(
     q: torch.Tensor,           # [B, 1, HQ, K]
     k_q: torch.Tensor,         # [B, T, HKV, ceil(K / (8 / k_bits))], packed quantized ints
     k_scale: torch.Tensor,     # [B, HKV, K] (token dimension removed)
     v: torch.Tensor,           # [B, T, HKV, V]
     k_residual: torch.Tensor | None = None,  # [B, T, HKV, K], fp8 residual
-    k_bits: int = 2,
+    k_bits: int = 4,
     scale: float = None,
     BS: int = 128,
     SBS: int | None = None,
@@ -433,8 +378,6 @@ def attn_forward_decode_quantized(
     num_stages_s1: int | None = None,
     num_warps_s2: int | None = None,
     num_stages_s2: int | None = None,
-    max_kept: int | None = None,
-    max_kept_ratio: float = 0.2,
     return_kernel_timings: bool = False,
     **kwargs,
 ):
@@ -444,11 +387,11 @@ def attn_forward_decode_quantized(
     assert q.is_cuda and k_q.is_cuda and v.is_cuda
     if k_residual is not None and not k_residual.is_cuda:
         raise ValueError("k_residual must be a CUDA tensor when provided")
-    if k_bits != 2:
-        raise ValueError(f"attn_forward_decode_quantized currently supports 2-bit keys, got k_bits={k_bits}")
+    if k_bits != 4:
+        raise ValueError(f"attn_forward_decode_quantized currently supports 4-bit keys, got k_bits={k_bits}")
     assert k_scale.is_cuda, "k_scale must be a CUDA tensor"
     if not k_scale.is_floating_point():
-        raise ValueError("k_scale must be floating point tensor for dequantization")
+        raise ValueError("k_scale must be a floating point tensor for dequantization")
     if k_q.is_floating_point():
         raise ValueError("k_q must contain integer quantized values (e.g., uint8/int8)")
     if k_residual is not None and not k_residual.is_floating_point():
@@ -488,8 +431,6 @@ def attn_forward_decode_quantized(
     NSB = triton.cdiv(BS, SBS)
     NTBS = NTB * NSB
 
-    max_kept = _resolve_max_kept(max_kept, NTBS, max_kept_ratio)
-
     assert q.is_contiguous() and k_q.is_contiguous() and v.is_contiguous()
     if use_fp8_residual and k_residual is None:
         raise ValueError("use_fp8_residual=True requires k_residual")
@@ -506,10 +447,7 @@ def attn_forward_decode_quantized(
     m_buf = torch.empty((B, HQ, NTBS), device=q.device, dtype=torch.float32)
     l_buf = torch.empty((B, HQ, NTBS), device=q.device, dtype=torch.float32)
     o_buf = torch.empty((B, HQ, NTBS, V), device=q.device, dtype=torch.float32)
-    block_mask = torch.empty((B, HKV, NTBS), device=q.device, dtype=torch.int8)
-    block_offsets = torch.empty((B, HKV, NTBS), device=q.device, dtype=torch.int32)
-    kept_indices = torch.empty((B, HKV, max_kept), device=q.device, dtype=torch.int32)
-    kept_counts = torch.empty((B, HKV), device=q.device, dtype=torch.int32)
+    mask_buf = torch.zeros((B, HKV, NTBS), device=q.device, dtype=torch.int8)
 
     if precomputed_threshold is not None:
         assert precomputed_threshold.is_cuda and precomputed_threshold.shape == (B, HQ)
@@ -534,55 +472,30 @@ def attn_forward_decode_quantized(
 
     s1_kwargs = _kernel_kwargs(num_warps_s1, num_stages_s1)
     def _launch_stage1():
-        attn_forward_stage1_fused_threshold_qbits_compact[(NTB, B, HKV)](
+        attn_forward_stage1_fused_threshold_qbits_lowreg_mask[(NTB, B, HKV)](
             q, k_q, k_scale, k_res, v,
             m_buf, l_buf, o_buf,
-            block_mask, block_mask.stride(0), block_mask.stride(1), block_mask.stride(2),
+            mask_buf,
             scale, T, NTB, NTBS, delta,
             threshold_buf,
             B=B, HKV=HKV, HQ=HQ, K=K, K_PACKED=K_packed, V=V, G=G, BS=BS, SBS=SBS,
-            K_BITS=k_bits, USE_EXT_TH=use_ext_th, USE_FP8_RESIDUAL=use_fp8_residual, MAX_KEPT=max_kept,
+            K_BITS=k_bits, USE_EXT_TH=use_ext_th, USE_FP8_RESIDUAL=use_fp8_residual,
             **s1_kwargs,
         )
     _record_kernel_time(kernel_times, "stage1", _launch_stage1, q.device)
 
-    def _launch_scan():
-        torch.cumsum(block_mask, dim=-1, dtype=torch.int32, out=block_offsets)
-    _record_kernel_time(kernel_times, "scan", _launch_scan, q.device)
-
-    if NTBS > 0:
-        kept_counts.copy_(block_offsets.select(-1, NTBS - 1))
-    else:
-        kept_counts.zero_()
-
-    scatter_block = 256
-    def _launch_scatter():
-        grid = (triton.cdiv(NTBS, scatter_block), B, HKV)
-        attn_scatter_indices_kernel[grid](
-            block_mask, block_offsets, kept_indices,
-            block_mask.stride(0), block_mask.stride(1), block_mask.stride(2),
-            block_offsets.stride(0), block_offsets.stride(1), block_offsets.stride(2),
-            kept_indices.stride(0), kept_indices.stride(1), kept_indices.stride(2),
-            NTBS,
-            MAX_KEPT=max_kept,
-            BLOCK=scatter_block,
-        )
-    _record_kernel_time(kernel_times, "scatter", _launch_scatter, q.device)
-
     skip_ratio = None
     if return_skip_ratio:
-        kept = kept_counts.sum()
-        total = float(kept_counts.numel() * NTBS)
+        kept = mask_buf.to(torch.int32).sum()
+        total = float(mask_buf.numel())
         skip_ratio = float((1.0 - (kept.float() / total)).item())
 
     s2_kwargs = _kernel_kwargs(num_warps_s2, num_stages_s2)
     def _launch_stage2():
-        attn_forward_stage2_compact[(B, HKV, G)](
+        attn_forward_stage2_masked[(B, HKV, G)](
             m_buf, l_buf, o_buf,
-            kept_indices, kept_counts,
-            o, NTBS,
+            mask_buf, o, NTBS,
             B=B, HKV=HKV, G=G, HQ=HQ, V=V,
-            MAX_KEPT=max_kept,
             **s2_kwargs,
         )
     _record_kernel_time(kernel_times, "stage2", _launch_stage2, q.device)
@@ -595,8 +508,8 @@ def attn_forward_decode_quantized(
         return o, kernel_times
     return o
 
-class CUDAGraphDecodeRunnerQ2FP8:
-    """Capture and replay the Q2FP8 decode kernel with static buffers.
+class CUDAGraphDecodeRunnerQ4FP8:
+    """Capture and replay the Q4FP8 decode kernel with static buffers.
 
     This wrapper avoids per-step kernel launches by using torch.cuda.CUDAGraph.
     Output is written into a persistent tensor; callers should not assume it
@@ -612,13 +525,11 @@ class CUDAGraphDecodeRunnerQ2FP8:
         *,
         k_residual: Optional[torch.Tensor] = None,
         precomputed_threshold: Optional[torch.Tensor] = None,
-        k_bits: int = 2,
+        k_bits: int = 4,
         scale: Optional[float] = None,
         BS: int = 128,
         SBS: Optional[int] = None,
         delta: float = 5.0,
-        max_kept: int | None = None,
-        max_kept_ratio: float = 0.2,
         use_fp8_residual: bool = True,
         warmup: int = 2,
         num_warps_th: Optional[int] = None,
@@ -652,13 +563,6 @@ class CUDAGraphDecodeRunnerQ2FP8:
             raise ValueError("use_fp8_residual=True requires k_residual")
         if self._use_ext_th and precomputed_threshold is None:
             raise ValueError("precomputed_threshold is required when use_ext_th=True")
-
-        _, T, _, _ = k_q.shape
-        sbs = BS if SBS is None else SBS
-        ntb = triton.cdiv(T, BS)
-        nsb = triton.cdiv(BS, sbs)
-        ntbs = ntb * nsb
-        self._max_kept = _resolve_max_kept(max_kept, ntbs, max_kept_ratio)
 
         self._static_q = torch.empty_like(q, device=self._device)
         self._static_k_q = torch.empty_like(k_q, device=self._device)
@@ -697,7 +601,6 @@ class CUDAGraphDecodeRunnerQ2FP8:
                 BS=self._BS,
                 SBS=self._SBS,
                 delta=self._delta,
-                max_kept=self._max_kept,
                 return_skip_ratio=False,
                 precomputed_threshold=self._static_threshold,
                 use_fp8_residual=self._use_fp8_residual,
@@ -724,7 +627,6 @@ class CUDAGraphDecodeRunnerQ2FP8:
                 BS=self._BS,
                 SBS=self._SBS,
                 delta=self._delta,
-                max_kept=self._max_kept,
                 return_skip_ratio=False,
                 precomputed_threshold=self._static_threshold,
                 use_fp8_residual=self._use_fp8_residual,
@@ -783,7 +685,6 @@ class CUDAGraphDecodeRunnerQ2FP8:
             BS=self._BS,
             SBS=self._SBS,
             delta=self._delta,
-            max_kept=self._max_kept,
             return_skip_ratio=True,
             precomputed_threshold=self._static_threshold,
             use_fp8_residual=self._use_fp8_residual,

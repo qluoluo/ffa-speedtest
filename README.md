@@ -5,7 +5,7 @@
 ## 目录结构
 
 - `attn_analysis`：注意力分析脚本与结果整理。
-- `ffa-fp8`/`ffa-fp4fp8`/`ffa-nf4fp8`/`ffa-nvfp4fp8`：不同量化组合的基准与工具。
+- `ffa-fp8`/`ffa-q4fp8`/`ffa-nf4fp8`/`ffa-nvfp4fp8`：不同量化组合的基准与工具。
 - `ffa-fp8fp8`：fp8 + fp8 residual 相关 kernel、工具与 e2e 基准。
 - `ffa-q2`/`ffa-q2fp8`/`ffa-q2fp8-h100`/`ffa-q2fp8-meanv`：q2 相关变体与基准。
 
