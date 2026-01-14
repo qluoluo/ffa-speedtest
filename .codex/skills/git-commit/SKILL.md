@@ -11,8 +11,8 @@ description: 智能 Git 提交助手。自动读取 git diff 分析变更内容�
 ## 执行步骤
 
 1. **大文件预扫描（安全熔断）**
-   - **操作**: 仅扫描未被 `.gitignore`/`info/exclude`/全局忽略规则排除的 >20MB 文件。使用 `git check-ignore` 过滤后再做大小判断，例如：
-     - `find . -type f -size +20M -print0 | while IFS= read -r -d '' f; do if ! git check-ignore -q "$f"; then printf '%s\n' "$f"; fi; done`
+   - **操作**: 仅扫描已跟踪/未跟踪且未被忽略的文件，按大小过滤 >20MB，并输出“大小 + 路径”，例如：
+     - `git ls-files -z -co --exclude-standard | while IFS= read -r -d '' f; do size=$(stat -c '%s' -- "$f"); if [ "$size" -gt $((20*1024*1024)) ]; then printf '%.1fMB\t%s\n' "$(awk "BEGIN{print $size/1024/1024}")" "$f"; fi; done`
    - **判断逻辑**:
      - **若存在大文件**: 立即停止自动流程，输出文件列表（含路径与大小），并向用户发起询问：
        > "⚠️ 检测到以下大文件（可能为模型权重或数据集），请指示：
