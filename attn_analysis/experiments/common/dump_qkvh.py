@@ -15,7 +15,7 @@ from transformers.models.llama.modeling_llama import apply_rotary_pos_emb
 
 # Quick-edit defaults for running without CLI overrides.
 DEFAULT_ARGS = {
-    "model_path": Path("/remote-home1/zgliu/models/Llama-3_2-3B"),
+    "model_path": Path("/inspire/hdd/global_user/liuzhigeng-253108120105/models/Llama-3.1-8B"),
     "tokenizer_path": None,
     "opencompass_root": None,
     "dataset_type": "longbench",
@@ -34,7 +34,7 @@ THIS_DIR = Path(__file__).resolve().parent
 if str(THIS_DIR) not in sys.path:
     sys.path.insert(0, str(THIS_DIR))
 
-from utils import load_from_babilong_json, load_from_longbench_jsonl
+from utils import load_from_babilong_json, load_from_longbench_jsonl, load_from_needlebench_json
 
 
 def modify_model_attn(model, save_dirpath: Path):
@@ -103,6 +103,8 @@ def resolve_default_dataset_path(
 ):
     if dataset_type == "longbench":
         return local_data_root / "Longbench/data/gov_report.jsonl"
+    elif dataset_type == "needlebench":
+        return local_data_root / "NeedleBench/Length32000Depth42_origin_en_32k.json"
     else:
         opencompass_path = opencompass_root / "data/babilong/data/qa1/16k.json"
         local_path = local_data_root / "babilong/data/qa1/16k.json"
@@ -114,8 +116,10 @@ def resolve_default_dataset_path(
 
 def parse_args():
     ffa_root = Path(__file__).resolve().parents[2]
+    attn_analysis_root = Path(__file__).resolve().parents[1]  # attn_analysis 目录
     default_opencompass_root = ffa_root / "huffkv-opencompass"
-    default_local_data_root = THIS_DIR / "data"
+    default_local_data_root = attn_analysis_root / "data"
+    default_save_root = attn_analysis_root / "result"
     parser = argparse.ArgumentParser(description="Dump q/k/v/h tensors from a model forward pass.")
     parser.add_argument(
         "--model-path",
@@ -137,7 +141,7 @@ def parse_args():
     )
     parser.add_argument(
         "--dataset-type",
-        choices=["longbench", "babilong"],
+        choices=["longbench", "babilong", "needlebench"],
         default=DEFAULT_ARGS["dataset_type"],
         help="Which dataset loader to use.",
     )
@@ -175,7 +179,7 @@ def parse_args():
         )
     args.opencompass_root = opencompass_root
     if args.save_root is None:
-        args.save_root = THIS_DIR / "result"
+        args.save_root = default_save_root
     return args
 
 
@@ -200,6 +204,10 @@ if __name__ == "__main__":
     if args.dataset_type == "longbench":
         raw_text, dataset_name = load_from_longbench_jsonl(
             str(args.dataset_path), args.line_start, args.line_end
+        )
+    elif args.dataset_type == "needlebench":
+        raw_text, dataset_name = load_from_needlebench_json(
+            str(args.dataset_path), args.line_idx
         )
     else:
         raw_text, dataset_name = load_from_babilong_json(

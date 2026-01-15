@@ -95,3 +95,43 @@ def load_from_babilong_json(json_path, line_idx=0):
         raw_text,
         f"babilong_{os.path.splitext(os.path.basename(dataset_path))[0]}_{line_idx}",
     )
+
+
+def load_from_needlebench_json(json_path, sample_idx=0):
+    """
+    从 NeedleBench/NIAH 预测结果 JSON 文件中加载文本。
+
+    JSON 结构:
+    {
+        "0": {"origin_prompt": "...", "prediction": "...", "gold": "..."},
+        "1": {...},
+        ...
+    }
+
+    Args:
+        json_path: JSON 文件路径
+        sample_idx: 要读取的样本索引 (默认 0)
+
+    Returns:
+        (raw_text, dataset_name) 元组
+    """
+    import json
+
+    json_path = os.fspath(json_path)
+    with open(json_path, 'r', encoding='utf-8') as f:
+        data = json.load(f)
+
+    sample_key = str(sample_idx)
+    if sample_key not in data:
+        available_keys = list(data.keys())
+        raise KeyError(f"Sample index {sample_idx} not found. Available: {available_keys}")
+
+    raw_text = data[sample_key]["origin_prompt"]
+
+    # 从文件名提取数据集名称，如 Length32000Depth42_origin_en_32k
+    basename = os.path.splitext(os.path.basename(json_path))[0]
+
+    return (
+        raw_text,
+        f"needlebench_{basename}_{sample_idx}",
+    )

@@ -13,7 +13,7 @@ from typing import Dict
 from tqdm import tqdm
 
 DATA_DIR = Path("/inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-speedtest/attn_analysis/result/Llama-3_2-3B/longbench_gov_report_48_68_256k/layer_data")
-OUTPUT_DIR = Path("/inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-speedtest/attn_analysis/outputs/output_quant_sample_combo")
+OUTPUT_DIR = Path("/inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-speedtest/attn_analysis/experiments/consistency_analysis/outputs/quant_sample_combo")
 OUTPUT_DIR.mkdir(exist_ok=True, parents=True)
 
 

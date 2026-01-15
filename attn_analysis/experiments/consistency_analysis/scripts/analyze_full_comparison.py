@@ -14,7 +14,7 @@ from tqdm import tqdm
 
 # 数据路径配置
 DATA_ROOT = Path("/inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/huffkv-opencompass/opencompass/models/myModel/ffa/attn_analysis/result/Llama-3_2-3B/longbench_gov_report_48_68_256k/layer_data")
-OUTPUT_BASE = Path("/inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-speedtest/attn_analysis/output_full_analysis")
+OUTPUT_BASE = Path("/inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-speedtest/attn_analysis/experiments/consistency_analysis/outputs/full_analysis")
 
 
 def symmetric_int2_quantize_block(k_block: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:

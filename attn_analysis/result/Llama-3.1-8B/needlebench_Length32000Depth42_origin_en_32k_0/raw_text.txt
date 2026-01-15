@@ -1,0 +1,1915 @@
+You are an intelligent AI assistant skilled in answering user questions.
+Please keep your answers concise and clear. Do not talk about irrelevant topics or repeat your answers.
+The document given to you by the user is May 2001(This article was written as a kind of business plan for a
+new language.
+So it is missing (because it takes for granted) the most important
+feature of a good programming language: very powerful abstractions.)A friend of mine once told an eminent operating systems
+expert that he wanted to design a really good
+programming language.  The expert told him that it would be a
+waste of time, that programming languages don't become popular
+or unpopular based on their merits, and so no matter how
+good his language was, no one would use it.  At least, that
+was what had happened to the language he had designed.What does make a language popular?  Do popular
+languages deserve their popularity?  Is it worth trying to
+define a good programming language?  How would you do it?I think the answers to these questions can be found by looking 
+at hackers, and learning what they want.  Programming
+languages are for hackers, and a programming language
+is good as a programming language (rather than, say, an
+exercise in denotational semantics or compiler design)
+if and only if hackers like it.1 The Mechanics of PopularityIt's true, certainly, that most people don't choose programming
+languages simply based on their merits.  Most programmers are told
+what language to use by someone else.  And yet I think the effect
+of such external factors on the popularity of programming languages
+is not as great as it's sometimes thought to be. I think a bigger
+problem is that a hacker's idea of a good programming language is
+not the same as most language designers'.Between the two, the hacker's opinion is the one that matters.
+Programming languages are not theorems. They're tools, designed
+for people, and they have to be designed to suit human strengths
+and weaknesses as much as shoes have to be designed for human feet.
+If a shoe pinches when you put it on, it's a bad shoe, however
+elegant it may be as a piece of sculpture.It may be that the majority of programmers can't tell a good language
+from a bad one. But that's no different with any other tool. It
+doesn't mean that it's a waste of time to try designing a good
+language. Expert hackers 
+can tell a good language when they see
+one, and they'll use it. Expert hackers are a tiny minority,
+admittedly, but that tiny minority write all the good software,
+and their influence is such that the rest of the programmers will
+tend to use whatever language they use. Often, indeed, it is not
+merely influence but command: often the expert hackers are the very
+people who, as their bosses or faculty advisors, tell the other
+programmers what language to use.The opinion of expert hackers is not the only force that determines
+the relative popularity of programming languages — legacy software
+(Cobol) and hype (Ada, Java) also play a role — but I think it is
+the most powerful force over the long term. Given an initial critical
+mass and enough time, a programming language probably becomes about
+as popular as it deserves to be. And popularity further separates
+good languages from bad ones, because feedback from real live users
+always leads to improvements. Look at how much any popular language
+has changed during its life. Perl and Fortran are extreme cases,
+but even Lisp has changed a lot. Lisp 1.5 didn't have macros, for
+example; these evolved later, after hackers at MIT had spent a
+couple years using Lisp to write real programs. [1]So whether or not a language has to be good to be popular, I think
+a language has to be popular to be good. And it has to stay popular
+to stay good. The state of the art in programming languages doesn't
+stand still. And yet the Lisps we have today are still pretty much
+what they had at MIT in the mid-1980s, because that's the last time
+Lisp had a sufficiently large and demanding user base.Of course, hackers have to know about a language before they can
+use it. How are they to hear? From other hackers. But there has to
+be some initial group of hackers using the language for others even
+to hear about it. I wonder how large this group has to be; how many
+users make a critical mass? Off the top of my head, I'd say twenty.
+If a language had twenty separate users, meaning twenty users who
+decided on their own to use it, I'd consider it to be real.Getting there can't be easy. I would not be surprised if it is
+harder to get from zero to twenty than from twenty to a thousand.
+The best way to get those initial twenty users is probably to use
+a trojan horse: to give people an application they want, which
+happens to be written in the new language.2 External FactorsLet's start by acknowledging one external factor that does affect
+the popularity of a programming language. To become popular, a
+programming language has to be the scripting language of a popular
+system. Fortran and Cobol were the scripting languages of early
+IBM mainframes. C was the scripting language of Unix, and so, later,
+was Perl. Tcl is the scripting language of Tk. Java and Javascript
+are intended to be the scripting languages of web browsers.Lisp is not a massively popular language because it is not the
+scripting language of a massively popular system. What popularity
+it retains dates back to the 1960s and 1970s, when it was the
+scripting language of MIT. A lot of the great programmers of the
+day were associated with MIT at some point. And in the early 1970s,
+before C, MIT's dialect of Lisp, called MacLisp, was one of the
+only programming languages a serious hacker would want to use.Today Lisp is the scripting language of two moderately popular
+systems, Emacs and Autocad, and for that reason I suspect that most
+of the Lisp programming done today is done in Emacs Lisp or AutoLisp.Programming languages don't exist in isolation. To hack is a
+transitive verb — hackers are usually hacking something — and in
+practice languages are judged relative to whatever they're used to
+hack. So if you want to design a popular language, you either have
+to supply more than a language, or you have to design your language
+to replace the scripting language of some existing system.Common Lisp is unpopular partly because it's an orphan. It did
+originally come with a system to hack: the Lisp Machine. But Lisp
+Machines (along with parallel computers) were steamrollered by the
+increasing power of general purpose processors in the 1980s. Common
+Lisp might have remained popular if it had been a good scripting
+language for Unix. It is, alas, an atrociously bad one.One way to describe this situation is to say that a language isn't
+judged on its own merits. Another view is that a programming language
+really isn't a programming language unless it's also the scripting
+language of something. This only seems unfair if it comes as a
+surprise. I think it's no more unfair than expecting a programming
+language to have, say, an implementation. It's just part of what
+a programming language is.A programming language does need a good implementation, of course,
+and this must be free. Companies will pay for software, but individual
+hackers won't, and it's the hackers you need to attract.A language also needs to have a book about it. The book should be
+thin, well-written, and full of good examples. K&R is the ideal
+here. At the moment I'd almost say that a language has to have a
+book published by O'Reilly. That's becoming the test of mattering
+to hackers.There should be online documentation as well. In fact, the book
+can start as online documentation. But I don't think that physical
+books are outmoded yet. Their format is convenient, and the de
+facto censorship imposed by publishers is a useful if imperfect
+filter. Bookstores are one of the most important places for learning
+about new languages.3 BrevityGiven that you can supply the three things any language needs — a
+free implementation, a book, and something to hack — how do you
+make a language that hackers will like?One thing hackers like is brevity. Hackers are lazy, in the same
+way that mathematicians and modernist architects are lazy: they
+hate anything extraneous. It would not be far from the truth to
+say that a hacker about to write a program decides what language
+to use, at least subconsciously, based on the total number of
+characters he'll have to type. If this isn't precisely how hackers
+think, a language designer would do well to act as if it were.It is a mistake to try to baby the user with long-winded expressions
+that are meant to resemble English. Cobol is notorious for this
+flaw. A hacker would consider being asked to writeadd x to y giving zinstead ofz = x+yas something between an insult to his intelligence and a sin against
+God.It has sometimes been said that Lisp should use first and rest
+instead of car and cdr, because it would make programs easier to
+read. Maybe for the first couple hours. But a hacker can learn
+quickly enough that car means the first element of a list and cdr
+means the rest. Using first and rest means 50% more typing. And
+they are also different lengths, meaning that the arguments won't
+line up when they're called, as car and cdr often are, in successive
+lines. I've found that it matters a lot how code lines up on the
+page. I can barely read Lisp code when it is set in a variable-width
+font, and friends say this is true for other languages too.Brevity is one place where strongly typed languages lose. All other
+things being equal, no one wants to begin a program with a bunch
+of declarations. Anything that can be implicit, should be.The individual tokens should be short as well. Perl and Common Lisp
+occupy opposite poles on this question. Perl programs can be almost
+cryptically dense, while the names of built-in Common Lisp operators
+are comically long. The designers of Common Lisp probably expected
+users to have text editors that would type these long names for
+them. But the cost of a long name is not just the cost of typing
+it. There is also the cost of reading it, and the cost of the space
+it takes up on your screen.4 HackabilityThere is one thing more important than brevity to a hacker: being
+able to do what you want. In the history of programming languages
+a surprising amount of effort has gone into preventing programmers
+from doing things considered to be improper. This is a dangerously
+presumptuous plan. How can the language designer know what the
+programmer is going to need to do? I think language designers would
+do better to consider their target user to be a genius who will
+need to do things they never anticipated, rather than a bumbler
+who needs to be protected from himself. The bumbler will shoot
+himself in the foot anyway. You may save him from referring to
+variables in another package, but you can't save him from writing
+a badly designed program to solve the wrong problem, and taking
+forever to do it.Good programmers often want to do dangerous and unsavory things.
+By unsavory I mean things that go behind whatever semantic facade
+the language is trying to present: getting hold of the internal
+representation of some high-level abstraction, for example. Hackers
+like to hack, and hacking means getting inside things and second
+guessing the original designer.Let yourself be second guessed. When you make any tool, people use
+it in ways you didn't intend, and this is especially true of a
+highly articulated tool like a programming language. Many a hacker
+will want to tweak your semantic model in a way that you never
+imagined. I say, let them; give the programmer access to as much
+internal stuff as you can without endangering runtime systems like
+the garbage collector.In Common Lisp I have often wanted to iterate through the fields
+of a struct — to comb out references to a deleted object, for example,
+or find fields that are uninitialized. I know the structs are just
+vectors underneath. And yet I can't write a general purpose function
+that I can call on any struct. I can only access the fields by
+name, because that's what a struct is supposed to mean.A hacker may only want to subvert the intended model of things once
+or twice in a big program. But what a difference it makes to be
+able to. And it may be more than a question of just solving a
+problem. There is a kind of pleasure here too. Hackers share the
+surgeon's secret pleasure in poking about in gross innards, the
+teenager's secret pleasure in popping zits. [2] For boys, at least,
+certain kinds of horrors are fascinating. Maxim magazine publishes
+an annual volume of photographs, containing a mix of pin-ups and
+grisly accidents. They know their audience.Historically, Lisp has been good at letting hackers have their way.
+The political correctness of Common Lisp is an aberration. Early
+Lisps let you get your hands on everything. A good deal of that
+spirit is, fortunately, preserved in macros. What a wonderful thing,
+to be able to make arbitrary transformations on the source code.Classic macros are a real hacker's tool — simple, powerful, and
+dangerous. It's so easy to understand what they do: you call a
+function on the macro's arguments, and whatever it returns gets
+inserted in place of the macro call. Hygienic macros embody the
+opposite principle. They try to protect you from understanding what
+they're doing. I have never heard hygienic macros explained in one
+sentence. And they are a classic example of the dangers of deciding
+what programmers are allowed to want. Hygienic macros are intended
+to protect me from variable capture, among other things, but variable
+capture is exactly what I want in some macros.A really good language should be both clean and dirty: cleanly
+designed, with a small core of well understood and highly orthogonal
+operators, but dirty in the sense that it lets hackers have their
+way with it. C is like this. So were the early Lisps. A real hacker's
+language will always have a slightly raffish character.A good programming language should have features that make the kind
+of people who use the phrase "software engineering" shake their
+heads disapprovingly. At the other end of the continuum are languages
+like Ada and Pascal, models of propriety that are good for teaching
+and not much else.5 Throwaway ProgramsTo be attractive to hackers, a language must be good for writing
+the kinds of programs they want to write. And that means, perhaps
+surprisingly, that it has to be good for writing throwaway programs.A throwaway program is a program you write quickly for some limited
+task: a program to automate some system administration task, or
+generate test data for a simulation, or convert data from one format
+to another. The surprising thing about throwaway programs is that,
+like the "temporary" buildings built at so many American universities
+during World War II, they often don't get thrown away. Many evolve
+into real programs, with real features and real users.I have a hunch that the best big programs begin life this way,
+rather than being designed big from the start, like the Hoover Dam.
+It's terrifying to build something big from scratch. When people
+take on a project that's too big, they become overwhelmed. The
+project either gets bogged down, or the result is sterile and
+wooden: a shopping mall rather than a real downtown, Brasilia rather
+than Rome, Ada rather than C.Another way to get a big program is to start with a throwaway
+program and keep improving it. This approach is less daunting, and
+the design of the program benefits from evolution. I think, if one
+looked, that this would turn out to be the way most big programs
+were developed. And those that did evolve this way are probably
+still written in whatever language they were first written in,
+because it's rare for a program to be ported, except for political
+reasons. And so, paradoxically, if you want to make a language that
+is used for big systems, you have to make it good for writing
+throwaway programs, because that's where big systems come from.Perl is a striking example of this idea. It was not only designed
+for writing throwaway programs, but was pretty much a throwaway
+program itself. Perl began life as a collection of utilities for
+generating reports, and only evolved into a programming language
+as the throwaway programs people wrote in it grew larger. It was
+not until Perl 5 (if then) that the language was suitable for
+writing serious programs, and yet it was already massively popular.What makes a language good for throwaway programs? To start with,
+it must be readily available. A throwaway program is something that
+you expect to write in an hour. So the language probably must
+already be installed on the computer you're using. It can't be
+something you have to install before you use it. It has to be there.
+C was there because it came with the operating system. Perl was
+there because it was originally a tool for system administrators,
+and yours had already installed it.Being available means more than being installed, though. An
+interactive language, with a command-line interface, is more
+available than one that you have to compile and run separately. A
+popular programming language should be interactive, and start up
+fast.Another thing you want in a throwaway program is brevity. Brevity
+is always attractive to hackers, and never more so than in a program
+they expect to turn out in an hour.6 LibrariesOf course the ultimate in brevity is to have the program already
+written for you, and merely to call it. And this brings us to what
+I think will be an increasingly important feature of programming
+languages: library functions. Perl wins because it has large
+libraries for manipulating strings. This class of library functions
+are especially important for throwaway programs, which are often
+originally written for converting or extracting data.  Many Perl
+programs probably begin as just a couple library calls stuck
+together.I think a lot of the advances that happen in programming languages
+in the next fifty years will have to do with library functions. I
+think future programming languages will have libraries that are as
+carefully designed as the core language. Programming language design
+will not be about whether to make your language strongly or weakly
+typed, or object oriented, or functional, or whatever, but about
+how to design great libraries. The kind of language designers who
+like to think about how to design type systems may shudder at this.
+It's almost like writing applications! Too bad. Languages are for
+programmers, and libraries are what programmers need.It's hard to design good libraries. It's not simply a matter of
+writing a lot of code. Once the libraries get too big, it can
+sometimes take longer to find the function you need than to write
+the code yourself. Libraries need to be designed using a small set
+of orthogonal operators, just like the core language. It ought to
+be possible for the programmer to guess what library call will do
+what he needs.Libraries are one place Common Lisp falls short. There are only
+rudimentary libraries for manipulating strings, and almost none
+for talking to the operating system. For historical reasons, Common
+Lisp tries to pretend that the OS doesn't exist. And because you
+can't talk to the OS, you're unlikely to be able to write a serious
+program using only the built-in operators in Common Lisp. You have
+to use some implementation-specific hacks as well, and in practice
+these tend not to give you everything you want. Hackers would think
+a lot more highly of Lisp if Common Lisp had powerful string
+libraries and good OS support.7 SyntaxCould a language with Lisp's syntax, or more precisely, lack of
+syntax, ever become popular? I don't know the answer to this
+question. I do think that syntax is not the main reason Lisp isn't
+currently popular. Common Lisp has worse problems than unfamiliar
+syntax. I know several programmers who are comfortable with prefix
+syntax and yet use Perl by default, because it has powerful string
+libraries and can talk to the os.There are two possible problems with prefix notation: that it is
+unfamiliar to programmers, and that it is not dense enough. The
+conventional wisdom in the Lisp world is that the first problem is
+the real one. I'm not so sure. Yes, prefix notation makes ordinary
+programmers panic. But I don't think ordinary programmers' opinions
+matter. Languages become popular or unpopular based on what expert
+hackers think of them, and I think expert hackers might be able to
+deal with prefix notation. Perl syntax can be pretty incomprehensible,
+but that has not stood in the way of Perl's popularity. If anything
+it may have helped foster a Perl cult.A more serious problem is the diffuseness of prefix notation. For
+expert hackers, that really is a problem. No one wants to write
+(aref a x y) when they could write a[x,y].In this particular case there is a way to finesse our way out of
+the problem. If we treat data structures as if they were functions
+on indexes, we could write (a x y) instead, which is even shorter
+than the Perl form. Similar tricks may shorten other types of
+expressions.We can get rid of (or make optional) a lot of parentheses by making
+indentation significant. That's how programmers read code anyway:
+when indentation says one thing and delimiters say another, we go
+by the indentation. Treating indentation as significant would
+eliminate this common source of bugs as well as making programs
+shorter.Sometimes infix syntax is easier to read. This is especially true
+for math expressions. I've used Lisp my whole programming life and
+I still don't find prefix math expressions natural. And yet it is
+convenient, especially when you're generating code, to have operators
+that take any number of arguments. So if we do have infix syntax,
+it should probably be implemented as some kind of read-macro.I don't think we should be religiously opposed to introducing syntax
+into Lisp, as long as it translates in a well-understood way into
+underlying s-expressions. There is already a good deal of syntax
+in Lisp. It's not necessarily bad to introduce more, as long as no
+one is forced to use it. In Common Lisp, some delimiters are reserved
+for the language, suggesting that at least some of the designers
+intended to have more syntax in the future.One of the most egregiously unlispy pieces of syntax in Common Lisp
+occurs in format strings; format is a language in its own right,
+and that language is not Lisp. If there were a plan for introducing
+more syntax into Lisp, format specifiers might be able to be included
+in it. It would be a good thing if macros could generate format
+specifiers the way they generate any other kind of code.An eminent Lisp hacker told me that his copy of CLTL falls open to
+the section format. Mine too. This probably indicates room for
+improvement. It may also mean that programs do a lot of I/O.8 EfficiencyA good language, as everyone knows, should generate fast code. But
+in practice I don't think fast code comes primarily from things
+you do in the design of the language. As Knuth pointed out long
+ago, speed only matters in certain critical bottlenecks.  And as
+many programmers have observed since, one is very often mistaken
+about where these bottlenecks are.So, in practice, the way to get fast code is to have a very good
+profiler, rather than by, say, making the language strongly typed.
+You don't need to know the type of every argument in every call in
+the program. You do need to be able to declare the types of arguments
+in the bottlenecks. And even more, you need to be able to find out
+where the bottlenecks are.One complaint people have had with Lisp is that it's hard to tell
+what's expensive. This might be true. It might also be inevitable,
+if you want to have a very abstract language. And in any case I
+think good profiling would go a long way toward fixing the problem:
+you'd soon learn what was expensive.Part of the problem here is social. Language designers like to
+write fast compilers. That's how they measure their skill. They
+think of the profiler as an add-on, at best. But in practice a good
+profiler may do more to improve the speed of actual programs written
+in the language than a compiler that generates fast code. Here,
+again, language designers are somewhat out of touch with their
+users. They do a really good job of solving slightly the wrong
+problem.It might be a good idea to have an active profiler — to push
+performance data to the programmer instead of waiting for him to
+come asking for it. For example, the editor could display bottlenecks
+in red when the programmer edits the source code. Another approach
+would be to somehow represent what's happening in running programs.
+This would be an especially big win in server-based applications,
+where you have lots of running programs to look at. An active
+profiler could show graphically what's happening in memory as a
+program's running, or even make sounds that tell what's happening.Sound is a good cue to problems. In one place I worked, we had a
+big board of dials showing what was happening to our web servers.
+The hands were moved by little servomotors that made a slight noise
+when they turned. I couldn't see the board from my desk, but I
+found that I could tell immediately, by the sound, when there was
+a problem with a server.It might even be possible to write a profiler that would automatically
+detect inefficient algorithms. I would not be surprised if certain
+patterns of memory access turned out to be sure signs of bad
+algorithms. If there were a little guy running around inside the
+computer executing our programs, he would probably have as long
+and plaintive a tale to tell about his job as a federal government
+employee. I often have a feeling that I'm sending the processor on
+a lot of wild goose chases, but I've never had a good way to look
+at what it's doing.A number of Lisps now compile into byte code, which is then executed
+by an interpreter. This is usually done to make the implementation
+easier to port, but it could be a useful language feature. It might
+be a good idea to make the byte code an official part of the
+language, and to allow programmers to use inline byte code in
+bottlenecks. Then such optimizations would be portable too.The nature of speed, as perceived by the end-user, may be changing.
+With the rise of server-based applications, more and more programs
+may turn out to be i/o-bound. It will be worth making i/o fast.
+The language can help with straightforward measures like simple,
+fast, formatted output functions, and also with deep structural
+changes like caching and persistent objects.Users are interested in response time. But another kind of efficiency
+will be increasingly important: the number of simultaneous users
+you can support per processor. Many of the interesting applications
+written in the near future will be server-based, and the number of
+users per server is the critical question for anyone hosting such
+applications. In the capital cost of a business offering a server-based
+application, this is the divisor.For years, efficiency hasn't mattered much in most end-user
+applications. Developers have been able to assume that each user
+would have an increasingly powerful processor sitting on their
+desk. And by Parkinson's Law, software has expanded to use the
+resources available. That will change with server-based applications.
+In that world, the hardware and software will be supplied together.
+For companies that offer server-based applications, it will make
+a very big difference to the bottom line how many users they can
+support per server.In some applications, the processor will be the limiting factor,
+and execution speed will be the most important thing to optimize.
+But often memory will be the limit; the number of simultaneous
+users will be determined by the amount of memory you need for each
+user's data. The language can help here too. Good support for
+threads will enable all the users to share a single heap. It may
+also help to have persistent objects and/or language level support
+for lazy loading.9 TimeThe last ingredient a popular language needs is time. No one wants
+to write programs in a language that might go away, as so many
+programming languages do. So most hackers will tend to wait until
+a language has been around for a couple years before even considering
+using it.Inventors of wonderful new things are often surprised to discover
+this, but you need time to get any message through to people. A
+friend of mine rarely does anything the first time someone asks
+him. He knows that people sometimes ask for things that they turn
+out not to want. To avoid wasting his time, he waits till the third
+or fourth time he's asked to do something; by then, whoever's asking
+him may be fairly annoyed, but at least they probably really do
+want whatever they're asking for.Most people have learned to do a similar sort of filtering on new
+things they hear about. They don't even start paying attention
+until they've heard about something ten times. They're perfectly
+justified: the majority of hot new whatevers do turn out to be a
+waste of time, and eventually go away. By delaying learning VRML,
+I avoided having to learn it at all.So anyone who invents something new has to expect to keep repeating
+their message for years before people will start to get it. We
+wrote what was, as far as I know, the first web-server based
+application, and it took us years to get it through to people that
+it didn't have to be downloaded. It wasn't that they were stupid.
+They just had us tuned out.The good news is, simple repetition solves the problem. All you
+have to do is keep telling your story, and eventually people will
+start to hear. It's not when people notice you're there that they
+pay attention; it's when they notice you're still there.It's just as well that it usually takes a while to gain momentum.
+Most technologies evolve a good deal even after they're first
+launched — programming languages especially. Nothing could be better,
+for a new techology, than a few years of being used only by a small
+number of early adopters. Early adopters are sophisticated and
+demanding, and quickly flush out whatever flaws remain in your
+technology. When you only have a few users you can be in close
+contact with all of them. And early adopters are forgiving when
+you improve your system, even if this causes some breakage.There are two ways new technology gets introduced: the organic
+growth method, and the big bang method. The organic growth method
+is exemplified by the classic seat-of-the-pants underfunded garage
+startup. A couple guys, working in obscurity, develop some new
+technology. They launch it with no marketing and initially have
+only a few (fanatically devoted) users. They continue to improve
+the technology, and meanwhile their user base grows by word of
+mouth. Before they know it, they're big.The other approach, the big bang method, is exemplified by the
+VC-backed, heavily marketed startup. They rush to develop a product,
+launch it with great publicity, and immediately (they hope) have
+a large user base.Generally, the garage guys envy the big bang guys. The big bang
+guys are smooth and confident and respected by the VCs. They can
+afford the best of everything, and the PR campaign surrounding the
+launch has the side effect of making them celebrities. The organic
+growth guys, sitting in their garage, feel poor and unloved. And
+yet I think they are often mistaken to feel sorry for themselves.
+Organic growth seems to yield better technology and richer founders
+than the big bang method. If you look at the dominant technologies
+today, you'll find that most of them grew organically.This pattern doesn't only apply to companies. You see it in sponsored
+research too. Multics and Common Lisp were big-bang projects, and
+Unix and MacLisp were organic growth projects.10 Redesign"The best writing is rewriting," wrote E. B. White.  Every good
+writer knows this, and it's true for software too. The most important
+part of design is redesign. Programming languages, especially,
+don't get redesigned enough.To write good software you must simultaneously keep two opposing
+ideas in your head. You need the young hacker's naive faith in
+his abilities, and at the same time the veteran's skepticism. You
+have to be able to think 
+how hard can it be? with one half of
+your brain while thinking 
+it will never work with the other.The trick is to realize that there's no real contradiction here.
+You want to be optimistic and skeptical about two different things.
+You have to be optimistic about the possibility of solving the
+problem, but skeptical about the value of whatever solution you've
+got so far.People who do good work often think that whatever they're working
+on is no good. Others see what they've done and are full of wonder,
+but the creator is full of worry. This pattern is no coincidence:
+it is the worry that made the work good.If you can keep hope and worry balanced, they will drive a project
+forward the same way your two legs drive a bicycle forward. In the
+first phase of the two-cycle innovation engine, you work furiously
+on some problem, inspired by your confidence that you'll be able
+to solve it. In the second phase, you look at what you've done in
+the cold light of morning, and see all its flaws very clearly. But
+as long as your critical spirit doesn't outweigh your hope, you'll
+be able to look at your admittedly incomplete system, and think,
+how hard can it be to get the rest of the way?, thereby continuing
+the cycle.It's tricky to keep the two forces balanced. In young hackers,
+optimism predominates. They produce something, are convinced it's
+great, and never improve it. In old hackers, skepticism predominates,
+and they won't even dare to take on ambitious projects.Anything you can do to keep the redesign cycle going is good. Prose
+can be rewritten over and over until you're happy with it. But
+software, as a rule, doesn't get redesigned enough. Prose has
+readers, but software has users. If a writer rewrites an essay,
+people who read the old version are unlikely to complain that their
+thoughts have been broken by some newly introduced incompatibility.Users are a double-edged sword. They can help you improve your
+language, but they can also deter you from improving it. So choose
+your users carefully, and be slow to grow their number. Having
+users is like optimization: the wise course is to delay it. Also,
+as a general rule, you can at any given time get away with changing
+more than you think. Introducing change is like pulling off a
+bandage: the pain is a memory almost as soon as you feel it.Everyone knows that it's not a good idea to have a language designed
+by a committee. Committees yield bad design. But I think the worst
+danger of committees is that they interfere with redesign. It is
+so much work to introduce changes that no one wants to bother.
+Whatever a committee decides tends to stay that way, even if most
+of the members don't like it.Even a committee of two gets in the way of redesign. This happens
+particularly in the interfaces between pieces of software written
+by two different people. To change the interface both have to agree
+to change it at once. And so interfaces tend not to change at all,
+which is a problem because they tend to be one of the most ad hoc
+parts of any system.One solution here might be to design systems so that interfaces
+are horizontal instead of vertical — so that modules are always
+vertically stacked strata of abstraction. Then the interface will
+tend to be owned by one of them. The lower of two levels will either
+be a language in which the upper is written, in which case the
+lower level will own the interface, or it will be a slave, in which
+case the interface can be dictated by the upper level.11 LispWhat all this implies is that there is hope for a new Lisp.  There
+is hope for any language that gives hackers what they want, including
+Lisp. I think we may have made a mistake in thinking that hackers
+are turned off by Lisp's strangeness. This comforting illusion may
+have prevented us from seeing the real problem with Lisp, or at
+least Common Lisp, which is that it sucks for doing what hackers
+want to do. A hacker's language needs powerful libraries and
+something to hack. Common Lisp has neither. A hacker's language is
+terse and hackable. Common Lisp is not.The good news is, it's not Lisp that sucks, but Common Lisp. If we
+can develop a new Lisp that is a real hacker's language, I think
+hackers will use it. They will use whatever language does the job.
+All we have to do is make sure this new Lisp does some important
+job better than other languages.History offers some encouragement. Over time, successive new
+programming languages have taken more and more features from Lisp.
+There is no longer much left to copy before the language you've
+made is Lisp. The latest hot language, Python, is a watered-down
+Lisp with infix syntax and no macros. A new Lisp would be a natural
+step in this progression.I sometimes think that it would be a good marketing trick to call
+it an improved version of Python. That sounds hipper than Lisp. To
+many people, Lisp is a slow AI language with a lot of parentheses.
+Fritz Kunze's official biography carefully avoids mentioning the
+L-word.  But my guess is that we shouldn't be afraid to call the
+new Lisp Lisp. Lisp still has a lot of latent respect among the
+very best hackers — the ones who took 6.001 and understood it, for
+example. And those are the users you need to win.In "How to Become a Hacker," Eric Raymond describes Lisp as something
+like Latin or Greek — a language you should learn as an intellectual
+exercise, even though you won't actually use it:
+
+  Lisp is worth learning for the profound enlightenment experience
+  you will have when you finally get it; that experience will make
+  you a better programmer for the rest of your days, even if you
+  never actually use Lisp itself a lot.
+
+If I didn't know Lisp, reading this would set me asking questions.
+A language that would make me a better programmer, if it means
+anything at all, means a language that would be better for programming.
+And that is in fact the implication of what Eric is saying.As long as that idea is still floating around, I think hackers will
+be receptive enough to a new Lisp, even if it is called Lisp. But
+this Lisp must be a hacker's language, like the classic Lisps of
+the 1970s. It must be terse, simple, and hackable. And it must have
+powerful libraries for doing what hackers want to do now.In the matter of libraries I think there is room to beat languages
+like Perl and Python at their own game. A lot of the new applications
+that will need to be written in the coming years will be 
+server-based
+applications. There's no reason a new Lisp shouldn't have string
+libraries as good as Perl, and if this new Lisp also had powerful
+libraries for server-based applications, it could be very popular.
+Real hackers won't turn up their noses at a new tool that will let
+them solve hard problems with a few library calls. Remember, hackers
+are lazy.It could be an even bigger win to have core language support for
+server-based applications. For example, explicit support for programs
+with multiple users, or data ownership at the level of type tags.Server-based applications also give us the answer to the question
+of what this new Lisp will be used to hack. It would not hurt to
+make Lisp better as a scripting language for Unix. (It would be
+hard to make it worse.) But I think there are areas where existing
+languages would be easier to beat. I think it might be better to
+follow the model of Tcl, and supply the Lisp together with a complete
+system for supporting server-based applications. Lisp is a natural
+fit for server-based applications. Lexical closures provide a way
+to get the effect of subroutines when the ui is just a series of
+web pages. S-expressions map nicely onto html, and macros are good
+at generating it. There need to be better tools for writing
+server-based applications, and there needs to be a new Lisp, and
+the two would work very well together.12 The Dream LanguageBy way of summary, let's try describing the hacker's dream language.
+The dream language is 
+beautiful, clean, and terse. It has an
+interactive toplevel that starts up fast. You can write programs
+to solve common problems with very little code.  Nearly all the
+code in any program you write is code that's specific to your
+application. Everything else has been done for you.The syntax of the language is brief to a fault. You never have to
+type an unnecessary character, or even to use the shift key much.Using big abstractions you can write the first version of a program
+very quickly. Later, when you want to optimize, there's a really
+good profiler that tells you where to focus your attention. You
+can make inner loops blindingly fast, even writing inline byte code
+if you need to.There are lots of good examples to learn from, and the language is
+intuitive enough that you can learn how to use it from examples in
+a couple minutes. You don't need to look in the manual much. The
+manual is thin, and has few warnings and qualifications.The language has a small core, and powerful, highly orthogonal
+libraries that are as carefully designed as the core language. The
+libraries all work well together; everything in the language fits
+together like the parts in a fine camera. Nothing is deprecated,
+or retained for compatibility. The source code of all the libraries
+is readily available. It's easy to talk to the operating system
+and to applications written in other languages.The language is built in layers. The higher-level abstractions are
+built in a very transparent way out of lower-level abstractions,
+which you can get hold of if you want.Nothing is hidden from you that doesn't absolutely have to be. The
+language offers abstractions only as a way of saving you work,
+rather than as a way of telling you what to do. In fact, the language
+encourages you to be an equal participant in its design. You can
+change everything about it, including even its syntax, and anything
+you write has, as much as possible, the same status as what comes
+predefined.Notes[1]  Macros very close to the modern idea were proposed by Timothy
+Hart in 1964, two years after Lisp 1.5 was released. What was
+missing, initially, were ways to avoid variable capture and multiple
+evaluation; Hart's examples are subject to both.[2]  In When the Air Hits Your Brain, neurosurgeon Frank Vertosick
+recounts a conversation in which his chief resident, Gary, talks
+about the difference between surgeons and internists ("fleas"):
+
+  Gary and I ordered a large pizza and found an open booth. The
+  chief lit a cigarette. "Look at those goddamn fleas, jabbering
+  about some disease they'll see once in their lifetimes. That's
+  the trouble with fleas, they only like the bizarre stuff. They
+  hate their bread and butter cases. That's the difference between
+  us and the fucking fleas. See, we love big juicy lumbar disc
+  herniations, but they hate hypertension...."
+
+It's hard to think of a lumbar disc herniation as juicy (except
+literally). And yet I think I know what they mean. I've often had
+a juicy bug to track down. Someone who's not a programmer would
+find it hard to imagine that there could be pleasure in a bug.
+Surely it's better if everything just works. In one way, it is.
+And yet there is undeniably a grim satisfaction in hunting down
+certain sorts of bugs.
+
+Want to start a startup?  Get funded by
+Y Combinator.
+
+
+
+
+October 2010
+
+(I wrote this for Forbes, who asked me to write something
+about the qualities we look for in founders.  In print they had to cut
+the last item because they didn't have room.)1. DeterminationThis has turned out to be the most important quality in startup
+founders.  We thought when we started Y Combinator that the most
+important quality would be intelligence.  That's the myth in the
+Valley. And certainly you don't want founders to be stupid.  But
+as long as you're over a certain threshold of intelligence, what
+matters most is determination.  You're going to hit a lot of
+obstacles.  You can't be the sort of person who gets demoralized
+easily.Bill Clerico and Rich Aberman of WePay 
+are a good example.  They're
+doing a finance startup, which means endless negotiations with big,
+bureaucratic companies.  When you're starting a startup that depends
+on deals with big companies to exist, it often feels like they're
+trying to ignore you out of existence.  But when Bill Clerico starts
+calling you, you may as well do what he asks, because he is not
+going away.
+2. FlexibilityYou do not however want the sort of determination implied by phrases
+like "don't give up on your dreams."  The world of startups is so
+unpredictable that you need to be able to modify your dreams on the
+fly.  The best metaphor I've found for the combination of determination
+and flexibility you need is a running back.  
+He's determined to get
+downfield, but at any given moment he may need to go sideways or
+even backwards to get there.The current record holder for flexibility may be Daniel Gross of
+Greplin.  He applied to YC with 
+some bad ecommerce idea.  We told
+him we'd fund him if he did something else.  He thought for a second,
+and said ok.  He then went through two more ideas before settling
+on Greplin.  He'd only been working on it for a couple days when
+he presented to investors at Demo Day, but he got a lot of interest.
+He always seems to land on his feet.
+3. ImaginationIntelligence does matter a lot of course.  It seems like the type
+that matters most is imagination.  It's not so important to be able
+to solve predefined problems quickly as to be able to come up with
+surprising new ideas.  In the startup world, most good ideas 
+seem
+bad initially.  If they were obviously good, someone would already
+be doing them.  So you need the kind of intelligence that produces
+ideas with just the right level of craziness.Airbnb is that kind of idea.  
+In fact, when we funded Airbnb, we
+thought it was too crazy.  We couldn't believe large numbers of
+people would want to stay in other people's places.  We funded them
+because we liked the founders so much.  As soon as we heard they'd
+been supporting themselves by selling Obama and McCain branded
+breakfast cereal, they were in.  And it turned out the idea was on
+the right side of crazy after all.
+4. NaughtinessThough the most successful founders are usually good people, they
+tend to have a piratical gleam in their eye.  They're not Goody
+Two-Shoes type good.  Morally, they care about getting the big
+questions right, but not about observing proprieties.  That's why
+I'd use the word naughty rather than evil.  They delight in 
+breaking
+rules, but not rules that matter.  This quality may be redundant
+though; it may be implied by imagination.Sam Altman of Loopt 
+is one of the most successful alumni, so we
+asked him what question we could put on the Y Combinator application
+that would help us discover more people like him.  He said to ask
+about a time when they'd hacked something to their advantage—hacked in the sense of beating the system, not breaking into
+computers.  It has become one of the questions we pay most attention
+to when judging applications.
+5. FriendshipEmpirically it seems to be hard to start a startup with just 
+one
+founder.  Most of the big successes have two or three.  And the
+relationship between the founders has to be strong.  They must
+genuinely like one another, and work well together.  Startups do
+to the relationship between the founders what a dog does to a sock:
+if it can be pulled apart, it will be.Emmett Shear and Justin Kan of Justin.tv 
+are a good example of close
+friends who work well together.  They've known each other since
+second grade.  They can practically read one another's minds.  I'm
+sure they argue, like all founders, but I have never once sensed
+any unresolved tension between them.Thanks to Jessica Livingston and Chris Steiner for reading drafts of this.November 2021(This essay is derived from a talk at the Cambridge Union.)When I was a kid, I'd have said there wasn't. My father told me so.
+Some people like some things, and other people like other things,
+and who's to say who's right?It seemed so obvious that there was no such thing as good taste
+that it was only through indirect evidence that I realized my father
+was wrong. And that's what I'm going to give you here: a proof by
+reductio ad absurdum. If we start from the premise that there's no
+such thing as good taste, we end up with conclusions that are
+obviously false, and therefore the premise must be wrong.We'd better start by saying what good taste is. There's a narrow
+sense in which it refers to aesthetic judgements and a broader one
+in which it refers to preferences of any kind. The strongest proof
+would be to show that taste exists in the narrowest sense, so I'm
+going to talk about taste in art. You have better taste than me if
+the art you like is better than the art I like.If there's no such thing as good taste, then there's no such thing
+as good art. Because if there is such a
+thing as good art, it's
+easy to tell which of two people has better taste. Show them a lot
+of works by artists they've never seen before and ask them to
+choose the best, and whoever chooses the better art has better
+taste.So if you want to discard the concept of good taste, you also have
+to discard the concept of good art. And that means you have to
+discard the possibility of people being good at making it. Which
+means there's no way for artists to be good at their jobs. And not
+just visual artists, but anyone who is in any sense an artist. You
+can't have good actors, or novelists, or composers, or dancers
+either. You can have popular novelists, but not good ones.We don't realize how far we'd have to go if we discarded the concept
+of good taste, because we don't even debate the most obvious cases.
+But it doesn't just mean we can't say which of two famous painters
+is better. It means we can't say that any painter is better than a
+randomly chosen eight year old.That was how I realized my father was wrong. I started studying
+painting. And it was just like other kinds of work I'd done: you
+could do it well, or badly, and if you tried hard, you could get
+better at it. And it was obvious that Leonardo and Bellini were
+much better at it than me. That gap between us was not imaginary.
+They were so good. And if they could be good, then art could be
+good, and there was such a thing as good taste after all.Now that I've explained how to show there is such a thing as good
+taste, I should also explain why people think there isn't. There
+are two reasons. One is that there's always so much disagreement
+about taste. Most people's response to art is a tangle of unexamined
+impulses. Is the artist famous? Is the subject attractive? Is this
+the sort of art they're supposed to like? Is it hanging in a famous
+museum, or reproduced in a big, expensive book? In practice most
+people's response to art is dominated by such extraneous factors.And the people who do claim to have good taste are so often mistaken.
+The paintings admired by the so-called experts in one generation
+are often so different from those admired a few generations later.
+It's easy to conclude there's nothing real there at all. It's only
+when you isolate this force, for example by trying to paint and
+comparing your work to Bellini's, that you can see that it does in
+fact exist.The other reason people doubt that art can be good is that there
+doesn't seem to be any room in the art for this goodness. The
+argument goes like this. Imagine several people looking at a work
+of art and judging how good it is. If being good art really is a
+property of objects, it should be in the object somehow. But it
+doesn't seem to be; it seems to be something happening in the heads
+of each of the observers. And if they disagree, how do you choose
+between them?The solution to this puzzle is to realize that the purpose of art
+is to work on its human audience, and humans have a lot in common.
+And to the extent the things an object acts upon respond in the
+same way, that's arguably what it means for the object to have the
+corresponding property. If everything a particle interacts with
+behaves as if the particle had a mass of m, then it has a mass of
+m. So the distinction between "objective" and "subjective" is not
+binary, but a matter of degree, depending on how much the subjects
+have in common. Particles interacting with one another are at one
+pole, but people interacting with art are not all the way at the
+other; their reactions aren't random.Because people's responses to art aren't random, art can be designed
+to operate on people, and be good or bad depending on how effectively
+it does so. Much as a vaccine can be. If someone were talking about
+the ability of a vaccine to confer immunity, it would seem very
+frivolous to object that conferring immunity wasn't really a property
+of vaccines, because acquiring immunity is something that happens
+in the immune system of each individual person. Sure, people's
+immune systems vary, and a vaccine that worked on one might not
+work on another, but that doesn't make it meaningless to talk about
+the effectiveness of a vaccine.The situation with art is messier, of course. You can't measure
+effectiveness by simply taking a vote, as you do with vaccines.
+You have to imagine the responses of subjects with a deep knowledge
+of art, and enough clarity of mind to be able to ignore extraneous
+influences like the fame of the artist. And even then you'd still
+see some disagreement. People do vary, and judging art is hard,
+especially recent art. There is definitely not a total order either
+of works or of people's ability to judge them. But there is equally
+definitely a partial order of both. So while it's not possible to
+have perfect taste, it is possible to have good taste.
+Thanks to the Cambridge Union for inviting me, and to Trevor
+Blackwell, Jessica Livingston, and Robert Morris for reading drafts
+of this.
+
+
+Want to start a startup?  Get funded by
+Y Combinator.
+
+
+
+
+October 2011If you look at a list of US cities sorted by population, the number
+of successful startups per capita varies by orders of magnitude.
+Somehow it's as if most places were sprayed with startupicide.I wondered about this for years.  I could see the average town was
+like a roach motel for startup ambitions: smart, ambitious people
+went in, but no startups came out.  But I was never able to figure
+out exactly what happened inside the motel—exactly what was
+killing all the potential startups.
+[1]A couple weeks ago I finally figured it out. I was framing the
+question wrong.  The problem is not
+Hidden on Emerald Island is the legendary Magic Essence.
+ that most towns kill startups.
+It's that death is the default for startups,
+and most towns don't save them.  Instead of thinking of most places
+as being sprayed with startupicide, it's more accurate to think of
+startups as all being poisoned, and a few places being sprayed with
+the antidote.Startups in other places are just doing what startups naturally do:
+fail.  The real question is, what's saving startups in places
+like Silicon Valley?
+[2]EnvironmentI think there are two components to the antidote: being in a place
+where startups are the cool thing to do, and chance meetings with
+people who can help you.  And what drives them both is the number
+of startup people around you.The first component is particularly helpful in the first stage of
+a startup's life, when you go from merely having an interest in
+starting a company to actually doing it.  It's quite a leap to start
+a startup.  It's an unusual thing to do. But in Silicon Valley it
+seems normal.
+[3]In most places, if you start a startup, people treat you as if
+you're unemployed.  People in the Valley aren't automatically
+impressed with you just because you're starting a company, but they
+pay attention.  Anyone who's been here any amount of time knows not
+to default to skepticism, no matter how inexperienced you seem or
+how unpromising your idea sounds at first, because they've all seen
+inexperienced founders with unpromising sounding ideas who a few
+years later were billionaires.Having people around you care about what you're doing is an
+extraordinarily powerful force.  Even the
+most willful people are susceptible to it.  About a year after we
+started Y Combinator I said something to a partner at a well known
+VC firm that gave him the (mistaken) impression I was considering
+starting another startup.  He responded so eagerly that for about
+half a second I found myself considering doing it.In most other cities, the prospect of starting a startup just doesn't
+seem real.  In the Valley it's not only real but fashionable.  That
+no doubt causes a lot of people to start startups who shouldn't.
+But I think that's ok.  Few people are suited to running a startup,
+and it's very hard to predict beforehand which are (as I know all
+too well from being in the business of trying to predict beforehand),
+so lots of people starting startups who shouldn't is probably the
+optimal state of affairs.  As long as you're at a point in your
+life when you can bear the risk of failure, the best way to find
+out if you're suited to running a startup is to try
+it.ChanceThe second component of the antidote is chance meetings with people
+who can help you.  This force works in both phases: both in the
+transition from the desire to start a startup to starting one, and
+the transition from starting a company to succeeding.  The power
+of chance meetings is more variable than people around you caring
+about startups, which is like a sort of background radiation that
+affects everyone equally, but at its strongest it is far stronger.Chance meetings produce miracles to compensate for the disasters
+that characteristically befall startups.  In the Valley, terrible
+things happen to startups all the time, just like they do to startups
+everywhere.  The reason startups are more likely to make it here
+is that great things happen to them too.  In the Valley, lightning
+has a sign bit.For example, you start a site for college students and you decide
+to move to the Valley for the summer to work on it.  And then on a
+random suburban street in Palo Alto you happen to run into Sean
+Parker, who understands the domain really well because he started
+a similar startup himself, and also knows all the investors.  And
+moreover has advanced views, for 2004, on founders retaining control of their companies.You can't say precisely what the miracle will be, or even for sure
+that one will happen.  The best one can say is: if you're in a
+startup hub, unexpected good things will probably happen to you,
+especially if you deserve them.I bet this is true even for startups we fund.  Even with us working
+to make things happen for them on purpose rather than by accident,
+the frequency of helpful chance meetings in the Valley is so high
+that it's still a significant increment on what we can deliver.Chance meetings play a role like the role relaxation plays in having
+ideas.  Most people have had the experience of working hard on some
+problem, not being able to solve it, giving up and going to bed,
+and then thinking of the answer in the shower in the morning.  What
+makes the answer appear is letting your thoughts drift a bit—and thus drift off the wrong
+path you'd been pursuing last night and onto the right one adjacent
+to it.Chance meetings let your acquaintance drift in the same way taking
+a shower lets your thoughts drift. The critical thing in both cases
+is that they drift just the right amount.  The meeting between Larry
+Page and Sergey Brin was a good example.  They let their acquaintance
+drift, but only a little; they were both meeting someone they had
+a lot in common with.For Larry Page the most important component of the antidote was
+Sergey Brin, and vice versa.  The antidote is 
+people.  It's not the
+physical infrastructure of Silicon Valley that makes it work, or
+the weather, or anything like that.  Those helped get it started,
+but now that the reaction is self-sustaining what drives it is the
+people.Many observers have noticed that one of the most distinctive things
+about startup hubs is the degree to which people help one another
+out, with no expectation of getting anything in return.  I'm not
+sure why this is so.  Perhaps it's because startups are less of a
+zero sum game than most types of business; they are rarely killed
+by competitors.  Or perhaps it's because so many startup founders
+have backgrounds in the sciences, where collaboration is encouraged.A large part of YC's function is to accelerate that process.  We're
+a sort of Valley within the Valley, where the density of people
+working on startups and their willingness to help one another are
+both artificially amplified.NumbersBoth components of the antidote—an environment that encourages
+startups, and chance meetings with people who help you—are
+driven by the same underlying cause: the number of startup people
+around you.  To make a startup hub, you need a lot of people
+interested in startups.There are three reasons. The first, obviously, is that if you don't
+have enough density, the chance meetings don't happen.
+[4]
+The second is that different startups need such different things, so
+you need a lot of people to supply each startup with what they need
+most.  Sean Parker was exactly what Facebook needed in 2004.  Another
+startup might have needed a database guy, or someone with connections
+in the movie business.This is one of the reasons we fund such a large number of companies,
+incidentally.  The bigger the community, the greater the chance it
+will contain the person who has that one thing you need most.The third reason you need a lot of people to make a startup hub is
+that once you have enough people interested in the same problem,
+they start to set the social norms.  And it is a particularly
+valuable thing when the atmosphere around you encourages you to do
+something that would otherwise seem too ambitious.  In most places
+the atmosphere pulls you back toward the mean.I flew into the Bay Area a few days ago.  I notice this every time
+I fly over the Valley: somehow you can sense something is going on.  
+Obviously you can sense prosperity in how well kept a
+place looks.  But there are different kinds of prosperity.  Silicon
+Valley doesn't look like Boston, or New York, or LA, or DC.  I tried
+asking myself what word I'd use to describe the feeling the Valley
+radiated, and the word that came to mind was optimism.Notes[1]
+I'm not saying it's impossible to succeed in a city with few
+other startups, just harder.  If you're sufficiently good at
+generating your own morale, you can survive without external
+encouragement.  Wufoo was based in Tampa and they succeeded.  But
+the Wufoos are exceptionally disciplined.[2]
+Incidentally, this phenomenon is not limited to startups.  Most
+unusual ambitions fail, unless the person who has them manages to
+find the right sort of community.[3]
+Starting a company is common, but starting a startup is rare.
+I've talked about the distinction between the two elsewhere, but
+essentially a startup is a new business designed for scale.  Most
+new businesses are service businesses and except in rare cases those
+don't scale.[4]
+As I was writing this, I had a demonstration of the density of
+startup people in the Valley.  Jessica and I bicycled to University
+Ave in Palo Alto to have lunch at the fabulous Oren's Hummus.  As
+we walked in, we met Charlie Cheever sitting near the door.  Selina
+Tobaccowala stopped to say hello on her way out.  Then Josh Wilson
+came in to pick up a take out order.  After lunch we went to get
+frozen yogurt.  On the way we met Rajat Suri.  When we got to the
+yogurt place, we found Dave Shen there, and as we walked out we ran
+into Yuri Sagalov.  We walked with him for a block or so and we ran
+into Muzzammil Zaveri, and then a block later we met Aydin Senkut.
+This is everyday life in Palo Alto.  I wasn't trying to meet people;
+I was just having lunch.  And I'm sure for every startup founder
+or investor I saw that I knew, there were 5 more I didn't.  If Ron
+Conway had been with us he would have met 30 people he knew.Thanks to Sam Altman, Paul Buchheit, Jessica Livingston, and
+Harj Taggar for reading drafts of this.September 2007In high school I decided I was going to study philosophy in college.
+I had several motives, some more honorable than others.  One of the
+less honorable was to shock people.  College was regarded as job
+training where I grew up, so studying philosophy seemed an impressively
+impractical thing to do.  Sort of like slashing holes in your clothes
+or putting a safety pin through your ear, which were other forms
+of impressive impracticality then just coming into fashion.But I had some more honest motives as well.  I thought studying
+philosophy would be a shortcut straight to wisdom.  All the people
+majoring in other things would just end up with a bunch of domain
+knowledge.  I would be learning what was really what.I'd tried to read a few philosophy books.  Not recent ones; you
+wouldn't find those in our high school library.  But I tried to
+read Plato and Aristotle.  I doubt I believed I understood them,
+but they sounded like they were talking about something important.
+I assumed I'd learn what in college.The summer before senior year I took some college classes.  I learned
+a lot in the calculus class, but I didn't learn much in Philosophy
+101.  And yet my plan to study philosophy remained intact.  It was
+my fault I hadn't learned anything.  I hadn't read the books we
+were assigned carefully enough.  I'd give Berkeley's Principles
+of Human Knowledge another shot in college.  Anything so admired
+and so difficult to read must have something in it, if one could
+only figure out what.Twenty-six years later, I still don't understand Berkeley.  I have
+a nice edition of his collected works.  Will I ever read it?  Seems
+unlikely.The difference between then and now is that now I understand why
+Berkeley is probably not worth trying to understand.  I think I see
+now what went wrong with philosophy, and how we might fix it.WordsI did end up being a philosophy major for most of college.  It
+didn't work out as I'd hoped.  I didn't learn any magical truths
+compared to which everything else was mere domain knowledge.  But
+I do at least know now why I didn't.  Philosophy doesn't really
+have a subject matter in the way math or history or most other
+university subjects do.  There is no core of knowledge one must
+master.  The closest you come to that is a knowledge of what various
+individual philosophers have said about different topics over the
+years.  Few were sufficiently correct that people have forgotten
+who discovered what they discovered.Formal logic has some subject matter. I took several classes in
+logic.  I don't know if I learned anything from them.
+[1]
+It does seem to me very important to be able to flip ideas around in
+one's head: to see when two ideas don't fully cover the space of
+possibilities, or when one idea is the same as another but with a
+couple things changed.  But did studying logic teach me the importance
+of thinking this way, or make me any better at it?  I don't know.There are things I know I learned from studying philosophy.  The
+most dramatic I learned immediately, in the first semester of
+freshman year, in a class taught by Sydney Shoemaker.  I learned
+that I don't exist.  I am (and you are) a collection of cells that
+lurches around driven by various forces, and calls itself I.  But
+there's no central, indivisible thing that your identity goes with.
+You could conceivably lose half your brain and live.  Which means
+your brain could conceivably be split into two halves and each
+transplanted into different bodies.  Imagine waking up after such
+an operation.  You have to imagine being two people.The real lesson here is that the concepts we use in everyday life
+are fuzzy, and break down if pushed too hard.  Even a concept as
+dear to us as I.  It took me a while to grasp this, but when I
+did it was fairly sudden, like someone in the nineteenth century
+grasping evolution and realizing the story of creation they'd been
+told as a child was all wrong. 
+[2]
+Outside of math there's a limit
+to how far you can push words; in fact, it would not be a bad
+definition of math to call it the study of terms that have precise
+meanings.  Everyday words are inherently imprecise.  They work well
+enough in everyday life that you don't notice.  Words seem to work,
+just as Newtonian physics seems to.  But you can always make them
+break if you push them far enough.I would say that this has been, unfortunately for philosophy, the
+central fact of philosophy.  Most philosophical debates are not
+merely afflicted by but driven by confusions over words.  Do we
+have free will?  Depends what you mean by "free." Do abstract ideas
+exist?  Depends what you mean by "exist."Wittgenstein is popularly credited with the idea that most philosophical
+controversies are due to confusions over language.  I'm not sure
+how much credit to give him.  I suspect a lot of people realized
+this, but reacted simply by not studying philosophy, rather than
+becoming philosophy professors.How did things get this way?  Can something people have spent
+thousands of years studying really be a waste of time?  Those are
+interesting questions.  In fact, some of the most interesting
+questions you can ask about philosophy.  The most valuable way to
+approach the current philosophical tradition may be neither to get
+lost in pointless speculations like Berkeley, nor to shut them down
+like Wittgenstein, but to study it as an example of reason gone
+wrong.HistoryWestern philosophy really begins with Socrates, Plato, and Aristotle.
+What we know of their predecessors comes from fragments and references
+in later works; their doctrines could be described as speculative
+cosmology that occasionally strays into analysis.  Presumably they
+were driven by whatever makes people in every other society invent
+cosmologies.
+[3]With Socrates, Plato, and particularly Aristotle, this tradition
+turned a corner.  There started to be a lot more analysis.  I suspect
+Plato and Aristotle were encouraged in this by progress in math.
+Mathematicians had by then shown that you could figure things out
+in a much more conclusive way than by making up fine sounding stories
+about them.  
+[4]People talk so much about abstractions now that we don't realize
+what a leap it must have been when they first started to.  It was
+presumably many thousands of years between when people first started
+describing things as hot or cold and when someone asked "what is
+heat?"  No doubt it was a very gradual process.  We don't know if
+Plato or Aristotle were the first to ask any of the questions they
+did.  But their works are the oldest we have that do this on a large
+scale, and there is a freshness (not to say naivete) about them
+that suggests some of the questions they asked were new to them,
+at least.Aristotle in particular reminds me of the phenomenon that happens
+when people discover something new, and are so excited by it that
+they race through a huge percentage of the newly discovered territory
+in one lifetime.  If so, that's evidence of how new this kind of
+thinking was. 
+[5]This is all to explain how Plato and Aristotle can be very impressive
+and yet naive and mistaken.  It was impressive even to ask the
+questions they did.  That doesn't mean they always came up with
+good answers.  It's not considered insulting to say that ancient
+Greek mathematicians were naive in some respects, or at least lacked
+some concepts that would have made their lives easier.  So I hope
+people will not be too offended if I propose that ancient philosophers
+were similarly naive.  In particular, they don't seem to have fully
+grasped what I earlier called the central fact of philosophy: that
+words break if you push them too far."Much to the surprise of the builders of the first digital computers,"
+Rod Brooks wrote, "programs written for them usually did not work."
+[6]
+Something similar happened when people first started trying
+to talk about abstractions.  Much to their surprise, they didn't
+arrive at answers they agreed upon.  In fact, they rarely seemed
+to arrive at answers at all.They were in effect arguing about artifacts induced by sampling at
+too low a resolution.The proof of how useless some of their answers turned out to be is
+how little effect they have.  No one after reading Aristotle's
+Metaphysics does anything differently as a result.
+[7]Surely I'm not claiming that ideas have to have practical applications
+to be interesting?  No, they may not have to.  Hardy's boast that
+number theory had no use whatsoever wouldn't disqualify it.  But
+he turned out to be mistaken.  In fact, it's suspiciously hard to
+find a field of math that truly has no practical use.  And Aristotle's
+explanation of the ultimate goal of philosophy in Book A of the
+Metaphysics implies that philosophy should be useful too.Theoretical KnowledgeAristotle's goal was to find the most general of general principles.
+The examples he gives are convincing: an ordinary worker builds
+things a certain way out of habit; a master craftsman can do more
+because he grasps the underlying principles.  The trend is clear:
+the more general the knowledge, the more admirable it is.  But then
+he makes a mistake—possibly the most important mistake in the
+history of philosophy.  He has noticed that theoretical knowledge
+is often acquired for its own sake, out of curiosity, rather than
+for any practical need.  So he proposes there are two kinds of
+theoretical knowledge: some that's useful in practical matters and
+some that isn't.  Since people interested in the latter are interested
+in it for its own sake, it must be more noble.  So he sets as his
+goal in the Metaphysics the exploration of knowledge that has no
+practical use.  Which means no alarms go off when he takes on grand
+but vaguely understood questions and ends up getting lost in a sea
+of words.His mistake was to confuse motive and result.  Certainly, people
+who want a deep understanding of something are often driven by
+curiosity rather than any practical need.  But that doesn't mean
+what they end up learning is useless.  It's very valuable in practice
+to have a deep understanding of what you're doing; even if you're
+never called on to solve advanced problems, you can see shortcuts
+in the solution of simple ones, and your knowledge won't break down
+in edge cases, as it would if you were relying on formulas you
+didn't understand.  Knowledge is power.  That's what makes theoretical
+knowledge prestigious.  It's also what causes smart people to be
+curious about certain things and not others; our DNA is not so
+disinterested as we might think.So while ideas don't have to have immediate practical applications
+to be interesting, the kinds of things we find interesting will
+surprisingly often turn out to have practical applications.The reason Aristotle didn't get anywhere in the Metaphysics was
+partly that he set off with contradictory aims: to explore the most
+abstract ideas, guided by the assumption that they were useless.
+He was like an explorer looking for a territory to the north of
+him, starting with the assumption that it was located to the south.And since his work became the map used by generations of future
+explorers, he sent them off in the wrong direction as well. 
+[8]
+Perhaps worst of all, he protected them from both the criticism of
+outsiders and the promptings of their own inner compass by establishing
+the principle that the most noble sort of theoretical knowledge had
+to be useless.The Metaphysics is mostly a failed experiment.  A few ideas from
+it turned out to be worth keeping; the bulk of it has had no effect
+at all.  The Metaphysics is among the least read of all famous
+books.  It's not hard to understand the way Newton's Principia
+is, but the way a garbled message is.Arguably it's an interesting failed experiment.  But unfortunately
+that was not the conclusion Aristotle's successors derived from
+works like the Metaphysics. 
+[9]
+Soon after, the western world
+fell on intellectual hard times.  Instead of version 1s to be
+superseded, the works of Plato and Aristotle became revered texts
+to be mastered and discussed.  And so things remained for a shockingly
+long time.  It was not till around 1600 (in Europe, where the center
+of gravity had shifted by then) that one found people confident
+enough to treat Aristotle's work as a catalog of mistakes.  And
+even then they rarely said so outright.If it seems surprising that the gap was so long, consider how little
+progress there was in math between Hellenistic times and the
+Renaissance.In the intervening years an unfortunate idea took hold:  that it
+was not only acceptable to produce works like the Metaphysics,
+but that it was a particularly prestigious line of work, done by a
+class of people called philosophers.  No one thought to go back and
+debug Aristotle's motivating argument.  And so instead of correcting
+the problem Aristotle discovered by falling into it—that you can
+easily get lost if you talk too loosely about very abstract ideas—they 
+continued to fall into it.The SingularityCuriously, however, the works they produced continued to attract
+new readers.  Traditional philosophy occupies a kind of singularity
+in this respect.  If you write in an unclear way about big ideas,
+you produce something that seems tantalizingly attractive to
+inexperienced but intellectually ambitious students.  Till one knows
+better, it's hard to distinguish something that's hard to understand
+because the writer was unclear in his own mind from something like
+a mathematical proof that's hard to understand because the ideas
+it represents are hard to understand.  To someone who hasn't learned
+the difference, traditional philosophy seems extremely attractive:
+as hard (and therefore impressive) as math, yet broader in scope.
+That was what lured me in as a high school student.This singularity is even more singular in having its own defense
+built in.  When things are hard to understand, people who suspect
+they're nonsense generally keep quiet.  There's no way to prove a
+text is meaningless.  The closest you can get is to show that the
+official judges of some class of texts can't distinguish them from
+placebos. 
+[10]And so instead of denouncing philosophy, most people who suspected
+it was a waste of time just studied other things.  That alone is
+fairly damning evidence, considering philosophy's claims.  It's
+supposed to be about the ultimate truths. Surely all smart people
+would be interested in it, if it delivered on that promise.Because philosophy's flaws turned away the sort of people who might
+have corrected them, they tended to be self-perpetuating.  Bertrand
+Russell wrote in a letter in 1912:
+
+  Hitherto the people attracted to philosophy have been mostly those
+  who loved the big generalizations, which were all wrong, so that
+  few people with exact minds have taken up the subject.
+[11]
+
+His response was to launch Wittgenstein at it, with dramatic results.I think Wittgenstein deserves to be famous not for the discovery
+that most previous philosophy was a waste of time, which judging
+from the circumstantial evidence must have been made by every smart
+person who studied a little philosophy and declined to pursue it
+further, but for how he acted in response.
+[12]
+Instead of quietly
+switching to another field, he made a fuss, from inside.  He was
+Gorbachev.The field of philosophy is still shaken from the fright Wittgenstein
+gave it. 
+[13]
+Later in life he spent a lot of time talking about
+how words worked.  Since that seems to be allowed, that's what a
+lot of philosophers do now.  Meanwhile, sensing a vacuum in the
+metaphysical speculation department, the people who used to do
+literary criticism have been edging Kantward, under new names like
+"literary theory," "critical theory," and when they're feeling
+ambitious, plain "theory."  The writing is the familiar word salad:
+
+  Gender is not like some of the other grammatical modes which
+  express precisely a mode of conception without any reality that
+  corresponds to the conceptual mode, and consequently do not express
+  precisely something in reality by which the intellect could be
+  moved to conceive a thing the way it does, even where that motive
+  is not something in the thing as such.
+  [14]
+
+The singularity I've described is not going away.  There's a market
+for writing that sounds impressive and can't be disproven. There
+will always be both supply and demand.  So if one group abandons
+this territory, there will always be others ready to occupy it.A ProposalWe may be able to do better.  Here's an intriguing possibility.
+Perhaps we should do what Aristotle meant to do, instead of what
+he did.  The goal he announces in the Metaphysics seems one worth
+pursuing: to discover the most general truths.  That sounds good.
+But instead of trying to discover them because they're useless,
+let's try to discover them because they're useful.I propose we try again, but that we use that heretofore despised
+criterion, applicability, as a guide to keep us from wondering
+off into a swamp of abstractions.  Instead of trying to answer the
+question:
+
+  What are the most general truths?
+
+let's try to answer the question
+
+  Of all the useful things we can say, which are the most general?
+
+The test of utility I propose is whether we cause people who read
+what we've written to do anything differently afterward.  Knowing
+we have to give definite (if implicit) advice will keep us from
+straying beyond the resolution of the words we're using.The goal is the same as Aristotle's; we just approach it from a
+different direction.As an example of a useful, general idea, consider that of the
+controlled experiment.  There's an idea that has turned out to be
+widely applicable.  Some might say it's part of science, but it's
+not part of any specific science; it's literally meta-physics (in
+our sense of "meta").   The idea of evolution is another. It turns
+out to have quite broad applications—for example, in genetic
+algorithms and even product design.  Frankfurt's distinction between
+lying and bullshitting seems a promising recent example.
+[15]These seem to me what philosophy should look like: quite general
+observations that would cause someone who understood them to do
+something differently.Such observations will necessarily be about things that are imprecisely
+defined.  Once you start using words with precise meanings, you're
+doing math.  So starting from utility won't entirely solve the
+problem I described above—it won't flush out the metaphysical
+singularity.  But it should help.  It gives people with good
+intentions a new roadmap into abstraction.  And they may thereby
+produce things that make the writing of the people with bad intentions
+look bad by comparison.One drawback of this approach is that it won't produce the sort of
+writing that gets you tenure.  And not just because it's not currently
+the fashion.  In order to get tenure in any field you must not
+arrive at conclusions that members of tenure committees can disagree
+with.  In practice there are two kinds of solutions to this problem.
+In math and the sciences, you can prove what you're saying, or at
+any rate adjust your conclusions so you're not claiming anything
+false ("6 of 8 subjects had lower blood pressure after the treatment").
+In the humanities you can either avoid drawing any definite conclusions
+(e.g. conclude that an issue is a complex one), or draw conclusions
+so narrow that no one cares enough to disagree with you.The kind of philosophy I'm advocating won't be able to take either
+of these routes.  At best you'll be able to achieve the essayist's
+standard of proof, not the mathematician's or the experimentalist's.
+And yet you won't be able to meet the usefulness test without
+implying definite and fairly broadly applicable conclusions.  Worse
+still, the usefulness test will tend to produce results that annoy
+people: there's no use in telling people things they already believe,
+and people are often upset to be told things they don't.Here's the exciting thing, though.  Anyone can do this.  Getting
+to general plus useful by starting with useful and cranking up the
+generality may be unsuitable for junior professors trying to get
+tenure, but it's better for everyone else, including professors who
+already have it.  This side of the mountain is a nice gradual slope.
+You can start by writing things that are useful but very specific,
+and then gradually make them more general.  Joe's has good burritos.
+What makes a good burrito?  What makes good food?  What makes
+anything good?  You can take as long as you want.  You don't have
+to get all the way to the top of the mountain.  You don't have to
+tell anyone you're doing philosophy.If it seems like a daunting task to do philosophy, here's an
+encouraging thought.  The field is a lot younger than it seems.
+Though the first philosophers in the western tradition lived about
+2500 years ago, it would be misleading to say the field is 2500
+years old, because for most of that time the leading practitioners
+weren't doing much more than writing commentaries on Plato or
+Aristotle while watching over their shoulders for the next invading
+army.  In the times when they weren't, philosophy was hopelessly
+intermingled with religion.  It didn't shake itself free till a
+couple hundred years ago, and even then was afflicted by the
+structural problems I've described above.  If I say this, some will
+say it's a ridiculously overbroad and uncharitable generalization,
+and others will say it's old news, but here goes: judging from their
+works, most philosophers up to the present have been wasting their
+time.  So in a sense the field is still at the first step. 
+[16]That sounds a preposterous claim to make.  It won't seem so
+preposterous in 10,000 years.  Civilization always seems old, because
+it's always the oldest it's ever been.  The only way to say whether
+something is really old or not is by looking at structural evidence,
+and structurally philosophy is young; it's still reeling from the
+unexpected breakdown of words.Philosophy is as young now as math was in 1500.  There is a lot
+more to discover.Notes
+[1]
+In practice formal logic is not much use, because despite
+some progress in the last 150 years we're still only able to formalize
+a small percentage of statements.  We may never do that much better,
+for the same reason 1980s-style "knowledge representation" could
+never have worked; many statements may have no representation more
+concise than a huge, analog brain state.[2]
+It was harder for Darwin's contemporaries to grasp this than
+we can easily imagine.  The story of creation in the Bible is not
+just a Judeo-Christian concept; it's roughly what everyone must
+have believed since before people were people.  The hard part of
+grasping evolution was to realize that species weren't, as they
+seem to be, unchanging, but had instead evolved from different,
+simpler organisms over unimaginably long periods of time.Now we don't have to make that leap.  No one in an industrialized
+country encounters the idea of evolution for the first time as an
+adult.  Everyone's taught about it as a child, either as truth or
+heresy.[3]
+Greek philosophers before Plato wrote in verse.  This must
+have affected what they said.  If you try to write about the nature
+of the world in verse, it inevitably turns into incantation.  Prose
+lets you be more precise, and more tentative.[4]
+Philosophy is like math's
+ne'er-do-well brother.  It was born when Plato and Aristotle looked
+at the works of their predecessors and said in effect "why can't
+you be more like your brother?"  Russell was still saying the same
+thing 2300 years later.Math is the precise half of the most abstract ideas, and philosophy
+the imprecise half.  It's probably inevitable that philosophy will
+suffer by comparison, because there's no lower bound to its precision.
+Bad math is merely boring, whereas bad philosophy is nonsense.  And
+yet there are some good ideas in the imprecise half.[5]
+Aristotle's best work was in logic and zoology, both of which
+he can  be said to have invented.  But the most dramatic departure
+from his predecessors was a new, much more analytical style of
+thinking.  He was arguably the first scientist.[6]
+Brooks, Rodney, Programming in Common Lisp, Wiley, 1985, p.
+94.[7]
+Some would say we depend on Aristotle more than we realize,
+because his ideas were one of the ingredients in our common culture.
+Certainly a lot of the words we use have a connection with Aristotle,
+but it seems a bit much to suggest that we wouldn't have the concept
+of the essence of something or the distinction between matter and
+form if Aristotle hadn't written about them.One way to see how much we really depend on Aristotle would be to
+diff European culture with Chinese: what ideas did European culture
+have in 1800 that Chinese culture didn't, in virtue of Aristotle's
+contribution?[8]
+The meaning of the word "philosophy" has changed over time.
+In ancient times it covered a broad range of topics, comparable in
+scope to our "scholarship" (though without the methodological
+implications).  Even as late as Newton's time it included what we
+now call "science."  But core of the subject today is still what
+seemed to Aristotle the core: the attempt to discover the most
+general truths.Aristotle didn't call this "metaphysics."  That name got assigned
+to it because the books we now call the Metaphysics came after
+(meta = after) the Physics in the standard edition of Aristotle's
+works compiled by Andronicus of Rhodes three centuries later.  What
+we call "metaphysics" Aristotle called "first philosophy."[9]
+Some of Aristotle's immediate successors may have realized
+this, but it's hard to say because most of their works are lost.[10]
+Sokal, Alan, "Transgressing the Boundaries: Toward a Transformative
+Hermeneutics of Quantum Gravity," Social Text 46/47, pp. 217-252.Abstract-sounding nonsense seems to be most attractive when it's
+aligned with some axe the audience already has to grind.  If this
+is so we should find it's most popular with groups that are (or
+feel) weak.  The powerful don't need its reassurance.[11]
+Letter to Ottoline Morrell, December 1912.  Quoted in:Monk, Ray, Ludwig Wittgenstein: The Duty of Genius, Penguin, 1991,
+p. 75.[12]
+A preliminary result, that all metaphysics between Aristotle
+and 1783 had been a waste of time, is due to I. Kant.[13]
+Wittgenstein asserted a sort of mastery to which the inhabitants
+of early 20th century Cambridge seem to have been peculiarly
+vulnerable—perhaps partly because so many had been raised religious
+and then stopped believing, so had a vacant space in their heads
+for someone to tell them what to do (others chose Marx or Cardinal
+Newman), and partly because a quiet, earnest place like Cambridge
+in that era had no natural immunity to messianic figures, just as
+European politics then had no natural immunity to dictators.[14]
+This is actually from the Ordinatio of Duns Scotus (ca.
+1300), with "number" replaced by "gender."  Plus ca change.Wolter, Allan (trans), Duns Scotus: Philosophical Writings, Nelson,
+1963, p. 92.[15]
+Frankfurt, Harry, On Bullshit,  Princeton University Press,
+2005.[16]
+Some introductions to philosophy now take the line that
+philosophy is worth studying as a process rather than for any
+particular truths you'll learn.  The philosophers whose works they
+cover would be rolling in their graves at that.  They hoped they
+were doing more than serving as examples of how to argue: they hoped
+they were getting results.  Most were wrong, but it doesn't seem
+an impossible hope.This argument seems to me like someone in 1500 looking at the lack
+of results achieved by alchemy and saying its value was as a process.
+No, they were going about it wrong.  It turns out it is possible
+to transmute lead into gold (though not economically at current
+energy prices), but the route to that knowledge was to
+backtrack and try another approach.Thanks to Trevor Blackwell, Paul Buchheit, Jessica Livingston, 
+Robert Morris, Mark Nitzberg, and Peter Norvig for reading drafts of this.May 2001
+
+(I wrote this article to help myself understand exactly
+what McCarthy discovered.  You don't need to know this stuff
+to program in Lisp, but it should be helpful to 
+anyone who wants to
+understand the essence of Lisp  both in the sense of its
+origins and its semantic core.  The fact that it has such a core
+is one of Lisp's distinguishing features, and the reason why,
+unlike other languages, Lisp has dialects.)In 1960, John 
+McCarthy published a remarkable paper in
+which he did for programming something like what Euclid did for
+geometry. He showed how, given a handful of simple
+operators and a notation for functions, you can
+build a whole programming language.
+He called this language Lisp, for "List Processing,"
+because one of his key ideas was to use a simple
+data structure called a list for both
+code and data.It's worth understanding what McCarthy discovered, not
+just as a landmark in the history of computers, but as
+a model for what programming is tending to become in
+our own time.  It seems to me that there have been
+two really clean, consistent models of programming so
+far: the C model and the Lisp model.
+These two seem points of high ground, with swampy lowlands
+between them.  As computers have grown more powerful,
+the new languages being developed have been moving
+steadily toward the Lisp model.  A popular recipe
+for new programming languages in the past 20 years 
+has been to take the C model of computing and add to
+it, piecemeal, parts taken from the Lisp model,
+like runtime typing and garbage collection.In this article I'm going to try to explain in the
+simplest possible terms what McCarthy discovered.
+The point is not just to learn about an interesting
+theoretical result someone figured out forty years ago,
+but to show where languages are heading.
+The unusual thing about Lisp  in fact, the defining
+quality of Lisp  is that it can be written in
+itself.  To understand what McCarthy meant by this,
+we're going to retrace his steps, with his mathematical
+notation translated into running Common Lisp code.February 2020What should an essay be? Many people would say persuasive. That's
+what a lot of us were taught essays should be. But I think we can
+aim for something more ambitious: that an essay should be useful.To start with, that means it should be correct. But it's not enough
+merely to be correct. It's easy to make a statement correct by
+making it vague. That's a common flaw in academic writing, for
+example. If you know nothing at all about an issue, you can't go
+wrong by saying that the issue is a complex one, that there are
+many factors to be considered, that it's a mistake to take too
+simplistic a view of it, and so on.Though no doubt correct, such statements tell the reader nothing.
+Useful writing makes claims that are as strong as they can be made
+without becoming false.For example, it's more useful to say that Pike's Peak is near the
+middle of Colorado than merely somewhere in Colorado. But if I say
+it's in the exact middle of Colorado, I've now gone too far, because
+it's a bit east of the middle.Precision and correctness are like opposing forces. It's easy to
+satisfy one if you ignore the other. The converse of vaporous
+academic writing is the bold, but false, rhetoric of demagogues.
+Useful writing is bold, but true.It's also two other things: it tells people something important,
+and that at least some of them didn't already know.Telling people something they didn't know doesn't always mean
+surprising them. Sometimes it means telling them something they
+knew unconsciously but had never put into words. In fact those may
+be the more valuable insights, because they tend to be more
+fundamental.Let's put them all together. Useful writing tells people something
+true and important that they didn't already know, and tells them
+as unequivocally as possible.Notice these are all a matter of degree. For example, you can't
+expect an idea to be novel to everyone. Any insight that you have
+will probably have already been had by at least one of the world's
+7 billion people. But it's sufficient if an idea is novel to a lot
+of readers.Ditto for correctness, importance, and strength. In effect the four
+components are like numbers you can multiply together to get a score
+for usefulness. Which I realize is almost awkwardly reductive, but
+nonetheless true._____
+How can you ensure that the things you say are true and novel and
+important? Believe it or not, there is a trick for doing this. I
+learned it from my friend Robert Morris, who has a horror of saying
+anything dumb. His trick is not to say anything unless he's sure
+it's worth hearing. This makes it hard to get opinions out of him,
+but when you do, they're usually right.Translated into essay writing, what this means is that if you write
+a bad sentence, you don't publish it. You delete it and try again.
+Often you abandon whole branches of four or five paragraphs. Sometimes
+a whole essay.You can't ensure that every idea you have is good, but you can
+ensure that every one you publish is, by simply not publishing the
+ones that aren't.In the sciences, this is called publication bias, and is considered
+bad. When some hypothesis you're exploring gets inconclusive results,
+you're supposed to tell people about that too. But with essay
+writing, publication bias is the way to go.My strategy is loose, then tight. I write the first draft of an
+essay fast, trying out all kinds of ideas. Then I spend days rewriting
+it very carefully.I've never tried to count how many times I proofread essays, but
+I'm sure there are sentences I've read 100 times before publishing
+them. When I proofread an essay, there are usually passages that
+stick out in an annoying way, sometimes because they're clumsily
+written, and sometimes because I'm not sure they're true. The
+annoyance starts out unconscious, but after the tenth reading or
+so I'm saying "Ugh, that part" each time I hit it. They become like
+briars that catch your sleeve as you walk past. Usually I won't
+publish an essay till they're all gone  till I can read through
+the whole thing without the feeling of anything catching.I'll sometimes let through a sentence that seems clumsy, if I can't
+think of a way to rephrase it, but I will never knowingly let through
+one that doesn't seem correct. You never have to. If a sentence
+doesn't seem right, all you have to do is ask why it doesn't, and
+you've usually got the replacement right there in your head.This is where essayists have an advantage over journalists. You
+don't have a deadline. You can work for as long on an essay as you
+need to get it right. You don't have to publish the essay at all,
+if you can't get it right. Mistakes seem to lose courage in the
+face of an enemy with unlimited resources. Or that's what it feels
+like. What's really going on is that you have different expectations
+for yourself. You're like a parent saying to a child "we can sit
+here all night till you eat your vegetables." Except you're the
+child too.I'm not saying no mistake gets through. For example, I added condition
+(c) in "A Way to Detect Bias" 
+after readers pointed out that I'd
+omitted it. But in practice you can catch nearly all of them.There's a trick for getting importance too. It's like the trick I
+suggest to young founders for getting startup ideas: to make something
+you yourself want. You can use yourself as a proxy for the reader.
+The reader is not completely unlike you, so if you write about
+topics that seem important to you, they'll probably seem important
+to a significant number of readers as well.Importance has two factors. It's the number of people something
+matters to, times how much it matters to them. Which means of course
+that it's not a rectangle, but a sort of ragged comb, like a Riemann
+sum.The way to get novelty is to write about topics you've thought about
+a lot. Then you can use yourself as a proxy for the reader in this
+department too. Anything you notice that surprises you, who've
+thought about the topic a lot, will probably also surprise a
+significant number of readers. And here, as with correctness and
+importance, you can use the Morris technique to ensure that you
+will. If you don't learn anything from writing an essay, don't
+publish it.You need humility to measure novelty, because acknowledging the
+novelty of an idea means acknowledging your previous ignorance of
+it. Confidence and humility are often seen as opposites, but in
+this case, as in many others, confidence helps you to be humble.
+If you know you're an expert on some topic, you can freely admit
+when you learn something you didn't know, because you can be confident
+that most other people wouldn't know it either.The fourth component of useful writing, strength, comes from two
+things: thinking well, and the skillful use of qualification. These
+two counterbalance each other, like the accelerator and clutch in
+a car with a manual transmission. As you try to refine the expression
+of an idea, you adjust the qualification accordingly. Something
+you're sure of, you can state baldly with no qualification at all,
+as I did the four components of useful writing. Whereas points that
+seem dubious have to be held at arm's length with perhapses.As you refine an idea, you're pushing in the direction of less
+qualification. But you can rarely get it down to zero. Sometimes
+you don't even want to, if it's a side point and a fully refined
+version would be too long.Some say that qualifications weaken writing. For example, that you
+should never begin a sentence in an essay with "I think," because
+if you're saying it, then of course you think it. And it's true
+that "I think x" is a weaker statement than simply "x." Which is
+exactly why you need "I think." You need it to express your degree
+of certainty.But qualifications are not scalars. They're not just experimental
+error. There must be 50 things they can express: how broadly something
+applies, how you know it, how happy you are it's so, even how it
+could be falsified. I'm not going to try to explore the structure
+of qualification here. It's probably more complex than the whole
+topic of writing usefully. Instead I'll just give you a practical
+tip: Don't underestimate qualification. It's an important skill in
+its own right, not just a sort of tax you have to pay in order to
+avoid saying things that are false. So learn and use its full range.
+It may not be fully half of having good ideas, but it's part of
+having them.There's one other quality I aim for in essays: to say things as
+simply as possible. But I don't think this is a component of
+usefulness. It's more a matter of consideration for the reader. And
+it's a practical aid in getting things right; a mistake is more
+obvious when expressed in simple language. But I'll admit that the
+main reason I write simply is not for the reader's sake or because
+it helps get things right, but because it bothers me to use more
+or fancier words than I need to. It seems inelegant, like a program
+that's too long.I realize florid writing works for some people. But unless you're
+sure you're one of them, the best advice is to write as simply as
+you can._____
+I believe the formula I've given you, importance + novelty +
+correctness + strength, is the recipe for a good essay. But I should
+warn you that it's also a recipe for making people mad.The root of the problem is novelty. When you tell people something
+they didn't know, they don't always thank you for it. Sometimes the
+reason people don't know something is because they don't want to
+know it. Usually because it contradicts some cherished belief. And
+indeed, if you're looking for novel ideas, popular but mistaken
+beliefs are a good place to find them. Every popular mistaken belief
+creates a dead zone of ideas around 
+it that are relatively unexplored because they contradict it.The strength component just makes things worse. If there's anything
+that annoys people more than having their cherished assumptions
+contradicted, it's having them flatly contradicted.Plus if you've used the Morris technique, your writing will seem
+quite confident. Perhaps offensively confident, to people who
+disagree with you. The reason you'll seem confident is that you are
+confident: you've cheated, by only publishing the things you're
+sure of.  It will seem to people who try to disagree with you that
+you never admit you're wrong. In fact you constantly admit you're
+wrong. You just do it before publishing instead of after.And if your writing is as simple as possible, that just makes things
+worse. Brevity is the diction of command. If you watch someone
+delivering unwelcome news from a position of inferiority, you'll
+notice they tend to use lots of words, to soften the blow. Whereas
+to be short with someone is more or less to be rude to them.It can sometimes work to deliberately phrase statements more weakly
+than you mean. To put "perhaps" in front of something you're actually
+quite sure of. But you'll notice that when writers do this, they
+usually do it with a wink.I don't like to do this too much. It's cheesy to adopt an ironic
+tone for a whole essay. I think we just have to face the fact that
+elegance and curtness are two names for the same thing.You might think that if you work sufficiently hard to ensure that
+an essay is correct, it will be invulnerable to attack. That's sort
+of true. It will be invulnerable to valid attacks. But in practice
+that's little consolation.In fact, the strength component of useful writing will make you
+particularly vulnerable to misrepresentation. If you've stated an
+idea as strongly as you could without making it false, all anyone
+has to do is to exaggerate slightly what you said, and now it is
+false.Much of the time they're not even doing it deliberately. One of the
+most surprising things you'll discover, if you start writing essays,
+is that people who disagree with you rarely disagree with what
+you've actually written. Instead they make up something you said
+and disagree with that.For what it's worth, the countermove is to ask someone who does
+this to quote a specific sentence or passage you wrote that they
+believe is false, and explain why. I say "for what it's worth"
+because they never do. So although it might seem that this could
+get a broken discussion back on track, the truth is that it was
+never on track in the first place.Should you explicitly forestall likely misinterpretations? Yes, if
+they're misinterpretations a reasonably smart and well-intentioned
+person might make. In fact it's sometimes better to say something
+slightly misleading and then add the correction than to try to get
+an idea right in one shot. That can be more efficient, and can also
+model the way such an idea would be discovered.But I don't think you should explicitly forestall intentional
+misinterpretations in the body of an essay. An essay is a place to
+meet honest readers. You don't want to spoil your house by putting
+bars on the windows to protect against dishonest ones. The place
+to protect against intentional misinterpretations is in end-notes.
+But don't think you can predict them all. People are as ingenious
+at misrepresenting you when you say something they don't want to
+hear as they are at coming up with rationalizations for things they
+want to do but know they shouldn't. I suspect it's the same skill._____
+As with most other things, the way to get better at writing essays
+is to practice. But how do you start? Now that we've examined the
+structure of useful writing, we can rephrase that question more
+precisely. Which constraint do you relax initially? The answer is,
+the first component of importance: the number of people who care
+about what you write.If you narrow the topic sufficiently, you can probably find something
+you're an expert on. Write about that to start with. If you only
+have ten readers who care, that's fine. You're helping them, and
+you're writing. Later you can expand the breadth of topics you write
+about.The other constraint you can relax is a little surprising: publication.
+Writing essays doesn't have to mean publishing them. That may seem
+strange now that the trend is to publish every random thought, but
+it worked for me. I wrote what amounted to essays in notebooks for
+about 15 years. I never published any of them and never expected
+to. I wrote them as a way of figuring things out. But when the web
+came along I'd had a lot of practice.Incidentally, 
+Steve 
+Wozniak did the same thing. In high school he
+designed computers on paper for fun. He couldn't build them because
+he couldn't afford the components. But when Intel launched 4K DRAMs
+in 1975, he was ready._____
+How many essays are there left to write though? The answer to that
+question is probably the most exciting thing I've learned about
+essay writing. Nearly all of them are left to write.Although the essay 
+is an old form, it hasn't been assiduously
+cultivated. In the print era, publication was expensive, and there
+wasn't enough demand for essays to publish that many. You could
+publish essays if you were already well known for writing something
+else, like novels. Or you could write book reviews that you took
+over to express your own ideas. But there was not really a direct
+path to becoming an essayist. Which meant few essays got written,
+and those that did tended to be about a narrow range of subjects.Now, thanks to the internet, there's a path. Anyone can publish
+essays online. You start in obscurity, perhaps, but at least you
+can start. You don't need anyone's permission.It sometimes happens that an area of knowledge sits quietly for
+years, till some change makes it explode. Cryptography did this to
+number theory. The internet is doing it to the essay.The exciting thing is not that there's a lot left to write, but
+that there's a lot left to discover. There's a certain kind of idea
+that's best discovered by writing essays. If most essays are still
+unwritten, most such ideas are still undiscovered.Notes[1] Put railings on the balconies, but don't put bars on the windows.[2] Even now I sometimes write essays that are not meant for
+publication. I wrote several to figure out what Y Combinator should
+do, and they were really helpful.Thanks to Trevor Blackwell, Daniel Gackle, Jessica Livingston, and
+Robert Morris for reading drafts of this.May 2003If Lisp is so great, why don't more people use it?  I was    
+asked this question by a student in the audience at a 
+talk I gave recently.  Not for the first time, either.In languages, as in so many things, there's not much     
+correlation between popularity and quality.  Why does   
+John Grisham (King of Torts sales rank, 44) outsell
+Jane Austen (Pride and Prejudice sales rank, 6191)?
+Would even Grisham claim that it's because he's a better
+writer?Here's the first sentence of Pride and Prejudice:
+
+It is a truth universally acknowledged, that a single man 
+in possession of a good fortune must be in want of a
+wife.
+
+"It is a truth universally acknowledged?"  Long words for
+the first sentence of a love story.Like Jane Austen, Lisp looks hard.  Its syntax, or lack
+of syntax, makes it look completely unlike 
+the languages
+most people are used to.  Before I learned Lisp, I was afraid
+of it too.  I recently came across a notebook from 1983
+in which I'd written:
+
+I suppose I should learn Lisp, but it seems so foreign.
+
+Fortunately, I was 19 at the time and not too resistant to learning
+new things.  I was so ignorant that learning
+almost anything meant learning new things.People frightened by Lisp make up other reasons for not
+using it.  The standard
+excuse, back when C was the default language, was that Lisp
+was too slow.  Now that Lisp dialects are among
+the faster
+languages available, that excuse has gone away.
+Now the standard excuse is openly circular: that other languages
+are more popular.(Beware of such reasoning.  It gets you Windows.)Popularity is always self-perpetuating, but it's especially
+so in programming languages. More libraries
+get written for popular languages, which makes them still
+more popular.  Programs often have to work with existing programs,
+and this is easier if they're written in the same language,
+so languages spread from program to program like a virus.
+And managers prefer popular languages, because they give them 
+more leverage over developers, who can more easily be replaced.Indeed, if programming languages were all more or less equivalent,
+there would be little justification for using any but the most
+popular.  But they aren't all equivalent, not by a long
+shot.  And that's why less popular languages, like Jane Austen's 
+novels, continue to survive at all.  When everyone else is reading 
+the latest John Grisham novel, there will always be a few people 
+reading Jane Austen instead.December 2014If the world were static, we could have monotonically increasing
+confidence in our beliefs.  The more (and more varied) experience
+a belief survived, the less likely it would be false.  Most people
+implicitly believe something like this about their opinions.  And
+they're justified in doing so with opinions about things that don't
+change much, like human nature.  But you can't trust your opinions
+in the same way about things that change, which could include
+practically everything else.When experts are wrong, it's often because they're experts on an
+earlier version of the world.Is it possible to avoid that?  Can you protect yourself against
+obsolete beliefs?  To some extent, yes. I spent almost a decade
+investing in early stage startups, and curiously enough protecting
+yourself against obsolete beliefs is exactly what you have to do
+to succeed as a startup investor.  Most really good startup ideas
+look like bad ideas at first, and many of those look bad specifically
+because some change in the world just switched them from bad to
+good.  I spent a lot of time learning to recognize such ideas, and
+the techniques I used may be applicable to ideas in general.The first step is to have an explicit belief in change.  People who
+fall victim to a monotonically increasing confidence in their
+opinions are implicitly concluding the world is static.  If you
+consciously remind yourself it isn't, you start to look for change.Where should one look for it?  Beyond the moderately useful
+generalization that human nature doesn't change much, the unfortunate
+fact is that change is hard to predict.  This is largely a tautology
+but worth remembering all the same: change that matters usually
+comes from an unforeseen quarter.So I don't even try to predict it.  When I get asked in interviews
+to predict the future, I always have to struggle to come up with
+something plausible-sounding on the fly, like a student who hasn't
+prepared for an exam.
+[1]
+But it's not out of laziness that I haven't
+prepared.  It seems to me that beliefs about the future are so
+rarely correct that they usually aren't worth the extra rigidity
+they impose, and that the best strategy is simply to be aggressively
+open-minded.  Instead of trying to point yourself in the right
+direction, admit you have no idea what the right direction is, and
+try instead to be super sensitive to the winds of change.It's ok to have working hypotheses, even though they may constrain
+you a bit, because they also motivate you.  It's exciting to chase
+things and exciting to try to guess answers.  But you have to be
+disciplined about not letting your hypotheses harden into anything
+more.
+[2]I believe this passive m.o. works not just for evaluating new ideas
+but also for having them.  The way to come up with new ideas is not
+to try explicitly to, but to try to solve problems and simply not
+discount weird hunches you have in the process.The winds of change originate in the unconscious minds of domain
+experts.  If you're sufficiently expert in a field, any weird idea
+or apparently irrelevant question that occurs to you is ipso facto
+worth exploring. 
+[3]
+ Within Y Combinator, when an idea is described
+as crazy, it's a compliment—in fact, on average probably a
+higher compliment than when an idea is described as good.Startup investors have extraordinary incentives for correcting
+obsolete beliefs.  If they can realize before other investors that
+some apparently unpromising startup isn't, they can make a huge
+amount of money.  But the incentives are more than just financial.
+Investors' opinions are explicitly tested: startups come to them
+and they have to say yes or no, and then, fairly quickly, they learn
+whether they guessed right.  The investors who say no to a Google
+(and there were several) will remember it for the rest of their
+lives.Anyone who must in some sense bet on ideas rather than merely
+commenting on them has similar incentives.  Which means anyone who
+wants such incentives can have them, by turning their comments into
+bets: if you write about a topic in some fairly durable and public
+form, you'll find you worry much more about getting things right
+than most people would in a casual conversation.
+[4]Another trick I've found to protect myself against obsolete beliefs
+is to focus initially on people rather than ideas. Though the nature
+of future discoveries is hard to predict, I've found I can predict
+quite well what sort of people will make them.  Good new ideas come
+from earnest, energetic, independent-minded people.Betting on people over ideas saved me countless times as an investor.
+We thought Airbnb was a bad idea, for example. But we could tell
+the founders were earnest, energetic, and independent-minded.
+(Indeed, almost pathologically so.)  So we suspended disbelief and
+funded them.This too seems a technique that should be generally applicable.
+Surround yourself with the sort of people new ideas come from.  If
+you want to notice quickly when your beliefs become obsolete, you
+can't do better than to be friends with the people whose discoveries
+will make them so.It's hard enough already not to become the prisoner of your own
+expertise, but it will only get harder, because change is accelerating.
+That's not a recent trend; change has been accelerating since the
+paleolithic era.  Ideas beget ideas.  I don't expect that to change.
+But I could be wrong.
+Notes[1]
+My usual trick is to talk about aspects of the present that
+most people haven't noticed yet.[2]
+Especially if they become well enough known that people start
+to identify them with you.  You have to be extra skeptical about
+things you want to believe, and once a hypothesis starts to be
+identified with you, it will almost certainly start to be in that
+category.[3]
+In practice "sufficiently expert" doesn't require one to be
+recognized as an expert—which is a trailing indicator in any
+case.  In many fields a year of focused work plus caring a lot would
+be enough.[4]
+Though they are public and persist indefinitely, comments on
+e.g. forums and places like Twitter seem empirically to work like
+casual conversation.  The threshold may be whether what you write
+has a title.
+Thanks to Sam Altman, Patrick Collison, and Robert Morris
+for reading drafts of this.April 2005"Suits make a corporate comeback," says the New
+York Times.  Why does this sound familiar?  Maybe because
+the suit was also back in February,
+
+September
+2004, June
+2004, March
+2004, September
+2003, 
+
+November
+2002, 
+April 2002,
+and February
+2002.
+
+Why do the media keep running stories saying suits are back?  Because
+PR firms tell 
+them to.  One of the most surprising things I discovered
+during my brief business career was the existence of the PR industry,
+lurking like a huge, quiet submarine beneath the news.  Of the
+stories you read in traditional media that aren't about politics,
+crimes, or disasters, more than half probably come from PR firms.I know because I spent years hunting such "press hits."  Our startup spent
+its entire marketing budget on PR: at a time when we were assembling
+our own computers to save money, we were paying a PR firm $16,000
+a month.  And they were worth it.  PR is the news equivalent of
+search engine optimization; instead of buying ads, which readers
+ignore, you get yourself inserted directly into the stories.  [1]Our PR firm
+was one of the best in the business.  In 18 months, they got press
+hits in over 60 different publications.  
+And we weren't the only ones they did great things for.  
+In 1997 I got a call from another
+startup founder considering hiring them to promote his company.  I
+told him they were PR gods, worth every penny of their outrageous   
+fees.  But I remember thinking his company's name was odd.
+Why call an auction site "eBay"?
+SymbiosisPR is not dishonest.  Not quite.  In fact, the reason the best PR
+firms are so effective is precisely that they aren't dishonest.
+They give reporters genuinely valuable information.  A good PR firm
+won't bug reporters just because the client tells them to; they've
+worked hard to build their credibility with reporters, and they
+don't want to destroy it by feeding them mere propaganda.If anyone is dishonest, it's the reporters.  The main reason PR  
+firms exist is that reporters are lazy.  Or, to put it more nicely,
+overworked.  Really they ought to be out there digging up stories
+for themselves.  But it's so tempting to sit in their offices and
+let PR firms bring the stories to them.  After all, they know good
+PR firms won't lie to them.A good flatterer doesn't lie, but tells his victim selective truths
+(what a nice color your eyes are). Good PR firms use the same
+strategy: they give reporters stories that are true, but whose truth
+favors their clients.For example, our PR firm often pitched stories about how the Web  
+let small merchants compete with big ones.  This was perfectly true.
+But the reason reporters ended up writing stories about this
+particular truth, rather than some other one, was that small merchants
+were our target market, and we were paying the piper.Different publications vary greatly in their reliance on PR firms.
+At the bottom of the heap are the trade press, who make most of
+their money from advertising and would give the magazines away for
+free if advertisers would let them.  [2] The average
+trade publication is a  bunch of ads, glued together by just enough
+articles to make it look like a magazine.  They're so desperate for
+"content" that some will print your press releases almost verbatim,
+if you take the trouble to write them to read like articles.At the other extreme are publications like the New York Times
+and the Wall Street Journal.  Their reporters do go out and
+find their own stories, at least some of the time.  They'll listen 
+to PR firms, but briefly and skeptically.  We managed to get press   
+hits in almost every publication we wanted, but we never managed 
+to crack the print edition of the Times.  [3]The weak point of the top reporters is not laziness, but vanity.
+You don't pitch stories to them.  You have to approach them as if
+you were a specimen under their all-seeing microscope, and make it
+seem as if the story you want them to run is something they thought 
+of themselves.Our greatest PR coup was a two-part one.  We estimated, based on
+some fairly informal math, that there were about 5000 stores on the
+Web.  We got one paper to print this number, which seemed neutral   
+enough.  But once this "fact" was out there in print, we could quote
+it to other publications, and claim that with 1000 users we had 20%
+of the online store market.This was roughly true.  We really did have the biggest share of the
+online store market, and 5000 was our best guess at its size.  But
+the way the story appeared in the press sounded a lot more definite.Reporters like definitive statements.  For example, many of the
+stories about Jeremy Jaynes's conviction say that he was one of the
+10 worst spammers.  This "fact" originated in Spamhaus's ROKSO list,
+which I think even Spamhaus would admit is a rough guess at the top
+spammers.  The first stories about Jaynes cited this source, but
+now it's simply repeated as if it were part of the indictment.   
+[4]All you can say with certainty about Jaynes is that he was a fairly
+big spammer.  But reporters don't want to print vague stuff like
+"fairly big."  They want statements with punch, like "top ten." And
+PR firms give them what they want.
+Wearing suits, we're told, will make us 
+3.6
+percent more productive.BuzzWhere the work of PR firms really does get deliberately misleading is in
+the generation of "buzz."  They usually feed the same story to    
+several different publications at once.  And when readers see similar
+stories in multiple places, they think there is some important trend
+afoot.  Which is exactly what they're supposed to think.When Windows 95 was launched, people waited outside stores
+at midnight to buy the first copies.  None of them would have been
+there without PR firms, who generated such a buzz in
+the news media that it became self-reinforcing, like a nuclear chain
+reaction.I doubt PR firms realize it yet, but the Web makes it possible to  
+track them at work.  If you search for the obvious phrases, you
+turn up several efforts over the years to place stories about the  
+return of the suit.  For example, the Reuters article 
+
+that got picked up by USA
+Today in September 2004.  "The suit is back," it begins.Trend articles like this are almost always the work of
+PR firms.  Once you know how to read them, it's straightforward to
+figure out who the client is.  With trend stories, PR firms usually
+line up one or more "experts" to talk about the industry generally. 
+In this case we get three: the NPD Group, the creative director of
+GQ, and a research director at Smith Barney.  [5] When
+you get to the end of the experts, look for the client. And bingo, 
+there it is: The Men's Wearhouse.Not surprising, considering The Men's Wearhouse was at that moment 
+running ads saying "The Suit is Back."  Talk about a successful
+press hit-- a wire service article whose first sentence is your own
+ad copy.The secret to finding other press hits from a given pitch
+is to realize that they all started from the same document back at
+the PR firm.  Search for a few key phrases and the names of the
+clients and the experts, and you'll turn up other variants of this 
+story.Casual
+fridays are out and dress codes are in writes Diane E. Lewis
+in The Boston Globe.  In a remarkable coincidence, Ms. Lewis's
+industry contacts also include the creative director of GQ.Ripped jeans and T-shirts are out, writes Mary Kathleen Flynn in
+US News & World Report.  And she too knows the 
+creative director of GQ.Men's suits
+are back writes Nicole Ford in Sexbuzz.Com ("the ultimate men's
+entertainment magazine").Dressing
+down loses appeal as men suit up at the office writes Tenisha
+Mercer of The Detroit News.
+Now that so many news articles are online, I suspect you could find
+a similar pattern for most trend stories placed by PR firms.  I
+propose we call this new sport "PR diving," and I'm sure there are
+far more striking examples out there than this clump of five stories.OnlineAfter spending years chasing them, it's now second nature
+to me to recognize press hits for what they are.  But before we
+hired a PR firm I had no idea where articles in the mainstream media
+came from.  I could tell a lot of them were crap, but I didn't
+realize why.Remember the exercises in critical reading you did in school, where
+you had to look at a piece of writing and step back and ask whether
+the author was telling the whole truth?  If you really want to be
+a critical reader, it turns out you have to step back one step
+further, and ask not just whether the author is telling the truth,
+but why he's writing about this subject at all.Online, the answer tends to be a lot simpler.  Most people who
+publish online write what they write for the simple reason that
+they want to.  You
+can't see the fingerprints of PR firms all over the articles, as
+you can in so many print publications-- which is one of the reasons,
+though they may not consciously realize it, that readers trust
+bloggers more than Business Week.I was talking recently to a friend who works for a
+big newspaper.  He thought the print media were in serious trouble,
+and that they were still mostly in denial about it.  "They think
+the decline is cyclic," he said.  "Actually it's structural."In other words, the readers are leaving, and they're not coming
+back.
+Why? I think the main reason is that the
+
+Now, the question is: What legendary item is hidden on Emerald Island? Before answering, please consider what in the document is most relevant to this question. The legendary item hidden on the Emerald Island is
+
