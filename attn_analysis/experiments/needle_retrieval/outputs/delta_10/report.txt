@@ -1,0 +1,45 @@
+Needle 检索分析报告 (Delta = 10)
+==================================================
+
+Needle: Hidden on Emerald Island is the legendary Magic Essence.
+Token位置: [12216, 12226)
+相对位置: 42.0%
+
+各Block Size平均保留率:
+  BS=64: 71.2%
+  BS=128: 74.3%
+  BS=256: 88.7%
+
+各层保留率 (BS=64):
+  Layer 0: 90.6%
+  Layer 1: 21.9%
+  Layer 2: 31.2%
+  Layer 3: 46.9%
+  Layer 4: 34.4%
+  Layer 5: 62.5%
+  Layer 6: 46.9%
+  Layer 7: 65.6%
+  Layer 8: 78.1%
+  Layer 9: 84.4%
+  Layer 10: 71.9%
+  Layer 11: 84.4%
+  Layer 12: 50.0%
+  Layer 13: 100.0%
+  Layer 14: 96.9%
+  Layer 15: 87.5%
+  Layer 16: 68.8%
+  Layer 17: 84.4%
+  Layer 18: 56.2%
+  Layer 19: 68.8%
+  Layer 20: 84.4%
+  Layer 21: 78.1%
+  Layer 22: 90.6%
+  Layer 23: 71.9%
+  Layer 24: 68.8%
+  Layer 25: 62.5%
+  Layer 26: 93.8%
+  Layer 27: 78.1%
+  Layer 28: 78.1%
+  Layer 29: 81.2%
+  Layer 30: 93.8%
+  Layer 31: 65.6%

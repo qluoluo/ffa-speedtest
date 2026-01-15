@@ -336,32 +336,42 @@ def main():
     HQ = scores.shape[0]
 
     needle_block = needle_start // block_size
-    needle_scores_per_head = scores[:, needle_block]
-    thresholds_per_head = np.array([max(scores[h, 0], scores[h, -1]) - delta for h in range(HQ)])
+
+    # 计算每个head的基准分数 (first和last block的最大值)
+    base_scores_per_head = np.array([max(scores[h, 0], scores[h, -1]) for h in range(HQ)])
+
+    # Needle分数减去基准，得到相对值
+    needle_scores_per_head = scores[:, needle_block] - base_scores_per_head
+
+    # 阈值固定为 -delta
+    threshold = -delta
 
     x = np.arange(HQ)
 
-    ax.plot(x, needle_scores_per_head, 'go-', linewidth=2, markersize=8, label='Needle Score')
-    ax.plot(x, thresholds_per_head, 'r--', linewidth=2, label='Threshold')
+    ax.plot(x, needle_scores_per_head, 'go-', linewidth=2, markersize=8, label='Needle Score (relative)')
+    ax.axhline(y=threshold, color='r', linestyle='--', linewidth=2, label=f'Threshold = -{delta}')
 
     # 填充保留/剪枝区域
     for h in range(HQ):
-        if needle_scores_per_head[h] >= thresholds_per_head[h]:
+        if needle_scores_per_head[h] >= threshold:
             ax.scatter([h], [needle_scores_per_head[h]], color='green', s=100, zorder=5)
         else:
             ax.scatter([h], [needle_scores_per_head[h]], color='red', s=100, zorder=5, marker='x')
 
     # 统计
-    kept = sum(1 for h in range(HQ) if needle_scores_per_head[h] >= thresholds_per_head[h])
+    kept = sum(1 for h in range(HQ) if needle_scores_per_head[h] >= threshold)
 
     ax.set_xlabel('Head Index', fontsize=12)
-    ax.set_ylabel('Attention Score', fontsize=12)
-    ax.set_title(f'Needle Score vs Threshold Across All Heads\n'
-                f'Layer {layer_idx}, Block Size {block_size} | '
-                f'Needle Kept: {kept}/{HQ} heads ({kept/HQ*100:.0f}%)', fontsize=13)
+    ax.set_ylabel('Needle Score - max(first, last)', fontsize=12)
+    ax.set_title(f'Needle Relative Score vs Threshold (Layer {layer_idx}, Block Size {block_size})\n'
+                f'Needle Kept: {kept}/{HQ} heads ({kept/HQ*100:.0f}%) | '
+                f'Green = Kept, Red = Pruned', fontsize=13)
     ax.legend(loc='upper right', fontsize=11)
     ax.grid(True, alpha=0.3)
     ax.set_xticks(x)
+
+    # 添加0线作为参考
+    ax.axhline(y=0, color='gray', linestyle='-', linewidth=0.5, alpha=0.5)
 
     plt.tight_layout()
     plt.savefig(OUTPUT_DIR / "needle_vs_threshold_per_head.png", dpi=150, bbox_inches='tight')
