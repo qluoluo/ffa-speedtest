@@ -115,8 +115,8 @@ def resolve_default_dataset_path(
 
 
 def parse_args():
-    ffa_root = Path(__file__).resolve().parents[2]
-    attn_analysis_root = Path(__file__).resolve().parents[1]  # attn_analysis 目录
+    ffa_root = Path(__file__).resolve().parents[3]
+    attn_analysis_root = Path(__file__).resolve().parents[2]  # attn_analysis 目录
     default_opencompass_root = ffa_root / "huffkv-opencompass"
     default_local_data_root = attn_analysis_root / "data"
     default_save_root = attn_analysis_root / "result"

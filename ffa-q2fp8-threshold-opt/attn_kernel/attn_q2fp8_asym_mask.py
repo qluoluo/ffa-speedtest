@@ -1,4 +1,4 @@
-# CUDAGraph wrapper for Q2FP8 decode kernel (symmetric quantization).
+# CUDAGraph wrapper for Q2FP8 decode kernel (asymmetric quantization).
 from __future__ import annotations
 
 import math
@@ -8,11 +8,11 @@ import torch
 import triton
 import triton.language as tl
 
-QUANT_MODE = "sym"
+QUANT_MODE = "asym"
 
 @triton.jit
 def attn_compute_threshold_qbits(
-    q, k_q, k_scale,
+    q, k_q, k_scale, k_min,
     th_out,
     scale, T, NTB, delta,
     B: tl.constexpr, HKV: tl.constexpr, HQ: tl.constexpr, K: tl.constexpr, K_PACKED: tl.constexpr,
@@ -31,7 +31,6 @@ def attn_compute_threshold_qbits(
     NEG_INF = float("-inf")
     TRUE_K = tl.full([K], True, tl.int1)
     QMAX = (1 << K_BITS) - 1
-    QZERO = QMAX / 2
     VALS_PER_BYTE: tl.constexpr = 8 // K_BITS
 
     base_hq = pid_hkv * G
@@ -59,10 +58,10 @@ def attn_compute_threshold_qbits(
     # Load scale for first block (tb0=0)
     tb0 = 0
     if USE_PERBLOCK_SCALE:
-        # k_scale: [B, NTB, HKV, K]
+        # k_scale: [B, NTB, HKV, K], k_min: [B, NTB, HKV, K]
         scale_base0 = pid_b * (NTB * HKV * K) + tb0 * (HKV * K) + pid_hkv * K
     else:
-        # k_scale: [B, HKV, K]
+        # k_scale: [B, HKV, K], k_min: [B, HKV, K]
         scale_base0 = pid_b * (HKV * K) + pid_hkv * K
     scale_ptrs0_0 = k_scale + scale_base0 + offs_k0
     scale_ptrs0_1 = k_scale + scale_base0 + offs_k1
@@ -73,15 +72,26 @@ def attn_compute_threshold_qbits(
     scale0_2 = tl.load(scale_ptrs0_2, mask=mask_k2, other=0.0).to(tl.float32)
     scale0_3 = tl.load(scale_ptrs0_3, mask=mask_k3, other=0.0).to(tl.float32)
 
+    # Load k_min for first block
+    min_ptrs0_0 = k_min + scale_base0 + offs_k0
+    min_ptrs0_1 = k_min + scale_base0 + offs_k1
+    min_ptrs0_2 = k_min + scale_base0 + offs_k2
+    min_ptrs0_3 = k_min + scale_base0 + offs_k3
+    min0_0 = tl.load(min_ptrs0_0, mask=mask_k0, other=0.0).to(tl.float32)
+    min0_1 = tl.load(min_ptrs0_1, mask=mask_k1, other=0.0).to(tl.float32)
+    min0_2 = tl.load(min_ptrs0_2, mask=mask_k2, other=0.0).to(tl.float32)
+    min0_3 = tl.load(min_ptrs0_3, mask=mask_k3, other=0.0).to(tl.float32)
+
     q_scaled0_0 = q0 * scale0_0[None, :].to(tl.float16)
     q_scaled0_1 = q1 * scale0_1[None, :].to(tl.float16)
     q_scaled0_2 = q2 * scale0_2[None, :].to(tl.float16)
     q_scaled0_3 = q3 * scale0_3[None, :].to(tl.float16)
-    q_zero_sum0 = tl.sum(q_scaled0_0.to(tl.float32), axis=1)
-    q_zero_sum0 += tl.sum(q_scaled0_1.to(tl.float32), axis=1)
-    q_zero_sum0 += tl.sum(q_scaled0_2.to(tl.float32), axis=1)
-    q_zero_sum0 += tl.sum(q_scaled0_3.to(tl.float32), axis=1)
-    q_zero_sum0 *= -QZERO
+
+    # Asymmetric: compute sum(q * k_min) instead of -QZERO * sum(q * scale)
+    q_min_sum0 = tl.sum((q0 * min0_0[None, :].to(tl.float16)).to(tl.float32), axis=1)
+    q_min_sum0 += tl.sum((q1 * min0_1[None, :].to(tl.float16)).to(tl.float32), axis=1)
+    q_min_sum0 += tl.sum((q2 * min0_2[None, :].to(tl.float16)).to(tl.float32), axis=1)
+    q_min_sum0 += tl.sum((q3 * min0_3[None, :].to(tl.float16)).to(tl.float32), axis=1)
 
     # Sample first T_BS tokens of the entire sequence [0, T_BS)
     offs_t0 = tl.arange(0, T_BS)  # [0, 1, ..., T_BS-1]
@@ -98,7 +108,8 @@ def attn_compute_threshold_qbits(
     b_s0 += tl.dot(q_scaled0_1, kq0_1, out_dtype=tl.float32)
     b_s0 += tl.dot(q_scaled0_2, kq0_2, out_dtype=tl.float32)
     b_s0 += tl.dot(q_scaled0_3, kq0_3, out_dtype=tl.float32)
-    b_s0 = (b_s0 + q_zero_sum0[:, None]) * scale * RCP_LN2
+    # Asymmetric: add q_min_sum instead of q_zero_sum
+    b_s0 = (b_s0 + q_min_sum0[:, None]) * scale * RCP_LN2
     b_s0 = tl.where(t_mask0[None, :], b_s0, NEG_INF)
     m0 = tl.max(b_s0, axis=1)
 
@@ -117,15 +128,26 @@ def attn_compute_threshold_qbits(
     scale1_2 = tl.load(scale_ptrs1_2, mask=mask_k2, other=0.0).to(tl.float32)
     scale1_3 = tl.load(scale_ptrs1_3, mask=mask_k3, other=0.0).to(tl.float32)
 
+    # Load k_min for last block
+    min_ptrs1_0 = k_min + scale_base1 + offs_k0
+    min_ptrs1_1 = k_min + scale_base1 + offs_k1
+    min_ptrs1_2 = k_min + scale_base1 + offs_k2
+    min_ptrs1_3 = k_min + scale_base1 + offs_k3
+    min1_0 = tl.load(min_ptrs1_0, mask=mask_k0, other=0.0).to(tl.float32)
+    min1_1 = tl.load(min_ptrs1_1, mask=mask_k1, other=0.0).to(tl.float32)
+    min1_2 = tl.load(min_ptrs1_2, mask=mask_k2, other=0.0).to(tl.float32)
+    min1_3 = tl.load(min_ptrs1_3, mask=mask_k3, other=0.0).to(tl.float32)
+
     q_scaled1_0 = q0 * scale1_0[None, :].to(tl.float16)
     q_scaled1_1 = q1 * scale1_1[None, :].to(tl.float16)
     q_scaled1_2 = q2 * scale1_2[None, :].to(tl.float16)
     q_scaled1_3 = q3 * scale1_3[None, :].to(tl.float16)
-    q_zero_sum1 = tl.sum(q_scaled1_0.to(tl.float32), axis=1)
-    q_zero_sum1 += tl.sum(q_scaled1_1.to(tl.float32), axis=1)
-    q_zero_sum1 += tl.sum(q_scaled1_2.to(tl.float32), axis=1)
-    q_zero_sum1 += tl.sum(q_scaled1_3.to(tl.float32), axis=1)
-    q_zero_sum1 *= -QZERO
+
+    # Asymmetric: compute sum(q * k_min) for last block
+    q_min_sum1 = tl.sum((q0 * min1_0[None, :].to(tl.float16)).to(tl.float32), axis=1)
+    q_min_sum1 += tl.sum((q1 * min1_1[None, :].to(tl.float16)).to(tl.float32), axis=1)
+    q_min_sum1 += tl.sum((q2 * min1_2[None, :].to(tl.float16)).to(tl.float32), axis=1)
+    q_min_sum1 += tl.sum((q3 * min1_3[None, :].to(tl.float16)).to(tl.float32), axis=1)
 
     # Sample last T_BS tokens of the entire sequence [T-T_BS, T)
     offs_t1 = T - T_BS + tl.arange(0, T_BS)  # [T-T_BS, T-T_BS+1, ..., T-1]
@@ -142,7 +164,7 @@ def attn_compute_threshold_qbits(
     b_s1 += tl.dot(q_scaled1_1, kq1_1, out_dtype=tl.float32)
     b_s1 += tl.dot(q_scaled1_2, kq1_2, out_dtype=tl.float32)
     b_s1 += tl.dot(q_scaled1_3, kq1_3, out_dtype=tl.float32)
-    b_s1 = (b_s1 + q_zero_sum1[:, None]) * scale * RCP_LN2
+    b_s1 = (b_s1 + q_min_sum1[:, None]) * scale * RCP_LN2
     b_s1 = tl.where(t_mask1[None, :], b_s1, NEG_INF)
     m1 = tl.max(b_s1, axis=1)
 
@@ -153,7 +175,7 @@ def attn_compute_threshold_qbits(
 
 @triton.jit
 def attn_forward_stage1_fused_threshold_qbits(
-    q, k_q, k_scale, k_res, v,
+    q, k_q, k_scale, k_min, k_res, v,
     m_buf, l_buf, o_buf,
     mask_buf,
     scale, T, NTB, NTBS, delta,
@@ -176,7 +198,6 @@ def attn_forward_stage1_fused_threshold_qbits(
     NEG_INF = float("-inf")
     TRUE_K  = tl.full([K], True, tl.int1)
     QMAX = (1 << K_BITS) - 1
-    QZERO = QMAX / 2
     VALS_PER_BYTE: tl.constexpr = 8 // K_BITS
 
     s0 = pid_tb * BS
@@ -206,10 +227,10 @@ def attn_forward_stage1_fused_threshold_qbits(
 
     # Load scale for current block
     if USE_PERBLOCK_SCALE:
-        # k_scale: [B, NTB, HKV, K]
+        # k_scale: [B, NTB, HKV, K], k_min: [B, NTB, HKV, K]
         scale_base = pid_b * (NTB * HKV * K) + pid_tb * (HKV * K) + pid_hkv * K
     else:
-        # k_scale: [B, HKV, K]
+        # k_scale: [B, HKV, K], k_min: [B, HKV, K]
         scale_base = pid_b * (HKV * K) + pid_hkv * K
     scale_ptrs0 = k_scale + scale_base + offs_k0
     scale_ptrs1 = k_scale + scale_base + offs_k1
@@ -220,15 +241,26 @@ def attn_forward_stage1_fused_threshold_qbits(
     scale2 = tl.load(scale_ptrs2, mask=mask_k2, other=0.0).to(tl.float32)
     scale3 = tl.load(scale_ptrs3, mask=mask_k3, other=0.0).to(tl.float32)
 
+    # Load k_min for current block
+    min_ptrs0 = k_min + scale_base + offs_k0
+    min_ptrs1 = k_min + scale_base + offs_k1
+    min_ptrs2 = k_min + scale_base + offs_k2
+    min_ptrs3 = k_min + scale_base + offs_k3
+    min0 = tl.load(min_ptrs0, mask=mask_k0, other=0.0).to(tl.float32)
+    min1 = tl.load(min_ptrs1, mask=mask_k1, other=0.0).to(tl.float32)
+    min2 = tl.load(min_ptrs2, mask=mask_k2, other=0.0).to(tl.float32)
+    min3 = tl.load(min_ptrs3, mask=mask_k3, other=0.0).to(tl.float32)
+
     q_scaled0 = q0 * scale0[None, :].to(tl.float16)
     q_scaled1 = q1 * scale1[None, :].to(tl.float16)
     q_scaled2 = q2 * scale2[None, :].to(tl.float16)
     q_scaled3 = q3 * scale3[None, :].to(tl.float16)
-    q_zero_sum = tl.sum(q_scaled0.to(tl.float32), axis=1)
-    q_zero_sum += tl.sum(q_scaled1.to(tl.float32), axis=1)
-    q_zero_sum += tl.sum(q_scaled2.to(tl.float32), axis=1)
-    q_zero_sum += tl.sum(q_scaled3.to(tl.float32), axis=1)
-    q_zero_sum *= -QZERO
+
+    # Asymmetric: compute sum(q * k_min) instead of -QZERO * sum(q * scale)
+    q_min_sum = tl.sum((q0 * min0[None, :].to(tl.float16)).to(tl.float32), axis=1)
+    q_min_sum += tl.sum((q1 * min1[None, :].to(tl.float16)).to(tl.float32), axis=1)
+    q_min_sum += tl.sum((q2 * min2[None, :].to(tl.float16)).to(tl.float32), axis=1)
+    q_min_sum += tl.sum((q3 * min3[None, :].to(tl.float16)).to(tl.float32), axis=1)
 
     if USE_EXT_TH:
         th_rows = tl.load(th_in + pid_b * HQ + (base_hq + rows), mask=row_mask, other=0.0)
@@ -250,7 +282,7 @@ def attn_forward_stage1_fused_threshold_qbits(
         b_s0 += tl.dot(q_scaled1, kq0_1, out_dtype=tl.float32)
         b_s0 += tl.dot(q_scaled2, kq0_2, out_dtype=tl.float32)
         b_s0 += tl.dot(q_scaled3, kq0_3, out_dtype=tl.float32)
-        b_s0 = (b_s0 + q_zero_sum[:, None]) * scale * RCP_LN2
+        b_s0 = (b_s0 + q_min_sum[:, None]) * scale * RCP_LN2
         b_s0 = tl.where(t_mask0[None, :], b_s0, NEG_INF)
         m0 = tl.max(b_s0, axis=1)
 
@@ -269,7 +301,7 @@ def attn_forward_stage1_fused_threshold_qbits(
         b_s1 += tl.dot(q_scaled1, kq1_1, out_dtype=tl.float32)
         b_s1 += tl.dot(q_scaled2, kq1_2, out_dtype=tl.float32)
         b_s1 += tl.dot(q_scaled3, kq1_3, out_dtype=tl.float32)
-        b_s1 = (b_s1 + q_zero_sum[:, None]) * scale * RCP_LN2
+        b_s1 = (b_s1 + q_min_sum[:, None]) * scale * RCP_LN2
         b_s1 = tl.where(t_mask1[None, :], b_s1, NEG_INF)
         m1 = tl.max(b_s1, axis=1)
 
@@ -293,7 +325,8 @@ def attn_forward_stage1_fused_threshold_qbits(
         b_s_q += tl.dot(q_scaled1, kqsb1, out_dtype=tl.float32)
         b_s_q += tl.dot(q_scaled2, kqsb2, out_dtype=tl.float32)
         b_s_q += tl.dot(q_scaled3, kqsb3, out_dtype=tl.float32)
-        b_s_q = (b_s_q + q_zero_sum[:, None]) * scale * RCP_LN2
+        # Asymmetric: add q_min_sum instead of q_zero_sum
+        b_s_q = (b_s_q + q_min_sum[:, None]) * scale * RCP_LN2
         b_s_act = tl.where(t_mask_sb[None, :], b_s_q, NEG_INF)
 
         m_rows_blk = tl.max(b_s_act, axis=1)
@@ -469,6 +502,31 @@ def _normalize_scale(k_scale: torch.Tensor, expect_shape, allow_perblock: bool =
     return k_scale.contiguous(), False
 
 
+def _normalize_min(k_min: torch.Tensor, expect_shape, allow_perblock: bool = False, NTB: int = None):
+    """
+    Ensure k_min tensors are contiguous and have expected shape.
+    Same logic as _normalize_scale.
+    """
+    if k_min.ndim == 4:
+        if k_min.shape[1] == 1:
+            k_min = k_min.squeeze(1)
+        elif allow_perblock and NTB is not None and k_min.shape[1] == NTB:
+            B, _, HKV, K = k_min.shape
+            expected_perblock = (B, NTB, HKV, K)
+            if k_min.shape != expected_perblock:
+                raise ValueError(
+                    f"Per-block k_min shape mismatch: {k_min.shape=}, expected {expected_perblock}"
+                )
+            return k_min.contiguous(), True
+
+    if k_min.shape != expect_shape:
+        raise ValueError(
+            f"Unsupported k_min shape: {k_min.shape=}, expected {expect_shape}"
+        )
+
+    return k_min.contiguous(), False
+
+
 
 def _kernel_kwargs(num_warps: int | None, num_stages: int | None) -> dict:
     kwargs = {}
@@ -500,7 +558,8 @@ def _record_kernel_time(kernel_times: dict | None, name: str, fn, device) -> Non
 def attn_forward_decode_quantized(
     q: torch.Tensor,           # [B, 1, HQ, K]
     k_q: torch.Tensor,         # [B, T, HKV, ceil(K / (8 / k_bits))], packed quantized ints
-    k_scale: torch.Tensor,     # [B, HKV, K] (token dimension removed)
+    k_scale: torch.Tensor,     # [B, HKV, K] or [B, NTB, HKV, K] (per-block)
+    k_min: torch.Tensor,       # [B, HKV, K] or [B, NTB, HKV, K] (per-block) - REQUIRED for asymmetric
     v: torch.Tensor,           # [B, T, HKV, V]
     k_residual: torch.Tensor | None = None,  # [B, T, HKV, K], fp8 residual
     k_bits: int = 2,
@@ -521,17 +580,17 @@ def attn_forward_decode_quantized(
     return_kernel_timings: bool = False,
     **kwargs,
 ):
-    # import os
-    # print(f"ENTER {__file__} attn_forward_decode_quantized")
-    
     assert q.is_cuda and k_q.is_cuda and v.is_cuda
     if k_residual is not None and not k_residual.is_cuda:
         raise ValueError("k_residual must be a CUDA tensor when provided")
     if k_bits != 2:
         raise ValueError(f"attn_forward_decode_quantized currently supports 2-bit keys, got k_bits={k_bits}")
     assert k_scale.is_cuda, "k_scale must be a CUDA tensor"
+    assert k_min.is_cuda, "k_min must be a CUDA tensor for asymmetric quantization"
     if not k_scale.is_floating_point():
         raise ValueError("k_scale must be a floating point tensor for dequantization")
+    if not k_min.is_floating_point():
+        raise ValueError("k_min must be a floating point tensor for asymmetric quantization")
     if k_q.is_floating_point():
         raise ValueError("k_q must contain integer quantized values (e.g., uint8/int8)")
     if k_residual is not None and not k_residual.is_floating_point():
@@ -562,6 +621,11 @@ def attn_forward_decode_quantized(
     expect_shape = (B, HKV, K)
     NTB = triton.cdiv(T, BS)
     k_scale, use_perblock_scale = _normalize_scale(k_scale, expect_shape, allow_perblock=True, NTB=NTB)
+    k_min, use_perblock_min = _normalize_min(k_min, expect_shape, allow_perblock=True, NTB=NTB)
+
+    # Both scale and min must have same per-block setting
+    if use_perblock_scale != use_perblock_min:
+        raise ValueError(f"k_scale and k_min must have same per-block structure: scale={use_perblock_scale}, min={use_perblock_min}")
 
     if scale is None:
         scale = 1.0 / math.sqrt(K)
@@ -576,7 +640,7 @@ def attn_forward_decode_quantized(
         raise ValueError("use_fp8_residual=True requires k_residual")
     if k_residual is not None:
         assert k_residual.is_contiguous()
-    
+
     q = q.contiguous()
     k_q = k_q.contiguous()
     use_fp8_residual = use_fp8_residual and (k_residual is not None)
@@ -598,7 +662,7 @@ def attn_forward_decode_quantized(
         th_kwargs = _kernel_kwargs(num_warps_th, num_stages_th)
         def _launch_threshold():
             attn_compute_threshold_qbits[(B, HKV)](
-                q, k_q, k_scale,
+                q, k_q, k_scale, k_min,
                 threshold_buf,
                 scale, T, NTB, delta,
                 B=B, HKV=HKV, HQ=HQ, K=K, K_PACKED=K_packed, G=G,
@@ -615,7 +679,7 @@ def attn_forward_decode_quantized(
     s1_kwargs = _kernel_kwargs(num_warps_s1, num_stages_s1)
     def _launch_stage1():
         attn_forward_stage1_fused_threshold_qbits[(NTB, B, HKV)](
-            q, k_q, k_scale, k_res, v,
+            q, k_q, k_scale, k_min, k_res, v,
             m_buf, l_buf, o_buf,
             mask_buf,
             scale, T, NTB, NTBS, delta,
@@ -679,8 +743,8 @@ def attn_forward_decode_quantized(
             return o, kernel_times
         return o
 
-class CUDAGraphDecodeRunnerQ2FP8:
-    """Capture and replay the Q2FP8 decode kernel with static buffers.
+class CUDAGraphDecodeRunnerQ2FP8Asym:
+    """Capture and replay the Q2FP8 asymmetric decode kernel with static buffers.
 
     This wrapper avoids per-step kernel launches by using torch.cuda.CUDAGraph.
     Output is written into a persistent tensor; callers should not assume it
@@ -692,6 +756,7 @@ class CUDAGraphDecodeRunnerQ2FP8:
         q: torch.Tensor,
         k_q: torch.Tensor,
         k_scale: torch.Tensor,
+        k_min: torch.Tensor,
         v: torch.Tensor,
         *,
         k_residual: Optional[torch.Tensor] = None,
@@ -738,6 +803,7 @@ class CUDAGraphDecodeRunnerQ2FP8:
         self._static_q = torch.empty_like(q, device=self._device)
         self._static_k_q = torch.empty_like(k_q, device=self._device)
         self._static_k_scale = torch.empty_like(k_scale, device=self._device)
+        self._static_k_min = torch.empty_like(k_min, device=self._device)
         self._static_v = torch.empty_like(v, device=self._device)
         self._static_k_residual = None
         if self._use_fp8_residual:
@@ -753,6 +819,7 @@ class CUDAGraphDecodeRunnerQ2FP8:
         self._static_q.copy_(q)
         self._static_k_q.copy_(k_q)
         self._static_k_scale.copy_(k_scale)
+        self._static_k_min.copy_(k_min)
         self._static_v.copy_(v)
         if self._use_fp8_residual:
             self._static_k_residual.copy_(k_residual)
@@ -765,6 +832,7 @@ class CUDAGraphDecodeRunnerQ2FP8:
                 q=self._static_q,
                 k_q=self._static_k_q,
                 k_scale=self._static_k_scale,
+                k_min=self._static_k_min,
                 k_residual=self._static_k_residual,
                 v=self._static_v,
                 k_bits=self._k_bits,
@@ -791,6 +859,7 @@ class CUDAGraphDecodeRunnerQ2FP8:
                 q=self._static_q,
                 k_q=self._static_k_q,
                 k_scale=self._static_k_scale,
+                k_min=self._static_k_min,
                 k_residual=self._static_k_residual,
                 v=self._static_v,
                 k_bits=self._k_bits,
@@ -818,6 +887,7 @@ class CUDAGraphDecodeRunnerQ2FP8:
         q: torch.Tensor,
         k_q: torch.Tensor,
         k_scale: torch.Tensor,
+        k_min: torch.Tensor,
         v: torch.Tensor,
         *,
         k_residual: Optional[torch.Tensor] = None,
@@ -834,6 +904,7 @@ class CUDAGraphDecodeRunnerQ2FP8:
         self._static_q.copy_(q)
         self._static_k_q.copy_(k_q)
         self._static_k_scale.copy_(k_scale)
+        self._static_k_min.copy_(k_min)
         self._static_v.copy_(v)
         if self._use_fp8_residual:
             self._static_k_residual.copy_(k_residual)
@@ -849,6 +920,7 @@ class CUDAGraphDecodeRunnerQ2FP8:
             q=self._static_q,
             k_q=self._static_k_q,
             k_scale=self._static_k_scale,
+            k_min=self._static_k_min,
             k_residual=self._static_k_residual,
             v=self._static_v,
             k_bits=self._k_bits,
