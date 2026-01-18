@@ -1,134 +1,103 @@
-# FFA Q2FP8 分页 KV Cache
+# FFA Q2FP8 Paged Attention Kernel
 
-本目录实现了分页 KV cache 的 decode 注意力实验：K 采用 q2 对称量化并打包，
-V 保持全精度（由 CLI 的 `--dtype` 控制）。核心思路：
-- 将 KV 以固定大小的页（page）存入全局缓存，支撑超长序列。
-- K 量化为 2-bit 并以 4 个值打包到 1 字节，降低带宽压力。
-- 预先计算每页的统计元信息，便于分析或后续剪枝策略。
-- 采用“阈值估计 + 两阶段 paged attention”来跳过影响较小的页。
+分页量化注意力 Kernel，支持 Paged KV Cache 布局。
 
-主要文件：
-- `attn_kernel/attn_q2fp8_paged.py`：分页缓存结构、页面写入与元信息计算。
-- `attn_kernel/attn_q2fp8_paged_attn.py`：阈值估计 + 两阶段 paged attention 内核。
-- `run_attn_bench_q2fp8_paged_attn.py`：端到端 decode 基准与绘图。
+## 特性
 
-## 数据布局与缓存结构
+- **分页 KV Cache**: 支持 `[num_pages, page_size, HKV, K/V]` 布局
+- **2-bit 对称量化**: 使用 2-bit 量化压缩 Key cache
+- **阈值剪枝**: 基于 delta 阈值的稀疏注意力
+- **CUDA Graph 支持**: 提供 `CUDAGraphDecodeRunnerQ2FP8Paged` 类
 
-本目录推荐使用 head-major 布局。
+## 文件结构
 
-Paged KV cache：
-- `k_q`（q2 K 打包）：`[Npage, HKV, SBS, K_PACKED]`，dtype `uint8`。
-- `v`（全精度 V）：`[Npage, HKV, SBS, V]`，dtype 由 `--dtype` 指定。
-- `k_scale`：`[B, HKV, K]` 或 `[HKV, K]`（广播到 B=1）。
-- `page_lens`：`[Npage]`，每页有效 token 数（最后一页可能更短）。
-
-Block table（每个序列）：
-- `block_table`：`[B, max_pages]`，序列内页索引 -> 全局 `page_id`。
-- `page_counts`：`[B]`，每个序列有效页数。
-
-每页元信息（每页/每头）：
-- `k_page_absmax`：该页 K 反量化后的最大绝对值。
-- `k_page_sumabs`：该页 K 反量化后的绝对值总和。
-- `k_page_l2`：该页 K 反量化后的 L2 范数。
-
-术语：
-- `SBS`：page 大小（每页 token 数）。
-- `HQ`：query head 数。
-- `HKV`：key/value head 数。
-- `G = HQ / HKV`：GQA 分组比例。
-- `K`：Q/K 的 head 维度，`V`：V 的 head 维度。
-
-## Q2 对称量化与打包
-
-量化发生在 `run_attn_bench_q2fp8_paged_attn.py`
-（见 `quantize_k_2bit_symmetric_packed`）：
-1) 计算时间维上的 absmax（按 `(B, HKV, K)`）：
-   - `k_absmax = max_t |k|`
-2) 用 2-bit 对称零点计算 scale：
-   - `qmax = 3`, `qzero = 1.5`
-   - `scale = clamp(k_absmax / qzero, min=1e-6)`
-3) 量化：
-   - `k_q = clamp(round(k / scale + qzero), 0, qmax)`
-4) 4 个 2-bit 打包到 1 字节：
-   - `k_q_packed = b0 | (b1 << 2) | (b2 << 4) | (b3 << 6)`
-
-注意力计算中不会显式反量化 K，而是缩放 Q：
-- `q_scaled = q * scale`
-- `q_zero_sum = -qzero * sum(q_scaled)`
-- `dot(q_scaled, k_q) + q_zero_sum` 等价于 `dot(q, dequantize(k_q))`
-这样避免逐 token 反量化，并保持 K 在打包形式中读取。
-
-## 页面写入与元信息计算
-
-`attn_kernel/attn_q2fp8_paged.py` 提供：
-- `allocate_paged_kv_cache`：分配全局页缓存与元信息缓冲区。
-- `update_block_table`：向序列的 block table 追加 page id。
-- `update_pages`：写入 K/V 页并可选计算元信息。
-- `compute_pages_meta`：启动 `compute_page_meta_q2_packed` 计算页元信息。
-
-`compute_page_meta_q2_packed`（Triton）：
-- 遍历页内 token 与 K 维（以 `BK` 分块）。
-- 解包 q2 值并乘 `k_scale`，计算：
-  - absmax、sumabs、L2（每页/每头）。
-- 用 `page_lens` 跳过最后页的 padding。
-- 写入 `k_page_absmax`、`k_page_sumabs`、`k_page_l2`。
-
-元信息在页面写入/更新时计算，因此后续内核可直接使用。
-当前 attention 路径尚未使用这些元信息。
-
-## 分页注意力解码算法
-
-`PagedAttnRunner` 中的 paged attention 逻辑分三步（目前只支持 `B=1`）：
-
-步骤 1：阈值估计（页剪枝启发式）
-- 内核：`paged_attn_compute_threshold_qbits[_contig]`
-- 仅使用“第一页”和“最后一页”计算每个 query head 的最大 logit。
-- 阈值：`th = max(m_first, m_last) - delta`
-- 若页是连续的（`page_id == page_index`），使用 contig 快路径。
-
-步骤 2：逐页 softmax 与部分输出
-- 内核：`paged_attn_stage1_qbits[_contig]`
-- 对每页：
-  - 计算该页所有 token 的 logit（q2 打包 K）。
-  - `m_rows_blk = max(logits)`（按行）。
-  - 若所有行都低于阈值，则剪枝该页。
-  - 否则计算：
-    - `b_p = exp2(logits - m_rows_blk)`
-    - `l_rows = sum(b_p)`
-    - `o_tile = b_p @ V`
-  - 写入 `m_rows_blk`、`l_rows`、`o_tile` 和 keep mask。
-
-步骤 3：跨页归并（带 mask）
-- 内核：`paged_attn_stage2_masked`
-- 只合并 keep 的页，使用 log-sum-exp 风格：
-  - `new_m = max(m_prev, m_blk)`
-  - `acc = acc * exp2(m_prev - new_m) + l_blk * exp2(m_blk - new_m)`
-  - `o = o * exp2(m_prev - new_m) + o_blk * exp2(m_blk - new_m)`
-- 最终输出：`o / acc`（按 query head）。
-
-说明：
-- logit 先乘 `1 / sqrt(K)`，再乘 `1 / ln(2)` 以便用 `exp2`。
-- `delta` 控制剪枝激进程度（越大越少剪枝）。
-- 阈值估计只看首尾页，属于近似启发式。
-
-## Benchmark 流程
-
-`run_attn_bench_q2fp8_paged_attn.py` 的步骤：
-1) 从保存的层数据加载 Q/K/V。
-2) 取 decode 查询（`q = q[:, :, L-1, :]`）。
-3) K 做 q2 量化与打包，V 保持全精度。
-4) 组装固定大小的页并写入全局 paged cache。
-5) 运行 paged attention，可选与 FlashAttention 对比。
-6) 保存原始结果并绘制速度曲线。
-
-示例：
-```bash
-python run_attn_bench_q2fp8_paged_attn.py --SBS 256 --layer 1 --step 4096 --iters 200 --warmup 50 --delta 5.0
+```
+ffa-q2fp8-paged/
+├── attn_kernel/
+│   ├── __init__.py
+│   └── attn_q2fp8_paged.py      # 主要的分页量化 kernel
+├── utils/
+│   ├── bench.py                  # 基准测试工具
+│   ├── cache.py                  # KV cache 管理工具
+│   ├── flash.py                  # Flash Attention 封装
+│   ├── load.py                   # 数据加载工具
+│   └── plot.py                   # 绘图工具
+├── run_attn_bench_q2fp8_paged.py # 基准测试脚本
+└── README.md
 ```
 
-## 限制与假设
-- `PagedAttnRunner` 目前只支持 `B=1`。
-- 仅覆盖 decode 注意力（每个 head 单 query）。
-- K 为 q2 打包，V 保持 `--dtype`（此目录暂无 fp8 kernel）。
-- `k_scale` 为 `(B, HKV, K)` 的共享尺度，沿 token 维复用。
-- block table 可非连续，但连续时会走 contig 快路径。
+## 使用方法
+
+### 基本用法
+
+```python
+from attn_kernel import attn_forward_decode_quantized_paged
+from utils.cache import convert_to_paged_format
+
+# 准备数据
+q = ...           # [B, 1, HQ, K]
+k_q = ...         # [num_pages, page_size, HKV, K_packed]
+k_scale = ...     # [B, HKV, K]
+v = ...           # [num_pages, page_size, HKV, V]
+page_table = ...  # [B, max_pages_per_seq]
+seq_lens = ...    # [B]
+
+# 运行 kernel
+output = attn_forward_decode_quantized_paged(
+    q=q,
+    k_q=k_q,
+    k_scale=k_scale,
+    v=v,
+    page_table=page_table,
+    seq_lens=seq_lens,
+    k_bits=2,
+    BS=128,
+    SBS=128,
+    delta=5.0,
+    use_fp8_residual=False,
+)
+```
+
+### 从连续格式转换
+
+```python
+from utils.cache import convert_to_paged_format
+
+# 连续格式的 KV cache
+k_q_cont = ...  # [B, T, HKV, K_packed]
+v_cont = ...    # [B, T, HKV, V]
+
+# 转换为分页格式
+k_q_paged, v_paged, page_table, seq_lens = convert_to_paged_format(
+    k_q_cont, v_cont, page_size=16
+)
+```
+
+### 运行基准测试
+
+```bash
+python run_attn_bench_q2fp8_paged.py \
+    --batch-size 1 \
+    --t-max 131072 \
+    --page-size 16 \
+    --bs 128 \
+    --delta 5.0
+```
+
+## 与非分页版本的区别
+
+| 特性 | 非分页版本 | 分页版本 |
+|------|-----------|---------|
+| K 布局 | `[B, T, HKV, K_packed]` | `[num_pages, page_size, HKV, K_packed]` |
+| V 布局 | `[B, T, HKV, V]` | `[num_pages, page_size, HKV, V]` |
+| 额外输入 | 无 | `page_table`, `seq_lens` |
+| 内存碎片 | 可能较大 | 较小 |
+
+## 参数说明
+
+- `page_size`: 每个物理页面的 token 数量（默认 16）
+- `page_table`: 逻辑页面到物理页面的映射表 `[B, max_pages_per_seq]`
+- `seq_lens`: 每个序列的实际长度 `[B]`
+- `BS`: 阈值计算的 block size
+- `SBS`: 子块大小
+- `delta`: 剪枝阈值（相对于最大注意力分数）

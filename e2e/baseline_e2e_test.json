@@ -1,0 +1,23 @@
+[
+  {
+    "method_name": "FFA-Q2FP8 (k_bits=2)",
+    "prompt_length": 957,
+    "generated_tokens": 207,
+    "prefill_time_ms": 125.97047351300716,
+    "decode_time_ms": 7968.832748010755,
+    "total_time_ms": 8094.803221523762,
+    "prefill_throughput": 7597.018359236256,
+    "decode_throughput": 25.976200849700735,
+    "total_throughput": 143.7959599691034,
+    "memory_peak_mb": 15984.96142578125,
+    "config": {
+      "block_size": 128,
+      "k_bits": 2,
+      "use_fp8_residual": true,
+      "use_ffa_decode": false,
+      "delta": 5.0,
+      "use_cudagraph": false,
+      "detailed": true
+    }
+  }
+]

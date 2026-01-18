@@ -1,0 +1,9 @@
+{
+	"InstallScripts" : 
+	[
+		"/inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-quest/quest/quest/ops/build_sm89_sm90/cmake_install.cmake",
+		"/inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-quest/quest/quest/ops/build_sm89_sm90/_deps/rapids-cmake-build/cmake_install.cmake",
+		"/inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-quest/quest/quest/ops/build_sm89_sm90/pybind11/cmake_install.cmake"
+	],
+	"Parallel" : false
+}

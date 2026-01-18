@@ -1,0 +1,9 @@
+# ninja log v7
+1808	347181	1765964091468107000	CMakeFiles/_kernels.dir/csrc/rms_norm.cu.o	79e43bd3cfb943f6
+1808	348744	1765964091467745000	CMakeFiles/_kernels.dir/csrc/page.cu.o	d7f6493bc11733cc
+1809	345232	1765964091468536000	CMakeFiles/_kernels.dir/csrc/topk.cu.o	7fceb5adc4a56ffa
+1807	350302	1765964091467049000	CMakeFiles/_kernels.dir/csrc/bsk_ops.cu.o	4edf001586171ece
+1808	353482	1765964091467397000	CMakeFiles/_kernels.dir/csrc/estimate.cu.o	ecbe537b746e488f
+1806	382187	1765964091466183000	CMakeFiles/_kernels.dir/csrc/approx_attn.cu.o	88a9586c69e65ec5
+1898	1669740	1765965009584426000	CMakeFiles/_kernels.dir/csrc/batch_prefill.cu.o	acd2bfad350c5c6a
+1669744	1674507	1765966677427065114	_kernels.cpython-310-x86_64-linux-gnu.so	5ba40cbe739f8382

@@ -1,0 +1,12 @@
+# This is a generated file and its contents are an internal implementation detail.
+# The download step will be re-executed if anything in this file changes.
+# No other meaning or use of this file is supported.
+
+method=url
+command=/inspire/hdd/global_user/liuzhigeng-253108120105/miniconda/envs/quest/bin/cmake;-DCMAKE_MESSAGE_LOG_LEVEL=VERBOSE;-P;/inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-quest/quest/quest/ops/build_sm89_sm90/_deps/rapids-cmake-subbuild/rapids-cmake-populate-prefix/src/rapids-cmake-populate-stamp/download-rapids-cmake-populate.cmake;COMMAND;/inspire/hdd/global_user/liuzhigeng-253108120105/miniconda/envs/quest/bin/cmake;-DCMAKE_MESSAGE_LOG_LEVEL=VERBOSE;-P;/inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-quest/quest/quest/ops/build_sm89_sm90/_deps/rapids-cmake-subbuild/rapids-cmake-populate-prefix/src/rapids-cmake-populate-stamp/verify-rapids-cmake-populate.cmake;COMMAND;/inspire/hdd/global_user/liuzhigeng-253108120105/miniconda/envs/quest/bin/cmake;-DCMAKE_MESSAGE_LOG_LEVEL=VERBOSE;-P;/inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-quest/quest/quest/ops/build_sm89_sm90/_deps/rapids-cmake-subbuild/rapids-cmake-populate-prefix/src/rapids-cmake-populate-stamp/extract-rapids-cmake-populate.cmake
+source_dir=/inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-quest/quest/quest/ops/build_sm89_sm90/_deps/rapids-cmake-src
+work_dir=/inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-quest/quest/quest/ops/build_sm89_sm90/_deps
+url(s)=https://github.com/rapidsai/rapids-cmake/archive/refs/heads/branch-24.02.zip
+hash=
+      no_extract=
+

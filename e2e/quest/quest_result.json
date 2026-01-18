@@ -1,0 +1,19 @@
+[
+  {
+    "method_name": "Quest (budget=1024)",
+    "prompt_length": 376,
+    "generated_tokens": 17,
+    "prefill_time_ms": 121.13408790901303,
+    "decode_time_ms": 363.4022637270391,
+    "total_time_ms": 484.53635163605213,
+    "prefill_throughput": 3103.9982757159437,
+    "decode_throughput": 46.78011585742114,
+    "total_throughput": 811.0846558220518,
+    "memory_peak_mb": 15964.67578125,
+    "config": {
+      "page_size": 16,
+      "token_budget": 1024,
+      "max_seq_len": 504
+    }
+  }
+]
