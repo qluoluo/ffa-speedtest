@@ -84,6 +84,12 @@ def parse_args():
         action="store_true",
         help="Use per-block scale quantization instead of global scale.",
     )
+    p.add_argument(
+        "--max-kept-ratio",
+        type=float,
+        default=0.2,
+        help="Maximum kept ratio for atomic compact kernel (default: 0.2).",
+    )
     return p.parse_args()
 
 
@@ -261,9 +267,9 @@ def resolve_quant_mode(kernel_module, attn_forward_decode_quantized, attn_kernel
     mode = getattr(kernel_module, "QUANT_MODE", None)
     if mode is not None:
         norm = str(mode).strip().lower()
-        if norm in ("sym", "symmetric"):
+        if norm in ("sym", "symmetric", "sym_atomic", "sym-atomic", "symatomic"):
             return "sym"
-        if norm in ("asym", "asymmetric"):
+        if norm in ("asym", "asymmetric", "asym_atomic", "asym-atomic", "asymatomic"):
             return "asym"
         raise ValueError(f"Unsupported QUANT_MODE '{mode}' in {attn_kernel_name}")
 
@@ -329,6 +335,7 @@ def make_cache_file_path(
     attn_kernel=None,
     bsz=1,
     replay_only=False,
+    max_kept_ratio=None,
     num_warps_th=None,
     num_stages_th=None,
     num_warps_s1=None,
@@ -344,6 +351,12 @@ def make_cache_file_path(
         return "d" if v is None else str(v)
     raw_dir = Path(raw_data_dir)
     suffix = "_cudagraph_replay" if replay_only else "_cudagraph"
+
+    # Add max_kept_ratio tag if specified
+    mkr_tag = ""
+    if max_kept_ratio is not None and max_kept_ratio != 0.2:
+        mkr_tag = f"_mkr{max_kept_ratio}"
+
     kernel_tag = ""
     if any(
         v is not None
@@ -368,7 +381,7 @@ def make_cache_file_path(
     fname = (
         f"layer_{layer_idx}_Tmax{_to_k(T_full)}_Hq{Hq}_Hkv{Hkv}_D{D}_Dv{Dv}"
         f"_BS{BS}_SBS{SBS}_delta{delta:g}_{dtype_key(dtype)}"
-        f"{kernel_name_tag}{kernel_tag}_step{step}_it{iters}_wu{warmup}_bsz{bsz}{suffix}.json"
+        f"{kernel_name_tag}{mkr_tag}{kernel_tag}_step{step}_it{iters}_wu{warmup}_bsz{bsz}{suffix}.json"
     )
     return raw_dir / fname
 
@@ -699,7 +712,16 @@ def main():
         return length, profile
 
     plot_root_dir, raw_data_dir = build_plot_dirs(
-        attn_kernel_name, gpu_tag, BS, SBS, delta, layer_indices, bsz, max_length, THIS_DIR, args.perblock_scale
+        attn_kernel_name,
+        gpu_tag,
+        BS,
+        SBS,
+        delta,
+        layer_indices,
+        bsz,
+        max_length,
+        Path("."),
+        args.perblock_scale,
     )
     cache_path = make_cache_file_path(
         raw_data_dir,
@@ -719,6 +741,7 @@ def main():
         attn_kernel=attn_kernel_name,
         bsz=bsz,
         replay_only=args.cg_replay_only,
+        max_kept_ratio=args.max_kept_ratio,
         num_warps_th=num_warps_th,
         num_stages_th=num_stages_th,
         num_warps_s1=num_warps_s1,
@@ -793,6 +816,7 @@ def main():
                         SBS=SBS,
                         delta=delta,
                         return_skip_ratio=return_skip_ratio,
+                        max_kept_ratio=args.max_kept_ratio,
                         num_warps_th=num_warps_th,
                         num_stages_th=num_stages_th,
                         num_warps_s1=num_warps_s1,
@@ -816,6 +840,7 @@ def main():
                     delta=delta,
                     use_fp8_residual=True,
                     warmup=args.cg_warmup,
+                    max_kept_ratio=args.max_kept_ratio,
                     num_warps_th=num_warps_th,
                     num_stages_th=num_stages_th,
                     num_warps_s1=num_warps_s1,
@@ -831,7 +856,7 @@ def main():
                     return _run_attn(return_skip_ratio=False)
 
                 def run_q2_cg():
-                    if args.cg_replay_only:
+                    if args.cg_replay_only and hasattr(runner, "replay_only"):
                         return runner.replay_only()
                     return runner(
                         **_filter_kwargs_for_signature(runner.replay, quant_inputs),
@@ -877,6 +902,7 @@ def main():
                 cudagraph=True,
                 cudagraph_replay_only=bool(args.cg_replay_only),
                 q2_baseline=bool(run_q2),
+                max_kept_ratio=float(args.max_kept_ratio),
                 num_warps_th=num_warps_th,
                 num_stages_th=num_stages_th,
                 num_warps_s1=num_warps_s1,

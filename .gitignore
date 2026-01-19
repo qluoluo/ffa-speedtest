@@ -7,3 +7,6 @@ plots/
 results/
 
 *.pt
+
+e2e/quest/quest_model/ops/build_sm89_sm90/
+e2e/quest/quest_model/_kernels*.so

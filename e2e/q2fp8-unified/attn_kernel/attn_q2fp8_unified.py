@@ -832,6 +832,9 @@ class CUDAGraphDecodeRunnerQ2FP8:
         k_scale: torch.Tensor,
         v: torch.Tensor,
         *,
+        k_current: Optional[torch.Tensor] = None,
+        v_current: Optional[torch.Tensor] = None,
+        current_len: int = 0,
         k_residual: Optional[torch.Tensor] = None,
         precomputed_threshold: Optional[torch.Tensor] = None,
         k_bits: int = 2,
@@ -842,6 +845,7 @@ class CUDAGraphDecodeRunnerQ2FP8:
         max_kept: int | None = None,
         max_kept_ratio: float = 0.2,
         use_fp8_residual: bool = True,
+        max_current: int = 128,
         warmup: int = 2,
         num_warps_th: Optional[int] = None,
         num_stages_th: Optional[int] = None,
@@ -863,6 +867,8 @@ class CUDAGraphDecodeRunnerQ2FP8:
         self._delta = delta
         self._use_fp8_residual = use_fp8_residual
         self._use_ext_th = precomputed_threshold is not None
+        self._current_len = current_len
+        self._max_current = max_current
         self._num_warps_th = num_warps_th
         self._num_stages_th = num_stages_th
         self._num_warps_s1 = num_warps_s1
@@ -890,6 +896,13 @@ class CUDAGraphDecodeRunnerQ2FP8:
         if self._use_fp8_residual:
             self._static_k_residual = torch.empty_like(k_residual, device=self._device)
 
+        self._static_k_current = None
+        self._static_v_current = None
+        if k_current is not None:
+            self._static_k_current = torch.empty_like(k_current, device=self._device)
+        if v_current is not None:
+            self._static_v_current = torch.empty_like(v_current, device=self._device)
+
         self._static_threshold = None
         if self._use_ext_th:
             self._static_threshold = torch.empty_like(
@@ -903,6 +916,10 @@ class CUDAGraphDecodeRunnerQ2FP8:
         self._static_v.copy_(v)
         if self._use_fp8_residual:
             self._static_k_residual.copy_(k_residual)
+        if self._static_k_current is not None:
+            self._static_k_current.copy_(k_current)
+        if self._static_v_current is not None:
+            self._static_v_current.copy_(v_current)
         if self._use_ext_th:
             self._static_threshold.copy_(precomputed_threshold)
 
@@ -914,12 +931,16 @@ class CUDAGraphDecodeRunnerQ2FP8:
                 k_scale=self._static_k_scale,
                 k_residual=self._static_k_residual,
                 v=self._static_v,
+                k_current=self._static_k_current,
+                v_current=self._static_v_current,
+                current_len=self._current_len,
                 k_bits=self._k_bits,
                 scale=self._scale,
                 BS=self._BS,
                 SBS=self._SBS,
                 delta=self._delta,
                 max_kept=self._max_kept,
+                max_current=self._max_current,
                 return_skip_ratio=False,
                 precomputed_threshold=self._static_threshold,
                 use_fp8_residual=self._use_fp8_residual,
@@ -941,12 +962,16 @@ class CUDAGraphDecodeRunnerQ2FP8:
                 k_scale=self._static_k_scale,
                 k_residual=self._static_k_residual,
                 v=self._static_v,
+                k_current=self._static_k_current,
+                v_current=self._static_v_current,
+                current_len=self._current_len,
                 k_bits=self._k_bits,
                 scale=self._scale,
                 BS=self._BS,
                 SBS=self._SBS,
                 delta=self._delta,
                 max_kept=self._max_kept,
+                max_current=self._max_current,
                 return_skip_ratio=False,
                 precomputed_threshold=self._static_threshold,
                 use_fp8_residual=self._use_fp8_residual,
@@ -969,6 +994,9 @@ class CUDAGraphDecodeRunnerQ2FP8:
         k_scale: torch.Tensor,
         v: torch.Tensor,
         *,
+        k_current: Optional[torch.Tensor] = None,
+        v_current: Optional[torch.Tensor] = None,
+        current_len: Optional[int] = None,
         k_residual: Optional[torch.Tensor] = None,
         precomputed_threshold: Optional[torch.Tensor] = None,
         return_skip_ratio: bool = False,
@@ -986,8 +1014,16 @@ class CUDAGraphDecodeRunnerQ2FP8:
         self._static_v.copy_(v)
         if self._use_fp8_residual:
             self._static_k_residual.copy_(k_residual)
+        if self._static_k_current is not None and k_current is not None:
+            self._static_k_current.copy_(k_current)
+        if self._static_v_current is not None and v_current is not None:
+            self._static_v_current.copy_(v_current)
         if self._use_ext_th:
             self._static_threshold.copy_(precomputed_threshold)
+
+        # Update current_len if provided
+        if current_len is not None:
+            self._current_len = current_len
 
         self._graph.replay()
         if not return_skip_ratio:
@@ -1000,12 +1036,16 @@ class CUDAGraphDecodeRunnerQ2FP8:
             k_scale=self._static_k_scale,
             k_residual=self._static_k_residual,
             v=self._static_v,
+            k_current=self._static_k_current,
+            v_current=self._static_v_current,
+            current_len=self._current_len,
             k_bits=self._k_bits,
             scale=self._scale,
             BS=self._BS,
             SBS=self._SBS,
             delta=self._delta,
             max_kept=self._max_kept,
+            max_current=self._max_current,
             return_skip_ratio=True,
             precomputed_threshold=self._static_threshold,
             use_fp8_residual=self._use_fp8_residual,
