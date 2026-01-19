@@ -267,7 +267,7 @@ def resolve_quant_mode(kernel_module, attn_forward_decode_quantized, attn_kernel
     mode = getattr(kernel_module, "QUANT_MODE", None)
     if mode is not None:
         norm = str(mode).strip().lower()
-        if norm in ("sym", "symmetric", "sym_atomic", "sym-atomic", "symatomic"):
+        if norm in ("sym", "symmetric", "sym_atomic", "sym-atomic", "symatomic", "sym_atomic_vec", "sym-atomic-vec"):
             return "sym"
         if norm in ("asym", "asymmetric", "asym_atomic", "asym-atomic", "asymatomic"):
             return "asym"
