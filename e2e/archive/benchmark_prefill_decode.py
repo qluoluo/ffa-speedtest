@@ -49,25 +49,17 @@ def load_baseline_model(model_path: str, device: torch.device, dtype: torch.dtyp
 
 def load_q2fp8_model(
     model_path: str,
-    device: torch.device,
+    device: str,
     dtype: torch.dtype,
     delta: float = 5.0,
     block_size: int = 128,
     k_bits: int = 2,
     use_fp8_residual: bool = True,
-    use_cudagraph: bool = False,
     max_decode_tokens: int = 1024,
 ):
-    """Load Q2FP8-Unified model."""
-    if use_cudagraph:
-        model_dir = "q2fp8-cudagraph"
-        print(f"Loading Q2FP8-CUDAGraph model from {model_path}...")
-        print(f"  CUDA Graph: ENABLED")
-        print(f"  max_decode_tokens: {max_decode_tokens}")
-        print(f"  max_current: 1 (current buffer DISABLED for CUDA Graph)")
-    else:
-        model_dir = "q2fp8"
-        print(f"Loading Q2FP8 model from {model_path}...")
+    """Load Q2FP8-Page model."""
+    model_dir = "q2fp8-page"
+    print(f"Loading Q2FP8-Page (Block-wise JIT CUDA Graph) model from {model_path}...")
 
     sys.path.insert(0, str(Path(__file__).parent / model_dir / "ffa_model"))
 
@@ -79,10 +71,7 @@ def load_q2fp8_model(
         transformers.integrations.use_kernel_forward_from_hub = use_kernel_forward_from_hub
 
     from modeling_llama import LlamaForCausalLM as FFALlamaForCausalLM
-    if use_cudagraph:
-        from q2fp8_cudagraph_cache import Q2FP8CUDAGraphMultiLayerCache as CacheClass
-    else:
-        from q2fp8_cache import Q2FP8SymCache as CacheClass
+    from q2fp8_cache import Q2FP8SymCache as CacheClass
 
     tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
     if tokenizer.pad_token_id is None:
@@ -96,19 +85,19 @@ def load_q2fp8_model(
         "SBS": block_size,
         "use_fp8_residual": use_fp8_residual,
         "k_bits": k_bits,
-        "use_cudagraph": use_cudagraph,
-        "use_global_cudagraph": True,  # 启用全局共享 CUDA Graph
-        "max_decode_tokens": max_decode_tokens,
     }
 
+    print("DEBUG: About to call from_pretrained...")
     model = FFALlamaForCausalLM.from_pretrained(
         model_path,
         config=config,
         torch_dtype=dtype,
-        device_map=str(device),
-        attn_implementation="flash_attention_2",
+        device_map=device,
+        trust_remote_code=True,
     )
+    print("DEBUG: from_pretrained completed, calling model.eval()...")
     model.eval()
+    print("DEBUG: model.eval() completed!")
 
     return model, tokenizer, CacheClass, max_decode_tokens
 
@@ -370,12 +359,11 @@ def main():
                         help="Output JSON file")
     parser.add_argument("--skip_baseline", action="store_true", help="Skip baseline benchmark")
     parser.add_argument("--skip_q2fp8", action="store_true", help="Skip Q2FP8 benchmark")
-    parser.add_argument("--use_cudagraph", action="store_true", help="Enable CUDA Graph acceleration")
     parser.add_argument("--max_decode_tokens", type=int, default=4096, help="Max decode tokens for CUDA Graph buffer")
     args = parser.parse_args()
 
     device = torch.device(args.device)
-    dtype = torch.float16 if device.type == "cuda" else torch.float32
+    dtype = torch.bfloat16 if device.type == "cuda" else torch.float32
 
     print("=" * 100)
     print("PREFILL + DECODE BENCHMARK")
@@ -392,6 +380,47 @@ def main():
     base_prompt = "The quick brown fox jumps over the lazy dog. " * 10
 
     all_results = []
+
+    # Load models once before the loop
+    q2fp8_model = None
+    q2fp8_tokenizer = None
+    Q2FP8SymCache = None
+    max_decode_tokens = None
+    baseline_model = None
+    baseline_tokenizer = None
+
+    if not args.skip_q2fp8:
+        print("\n--- Loading Q2FP8 Model ---")
+        q2fp8_model, q2fp8_tokenizer, Q2FP8SymCache, max_decode_tokens = load_q2fp8_model(
+            args.model_path, args.device, dtype, max_decode_tokens=args.max_decode_tokens
+        )
+
+        # Simple warmup: let CUDA Graph capture naturally during first decode
+        print("Warming up Q2FP8 model...")
+        warmup_inputs = q2fp8_tokenizer("Hello", return_tensors="pt").to(device)
+        warmup_cache = Q2FP8SymCache(BS=128, use_fp8_residual=True, k_bits=2)
+        with torch.no_grad():
+            _ = q2fp8_model.generate(
+                **warmup_inputs,
+                max_new_tokens=256,
+                past_key_values=warmup_cache,
+                use_cache=True,
+                pad_token_id=q2fp8_tokenizer.pad_token_id,
+                eos_token_id=q2fp8_tokenizer.eos_token_id,
+            )
+        torch.cuda.empty_cache()
+        print("Warmup complete!")
+
+    if not args.skip_baseline:
+        print("\n--- Loading Baseline Model ---")
+        baseline_model, baseline_tokenizer = load_baseline_model(args.model_path, device, dtype)
+
+        # Warmup
+        warmup_inputs = baseline_tokenizer("Hello", return_tensors="pt").to(device)
+        with torch.no_grad():
+            _ = baseline_model.generate(**warmup_inputs, max_new_tokens=5)
+        torch.cuda.empty_cache()
+        print("Baseline warmup complete!")
 
     for prompt_len in args.prompt_lengths:
         for decode_len in args.decode_lengths:
@@ -411,110 +440,22 @@ def main():
             baseline_results = None
             q2fp8_results = None
 
-            # Benchmark Q2FP8 FIRST
+            # Benchmark Q2FP8
             if not args.skip_q2fp8:
                 print("\n--- Benchmarking Q2FP8 ---")
-                q2fp8_model, q2fp8_tokenizer, Q2FP8SymCache, max_decode_tokens = load_q2fp8_model(
-                    args.model_path, device, dtype, use_cudagraph=args.use_cudagraph, max_decode_tokens=args.max_decode_tokens
-                )
-
-                # Warmup: 手动预先 capture 最大长度的 CUDA Graph (pad 到 page 边界)
-                print("Warming up Q2FP8 model (pre-capturing CUDA Graph at max length)...")
-
-                # 计算需要的最大 seq_len，并 pad 到 page 边界（256 的倍数）
-                PAGE_SIZE = 256  # CUDA Graph 通常需要 256 或 512 的倍数
-                max_test_seq_len = max(args.prompt_lengths) + max(args.decode_lengths) + 10
-                # Round up to next page boundary
-                max_test_seq_len_padded = ((max_test_seq_len + PAGE_SIZE - 1) // PAGE_SIZE) * PAGE_SIZE
-                print(f"  Target max_seq_len: {max_test_seq_len} -> padded to {max_test_seq_len_padded} (page size={PAGE_SIZE})")
-
-                # 创建 cache
-                if args.use_cudagraph:
-                    # CUDA Graph cache 需要不同的参数
-                    num_key_value_heads = q2fp8_model.config.num_key_value_heads
-                    head_dim = q2fp8_model.config.hidden_size // q2fp8_model.config.num_attention_heads
-                    warmup_cache = Q2FP8SymCache(
-                        batch_size=1,
-                        num_heads_kv=num_key_value_heads,
-                        head_dim_k=head_dim,
-                        head_dim_v=head_dim,
-                        max_decode_length=max_decode_tokens,
-                        BS=128,
-                        use_fp8_residual=True,
-                        k_bits=2,
-                        device=device,
-                        dtype=torch.float16
-                    )
-                else:
-                    warmup_cache = Q2FP8SymCache(BS=128, use_fp8_residual=True, k_bits=2)
-
-                # 手动构造最大长度的 dummy 数据来预先 capture CUDA Graph
-                print(f"  Pre-capturing CUDA Graph with dummy data at seq_len={max_test_seq_len_padded}...")
-
-                # 先做一次 prefill 来初始化 cache
-                warmup_inputs = q2fp8_tokenizer("Hello", return_tensors="pt").to(device)
-                with torch.no_grad():
-                    outputs = q2fp8_model(**warmup_inputs, past_key_values=warmup_cache, use_cache=True)
-
-                # 从模型配置获取维度信息
-                num_key_value_heads = q2fp8_model.config.num_key_value_heads
-                head_dim = q2fp8_model.config.hidden_size // q2fp8_model.config.num_attention_heads
-
-                # 手动填充 cache 到最大长度（page aligned）
-                warmup_prompt_len = warmup_inputs["input_ids"].shape[1]
-                tokens_to_add = max_test_seq_len_padded - warmup_prompt_len
-
-                # 生成 dummy tokens 并添加到 cache
-                print(f"  Adding {tokens_to_add} dummy tokens to cache for all layers...")
-                dummy_k = torch.randn(1, tokens_to_add, num_key_value_heads, head_dim,
-                                     device=device, dtype=torch.float16)
-                dummy_v = torch.randn(1, tokens_to_add, num_key_value_heads, head_dim,
-                                     device=device, dtype=torch.float16)
-
-                # 更新所有层的 cache（这会触发量化）
-                num_layers = q2fp8_model.config.num_hidden_layers
-                for layer_idx in range(num_layers):
-                    warmup_cache.update(dummy_k, dummy_v, layer_idx=layer_idx, cache_kwargs={})
-
-                # 现在做一次 decode，这会触发 CUDA Graph capture，使用最大长度
-                print(f"  Triggering CUDA Graph capture at seq_len={max_test_seq_len_padded}...")
-                next_token = outputs.logits[:, -1, :].argmax(dim=-1, keepdim=True)
-                with torch.no_grad():
-                    _ = q2fp8_model(
-                        input_ids=next_token,
-                        past_key_values=warmup_cache,
-                        use_cache=True,
-                    )
-
-                print(f"Warmup complete! Global CUDA Graph captured at seq_len={max_test_seq_len_padded} (page-aligned)")
-                print(f"  All subsequent decodes will use padding to match this size")
-                torch.cuda.empty_cache()
-
                 q2fp8_results = benchmark_q2fp8(
                     q2fp8_model, q2fp8_tokenizer, Q2FP8SymCache, prompt, decode_len, device,
                     max_decode_tokens=max_decode_tokens,
                     num_runs=args.num_runs
                 )
-
-                del q2fp8_model, q2fp8_tokenizer
                 torch.cuda.empty_cache()
 
-            # Benchmark Baseline (Flash Attention) SECOND
+            # Benchmark Baseline
             if not args.skip_baseline:
-                print("\n--- Benchmarking Baseline (Flash Attention 2) ---")
-                baseline_model, baseline_tokenizer = load_baseline_model(args.model_path, device, dtype)
-
-                # Warmup
-                warmup_inputs = baseline_tokenizer("Hello", return_tensors="pt").to(device)
-                with torch.no_grad():
-                    _ = baseline_model.generate(**warmup_inputs, max_new_tokens=5)
-                torch.cuda.empty_cache()
-
+                print("\n--- Benchmarking Baseline ---")
                 baseline_results = benchmark_baseline(
                     baseline_model, baseline_tokenizer, prompt, decode_len, device, args.num_runs
                 )
-
-                del baseline_model, baseline_tokenizer
                 torch.cuda.empty_cache()
 
             # Print comparison

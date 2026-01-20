@@ -214,6 +214,11 @@ class LlamaAttention(nn.Module):
             config.num_attention_heads * self.head_dim, config.hidden_size, bias=config.attention_bias
         )
 
+        # CUDA Graph state for Block-wise JIT capture
+        self.current_graph_runner = None
+        self.cached_num_blocks = -1
+        self.cached_k_q_ptr = -1
+
     @deprecate_kwarg("past_key_value", new_name="past_key_values", version="4.58")
     def forward(
         self,
@@ -337,31 +342,112 @@ class LlamaAttention(nn.Module):
             need_lse = current_len > 0 and cache_layer.k_current is not None
             return_skip = decode_kwargs.get("return_skip_ratio", False)
 
-            decode_result = attn_forward_decode(
-                q=q_for_ffa,
-                k_q=k_q,
-                k_scale=k_scale,
-                v=v_quantized,
-                k_residual=k_residual,
-                return_lse=need_lse,
-                **decode_kwargs,
-            )
+            # Block-wise JIT CUDA Graph Logic
+            num_full_blocks = cache_layer.num_full_blocks if hasattr(cache_layer, 'num_full_blocks') else 0
 
-            # Parse results based on what was requested
-            if need_lse:
-                if return_skip:
-                    attn_output_ffa, ffa_m, ffa_l, skip_ratio = decode_result
-                    if isinstance(skip_ratio_store, list):
-                        skip_ratio_store.append(float(skip_ratio))
-                else:
-                    attn_output_ffa, ffa_m, ffa_l = decode_result
+            # Only use CUDA Graph if we have full blocks
+            if num_full_blocks > 0:
+                # Check if we need to recapture the graph
+                k_q_ptr = k_q.data_ptr()
+                need_recapture = (
+                    self.current_graph_runner is None or
+                    num_full_blocks != self.cached_num_blocks or
+                    k_q_ptr != self.cached_k_q_ptr
+                )
+
+                if need_recapture:
+                    # Free old graph runner to release memory
+                    self.current_graph_runner = None
+
+                    # Prepare kwargs for CUDA Graph runner (exclude return_skip_ratio, return_lse, max_decode_tokens)
+                    graph_kwargs = {
+                        k: v for k, v in decode_kwargs.items()
+                        if k not in ("return_skip_ratio", "return_lse", "max_decode_tokens")
+                    }
+
+                    # Force use_fp8_residual=True if config enables it
+                    use_fp8_residual = graph_kwargs.get("use_fp8_residual", True)
+                    graph_kwargs["use_fp8_residual"] = use_fp8_residual
+
+                    # Instantiate new CUDA Graph runner with warmup=2
+                    self.current_graph_runner = CUDAGraphDecodeRunnerQ2FP8(
+                        q=q_for_ffa,
+                        k_q=k_q,
+                        k_scale=k_scale,
+                        v=v_quantized,
+                        k_residual=k_residual,
+                        warmup=2,
+                        **graph_kwargs,
+                    )
+
+                    # Update cached state
+                    self.cached_num_blocks = num_full_blocks
+                    self.cached_k_q_ptr = k_q_ptr
+
+                # Replay the graph
+                attn_output_ffa = self.current_graph_runner.replay(
+                    q=q_for_ffa,
+                    k_q=k_q,
+                    k_scale=k_scale,
+                    v=v_quantized,
+                    k_residual=k_residual,
+                    return_skip_ratio=False,  # Don't capture skip_ratio in graph
+                )
+
+                # Note: CUDA Graph path doesn't support return_lse or return_skip_ratio
+                # We'll handle these outside the graph if needed
+                if need_lse or return_skip:
+                    # Fallback to non-graph path for lse/skip_ratio
+                    decode_result = attn_forward_decode(
+                        q=q_for_ffa,
+                        k_q=k_q,
+                        k_scale=k_scale,
+                        v=v_quantized,
+                        k_residual=k_residual,
+                        return_lse=need_lse,
+                        **decode_kwargs,
+                    )
+                    # Parse results as before
+                    if need_lse:
+                        if return_skip:
+                            attn_output_ffa, ffa_m, ffa_l, skip_ratio = decode_result
+                            if isinstance(skip_ratio_store, list):
+                                skip_ratio_store.append(float(skip_ratio))
+                        else:
+                            attn_output_ffa, ffa_m, ffa_l = decode_result
+                    else:
+                        if return_skip:
+                            attn_output_ffa, skip_ratio = decode_result
+                            if isinstance(skip_ratio_store, list):
+                                skip_ratio_store.append(float(skip_ratio))
+                        else:
+                            attn_output_ffa = decode_result
             else:
-                if return_skip:
-                    attn_output_ffa, skip_ratio = decode_result
-                    if isinstance(skip_ratio_store, list):
-                        skip_ratio_store.append(float(skip_ratio))
+                # No full blocks yet, use regular path
+                decode_result = attn_forward_decode(
+                    q=q_for_ffa,
+                    k_q=k_q,
+                    k_scale=k_scale,
+                    v=v_quantized,
+                    k_residual=k_residual,
+                    return_lse=need_lse,
+                    **decode_kwargs,
+                )
+                # Parse results based on what was requested
+                if need_lse:
+                    if return_skip:
+                        attn_output_ffa, ffa_m, ffa_l, skip_ratio = decode_result
+                        if isinstance(skip_ratio_store, list):
+                            skip_ratio_store.append(float(skip_ratio))
+                    else:
+                        attn_output_ffa, ffa_m, ffa_l = decode_result
                 else:
-                    attn_output_ffa = decode_result
+                    if return_skip:
+                        attn_output_ffa, skip_ratio = decode_result
+                        if isinstance(skip_ratio_store, list):
+                            skip_ratio_store.append(float(skip_ratio))
+                    else:
+                        attn_output_ffa = decode_result
 
             # FFA kernel returns [B, HQ, V], reshape to [B, 1, HQ, V]
             attn_output_ffa = attn_output_ffa.unsqueeze(1)  # [B, HQ, V] -> [B, 1, HQ, V]
