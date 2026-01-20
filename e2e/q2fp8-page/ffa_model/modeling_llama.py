@@ -270,6 +270,18 @@ class LlamaAttention(nn.Module):
         except ImportError:
             from ffa_fwd_decode import attn_forward_decode
 
+        try:
+            from ..attn_kernel.attn_q2fp8_sym_mask import CUDAGraphDecodeRunnerQ2FP8
+        except ImportError:
+            try:
+                from attn_kernel.attn_q2fp8_sym_mask import CUDAGraphDecodeRunnerQ2FP8
+            except ImportError:
+                import sys
+                from pathlib import Path
+                attn_kernel_path = Path(__file__).parent.parent / "attn_kernel"
+                sys.path.insert(0, str(attn_kernel_path))
+                from attn_q2fp8_sym_mask import CUDAGraphDecodeRunnerQ2FP8
+
         pattern_layers = attn_settings.get("pattern_layers", None)
         if pattern_layers is None:
             pattern_layers = list(range(1000))

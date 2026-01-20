@@ -1,38 +1,0 @@
-========================================================================
-Prefill + Decode Benchmark
-========================================================================
-Prompt lengths: 16384 32768
-Decode lengths: 256 512 1024
-Number of runs: 3
-Device: cuda:0
-Model path: <default in benchmark_prefill_decode.py>
-Use CUDAGraph: --use_cudagraph
-Max decode tokens: 4096
-Output: /inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-speedtest/e2e/outputs/20260120_054905/prefill_decode_benchmark.json
-Output dir: /inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-speedtest/e2e/outputs/20260120_054905
-Log file: /inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-speedtest/e2e/outputs/20260120_054905/run_prefill_decode_benchmark.log
-========================================================================
-`torch_dtype` is deprecated! Use `dtype` instead!
-====================================================================================================
-PREFILL + DECODE BENCHMARK
-====================================================================================================
-Model: /inspire/hdd/global_user/liuzhigeng-253108120105/models/Llama-3.1-8B
-Prompt lengths: [16384, 32768]
-Decode lengths: [256, 512, 1024]
-Number of runs: 3
-Device: cuda:0
-====================================================================================================
-
-====================================================================================================
-Testing: Prompt Length = 16384, Decode Length = 256
-====================================================================================================
-
---- Benchmarking Q2FP8-Unified-CUDAGraph ---
-Loading Q2FP8-Unified-CUDAGraph model from /inspire/hdd/global_user/liuzhigeng-253108120105/models/Llama-3.1-8B...
-Loading checkpoint shards:   0%|          | 0/4 [00:00<?, ?it/s]Loading checkpoint shards:  25%|██▌       | 1/4 [00:02<00:08,  2.68s/it]Loading checkpoint shards:  50%|█████     | 2/4 [00:05<00:05,  2.68s/it]Loading checkpoint shards:  75%|███████▌  | 3/4 [00:07<00:02,  2.63s/it]Loading checkpoint shards: 100%|██████████| 4/4 [00:08<00:00,  1.82s/it]Loading checkpoint shards: 100%|██████████| 4/4 [00:08<00:00,  2.13s/it]
-Traceback (most recent call last):
-  File "/inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-speedtest/e2e/benchmark_prefill_decode.py", line 473, in <module>
-    main()
-  File "/inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-speedtest/e2e/benchmark_prefill_decode.py", line 433, in main
-    warmup_cache = Q2FP8SymCache(BS=128, use_fp8_residual=True, k_bits=2, max_decode_tokens=max_decode_tokens)
-TypeError: Q2FP8SymCache.__init__() got an unexpected keyword argument 'max_decode_tokens'

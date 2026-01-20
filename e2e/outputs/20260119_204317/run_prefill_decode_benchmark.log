@@ -1,654 +1,0 @@
-========================================================================
-Prefill + Decode Benchmark
-========================================================================
-Prompt lengths: 16384 32768 49152
-Decode lengths: 256 512 1024 2048 4096
-Number of runs: 3
-Device: cuda:0
-Output: /inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-speedtest/e2e/outputs/20260119_204317/prefill_decode_benchmark.json
-Output dir: /inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-speedtest/e2e/outputs/20260119_204317
-Log file: /inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-speedtest/e2e/outputs/20260119_204317/run_prefill_decode_benchmark.log
-========================================================================
-`torch_dtype` is deprecated! Use `dtype` instead!
-====================================================================================================
-PREFILL + DECODE BENCHMARK
-====================================================================================================
-Model: /inspire/hdd/global_user/liuzhigeng-253108120105/models/Llama-3.1-8B
-Prompt lengths: [16384, 32768, 49152]
-Decode lengths: [256, 512, 1024, 2048, 4096]
-Number of runs: 3
-Device: cuda:0
-====================================================================================================
-
-====================================================================================================
-Testing: Prompt Length = 16384, Decode Length = 256
-====================================================================================================
-
---- Benchmarking Baseline ---
-Loading baseline model from /inspire/hdd/global_user/liuzhigeng-253108120105/models/Llama-3.1-8B...
-Loading checkpoint shards:   0%|          | 0/4 [00:00<?, ?it/s]Loading checkpoint shards:  25%|██▌       | 1/4 [00:02<00:08,  2.70s/it]Loading checkpoint shards:  50%|█████     | 2/4 [00:05<00:05,  2.69s/it]Loading checkpoint shards:  75%|███████▌  | 3/4 [00:07<00:02,  2.62s/it]Loading checkpoint shards: 100%|██████████| 4/4 [00:08<00:00,  1.82s/it]Loading checkpoint shards: 100%|██████████| 4/4 [00:08<00:00,  2.13s/it]
-The following generation flags are not valid and may be ignored: ['temperature', 'top_p']. Set `TRANSFORMERS_VERBOSITY=info` for more details.
-`torch_dtype` is deprecated! Use `dtype` instead!
-
---- Benchmarking Q2FP8-Unified ---
-Loading Q2FP8-Unified model from /inspire/hdd/global_user/liuzhigeng-253108120105/models/Llama-3.1-8B...
-Loading checkpoint shards:   0%|          | 0/4 [00:00<?, ?it/s]Loading checkpoint shards:  25%|██▌       | 1/4 [00:02<00:07,  2.64s/it]Loading checkpoint shards:  50%|█████     | 2/4 [00:05<00:05,  2.65s/it]Loading checkpoint shards:  75%|███████▌  | 3/4 [00:07<00:02,  2.61s/it]Loading checkpoint shards: 100%|██████████| 4/4 [00:08<00:00,  1.80s/it]Loading checkpoint shards: 100%|██████████| 4/4 [00:08<00:00,  2.11s/it]
-
-====================================================================================================
-RESULTS: Prompt Length = 16464, Decode Tokens = 256
-====================================================================================================
-
---- PREFILL PHASE ---
-Metric                         Baseline             Q2FP8                Ratio          
--------------------------------------------------------------------------------------
-Prefill Time (ms)              2571.53              2605.01              0.987          x
-Prefill Throughput (tok/s)     6402.41              6320.14              0.987          x
-
---- DECODE PHASE ---
-Metric                         Baseline             Q2FP8                Ratio          
--------------------------------------------------------------------------------------
-Total Decode Time (ms)         8238.09              8966.58              0.919          x
-Per-Token Time (ms)            32.18                35.03                0.919          x
-Decode Throughput (tok/s)      31.08                28.55                0.919          x
-
---- TOTAL (PREFILL + DECODE) ---
-Metric                         Baseline             Q2FP8                Ratio          
--------------------------------------------------------------------------------------
-Total Time (ms)                10809.62             11571.58             0.934          x
-Memory (MB)                    23631.96             22925.64             0.970          x
-
-====================================================================================================
-SUMMARY: Q2FP8 is 1.09x SLOWER in decode (28.55 vs 31.08 tok/s)
-====================================================================================================
-
-====================================================================================================
-Testing: Prompt Length = 16384, Decode Length = 512
-====================================================================================================
-
---- Benchmarking Baseline ---
-Loading baseline model from /inspire/hdd/global_user/liuzhigeng-253108120105/models/Llama-3.1-8B...
-Loading checkpoint shards:   0%|          | 0/4 [00:00<?, ?it/s]Loading checkpoint shards:  25%|██▌       | 1/4 [00:02<00:07,  2.63s/it]Loading checkpoint shards:  50%|█████     | 2/4 [00:05<00:05,  2.63s/it]Loading checkpoint shards:  75%|███████▌  | 3/4 [00:07<00:02,  2.58s/it]Loading checkpoint shards: 100%|██████████| 4/4 [00:08<00:00,  1.79s/it]Loading checkpoint shards: 100%|██████████| 4/4 [00:08<00:00,  2.09s/it]
-
---- Benchmarking Q2FP8-Unified ---
-Loading Q2FP8-Unified model from /inspire/hdd/global_user/liuzhigeng-253108120105/models/Llama-3.1-8B...
-Loading checkpoint shards:   0%|          | 0/4 [00:00<?, ?it/s]Loading checkpoint shards:  25%|██▌       | 1/4 [00:02<00:07,  2.62s/it]Loading checkpoint shards:  50%|█████     | 2/4 [00:05<00:05,  2.63s/it]Loading checkpoint shards:  75%|███████▌  | 3/4 [00:07<00:02,  2.58s/it]Loading checkpoint shards: 100%|██████████| 4/4 [00:08<00:00,  1.79s/it]Loading checkpoint shards: 100%|██████████| 4/4 [00:08<00:00,  2.09s/it]
-
-====================================================================================================
-RESULTS: Prompt Length = 16464, Decode Tokens = 512
-====================================================================================================
-
---- PREFILL PHASE ---
-Metric                         Baseline             Q2FP8                Ratio          
--------------------------------------------------------------------------------------
-Prefill Time (ms)              2574.92              2597.81              0.991          x
-Prefill Throughput (tok/s)     6393.98              6337.66              0.991          x
-
---- DECODE PHASE ---
-Metric                         Baseline             Q2FP8                Ratio          
--------------------------------------------------------------------------------------
-Total Decode Time (ms)         16418.98             17687.23             0.928          x
-Per-Token Time (ms)            32.07                34.55                0.928          x
-Decode Throughput (tok/s)      31.18                28.95                0.928          x
-
---- TOTAL (PREFILL + DECODE) ---
-Metric                         Baseline             Q2FP8                Ratio          
--------------------------------------------------------------------------------------
-Total Time (ms)                18993.90             20285.03             0.936          x
-Memory (MB)                    23682.13             22953.07             0.969          x
-
-====================================================================================================
-SUMMARY: Q2FP8 is 1.08x SLOWER in decode (28.95 vs 31.18 tok/s)
-====================================================================================================
-
-====================================================================================================
-Testing: Prompt Length = 16384, Decode Length = 1024
-====================================================================================================
-
---- Benchmarking Baseline ---
-Loading baseline model from /inspire/hdd/global_user/liuzhigeng-253108120105/models/Llama-3.1-8B...
-Loading checkpoint shards:   0%|          | 0/4 [00:00<?, ?it/s]Loading checkpoint shards:  25%|██▌       | 1/4 [00:02<00:07,  2.62s/it]Loading checkpoint shards:  50%|█████     | 2/4 [00:05<00:05,  2.63s/it]Loading checkpoint shards:  75%|███████▌  | 3/4 [00:07<00:02,  2.59s/it]Loading checkpoint shards: 100%|██████████| 4/4 [00:08<00:00,  1.80s/it]Loading checkpoint shards: 100%|██████████| 4/4 [00:08<00:00,  2.10s/it]
-
---- Benchmarking Q2FP8-Unified ---
-Loading Q2FP8-Unified model from /inspire/hdd/global_user/liuzhigeng-253108120105/models/Llama-3.1-8B...
-Loading checkpoint shards:   0%|          | 0/4 [00:00<?, ?it/s]Loading checkpoint shards:  25%|██▌       | 1/4 [00:02<00:07,  2.62s/it]Loading checkpoint shards:  50%|█████     | 2/4 [00:05<00:05,  2.63s/it]Loading checkpoint shards:  75%|███████▌  | 3/4 [00:07<00:02,  2.58s/it]Loading checkpoint shards: 100%|██████████| 4/4 [00:08<00:00,  1.79s/it]Loading checkpoint shards: 100%|██████████| 4/4 [00:08<00:00,  2.09s/it]
-
-====================================================================================================
-RESULTS: Prompt Length = 16464, Decode Tokens = 1024
-====================================================================================================
-
---- PREFILL PHASE ---
-Metric                         Baseline             Q2FP8                Ratio          
--------------------------------------------------------------------------------------
-Prefill Time (ms)              2574.04              2596.03              0.992          x
-Prefill Throughput (tok/s)     6396.17              6342.00              0.992          x
-
---- DECODE PHASE ---
-Metric                         Baseline             Q2FP8                Ratio          
--------------------------------------------------------------------------------------
-Total Decode Time (ms)         32886.30             35211.54             0.934          x
-Per-Token Time (ms)            32.12                34.39                0.934          x
-Decode Throughput (tok/s)      31.14                29.08                0.934          x
-
---- TOTAL (PREFILL + DECODE) ---
-Metric                         Baseline             Q2FP8                Ratio          
--------------------------------------------------------------------------------------
-Total Time (ms)                35460.34             37807.57             0.938          x
-Memory (MB)                    23744.13             23004.55             0.969          x
-
-====================================================================================================
-SUMMARY: Q2FP8 is 1.07x SLOWER in decode (29.08 vs 31.14 tok/s)
-====================================================================================================
-
-====================================================================================================
-Testing: Prompt Length = 16384, Decode Length = 2048
-====================================================================================================
-
---- Benchmarking Baseline ---
-Loading baseline model from /inspire/hdd/global_user/liuzhigeng-253108120105/models/Llama-3.1-8B...
-Loading checkpoint shards:   0%|          | 0/4 [00:00<?, ?it/s]Loading checkpoint shards:  25%|██▌       | 1/4 [00:02<00:07,  2.62s/it]Loading checkpoint shards:  50%|█████     | 2/4 [00:05<00:05,  2.63s/it]Loading checkpoint shards:  75%|███████▌  | 3/4 [00:07<00:02,  2.58s/it]Loading checkpoint shards: 100%|██████████| 4/4 [00:08<00:00,  1.79s/it]Loading checkpoint shards: 100%|██████████| 4/4 [00:08<00:00,  2.09s/it]
-
---- Benchmarking Q2FP8-Unified ---
-Loading Q2FP8-Unified model from /inspire/hdd/global_user/liuzhigeng-253108120105/models/Llama-3.1-8B...
-Loading checkpoint shards:   0%|          | 0/4 [00:00<?, ?it/s]Loading checkpoint shards:  25%|██▌       | 1/4 [00:02<00:07,  2.63s/it]Loading checkpoint shards:  50%|█████     | 2/4 [00:05<00:05,  2.64s/it]Loading checkpoint shards:  75%|███████▌  | 3/4 [00:07<00:02,  2.60s/it]Loading checkpoint shards: 100%|██████████| 4/4 [00:08<00:00,  1.80s/it]Loading checkpoint shards: 100%|██████████| 4/4 [00:08<00:00,  2.10s/it]
-
-====================================================================================================
-RESULTS: Prompt Length = 16464, Decode Tokens = 2048
-====================================================================================================
-
---- PREFILL PHASE ---
-Metric                         Baseline             Q2FP8                Ratio          
--------------------------------------------------------------------------------------
-Prefill Time (ms)              2574.92              2598.86              0.991          x
-Prefill Throughput (tok/s)     6394.00              6335.08              0.991          x
-
---- DECODE PHASE ---
-Metric                         Baseline             Q2FP8                Ratio          
--------------------------------------------------------------------------------------
-Total Decode Time (ms)         66034.82             71059.89             0.929          x
-Per-Token Time (ms)            32.24                34.70                0.929          x
-Decode Throughput (tok/s)      31.01                28.82                0.929          x
-
---- TOTAL (PREFILL + DECODE) ---
-Metric                         Baseline             Q2FP8                Ratio          
--------------------------------------------------------------------------------------
-Total Time (ms)                68609.73             73658.76             0.931          x
-Memory (MB)                    23872.13             23106.47             0.968          x
-
-====================================================================================================
-SUMMARY: Q2FP8 is 1.08x SLOWER in decode (28.82 vs 31.01 tok/s)
-====================================================================================================
-
-====================================================================================================
-Testing: Prompt Length = 16384, Decode Length = 4096
-====================================================================================================
-
---- Benchmarking Baseline ---
-Loading baseline model from /inspire/hdd/global_user/liuzhigeng-253108120105/models/Llama-3.1-8B...
-Loading checkpoint shards:   0%|          | 0/4 [00:00<?, ?it/s]Loading checkpoint shards:  25%|██▌       | 1/4 [00:02<00:07,  2.63s/it]Loading checkpoint shards:  50%|█████     | 2/4 [00:05<00:05,  2.64s/it]Loading checkpoint shards:  75%|███████▌  | 3/4 [00:07<00:02,  2.60s/it]Loading checkpoint shards: 100%|██████████| 4/4 [00:08<00:00,  1.80s/it]Loading checkpoint shards: 100%|██████████| 4/4 [00:08<00:00,  2.10s/it]
-
---- Benchmarking Q2FP8-Unified ---
-Loading Q2FP8-Unified model from /inspire/hdd/global_user/liuzhigeng-253108120105/models/Llama-3.1-8B...
-Loading checkpoint shards:   0%|          | 0/4 [00:00<?, ?it/s]Loading checkpoint shards:  25%|██▌       | 1/4 [00:02<00:07,  2.63s/it]Loading checkpoint shards:  50%|█████     | 2/4 [00:05<00:05,  2.64s/it]Loading checkpoint shards:  75%|███████▌  | 3/4 [00:07<00:02,  2.59s/it]Loading checkpoint shards: 100%|██████████| 4/4 [00:08<00:00,  1.79s/it]Loading checkpoint shards: 100%|██████████| 4/4 [00:08<00:00,  2.10s/it]
-
-====================================================================================================
-RESULTS: Prompt Length = 16464, Decode Tokens = 4096
-====================================================================================================
-
---- PREFILL PHASE ---
-Metric                         Baseline             Q2FP8                Ratio          
--------------------------------------------------------------------------------------
-Prefill Time (ms)              2575.99              2596.16              0.992          x
-Prefill Throughput (tok/s)     6391.32              6341.67              0.992          x
-
---- DECODE PHASE ---
-Metric                         Baseline             Q2FP8                Ratio          
--------------------------------------------------------------------------------------
-Total Decode Time (ms)         132633.22            143229.88            0.926          x
-Per-Token Time (ms)            32.38                34.97                0.926          x
-Decode Throughput (tok/s)      30.88                28.60                0.926          x
-
---- TOTAL (PREFILL + DECODE) ---
-Metric                         Baseline             Q2FP8                Ratio          
--------------------------------------------------------------------------------------
-Total Time (ms)                135209.21            145826.04            0.927          x
-Memory (MB)                    24128.13             23313.65             0.966          x
-
-====================================================================================================
-SUMMARY: Q2FP8 is 1.08x SLOWER in decode (28.60 vs 30.88 tok/s)
-====================================================================================================
-
-====================================================================================================
-Testing: Prompt Length = 32768, Decode Length = 256
-====================================================================================================
-
---- Benchmarking Baseline ---
-Loading baseline model from /inspire/hdd/global_user/liuzhigeng-253108120105/models/Llama-3.1-8B...
-Loading checkpoint shards:   0%|          | 0/4 [00:00<?, ?it/s]Loading checkpoint shards:  25%|██▌       | 1/4 [00:02<00:07,  2.62s/it]Loading checkpoint shards:  50%|█████     | 2/4 [00:05<00:05,  2.63s/it]Loading checkpoint shards:  75%|███████▌  | 3/4 [00:07<00:02,  2.59s/it]Loading checkpoint shards: 100%|██████████| 4/4 [00:08<00:00,  1.79s/it]Loading checkpoint shards: 100%|██████████| 4/4 [00:08<00:00,  2.09s/it]
-
---- Benchmarking Q2FP8-Unified ---
-Loading Q2FP8-Unified model from /inspire/hdd/global_user/liuzhigeng-253108120105/models/Llama-3.1-8B...
-Loading checkpoint shards:   0%|          | 0/4 [00:00<?, ?it/s]Loading checkpoint shards:  25%|██▌       | 1/4 [00:02<00:07,  2.62s/it]Loading checkpoint shards:  50%|█████     | 2/4 [00:05<00:05,  2.63s/it]Loading checkpoint shards:  75%|███████▌  | 3/4 [00:07<00:02,  2.58s/it]Loading checkpoint shards: 100%|██████████| 4/4 [00:08<00:00,  1.79s/it]Loading checkpoint shards: 100%|██████████| 4/4 [00:08<00:00,  2.09s/it]
-
-====================================================================================================
-RESULTS: Prompt Length = 32826, Decode Tokens = 256
-====================================================================================================
-
---- PREFILL PHASE ---
-Metric                         Baseline             Q2FP8                Ratio          
--------------------------------------------------------------------------------------
-Prefill Time (ms)              5993.93              6092.78              0.984          x
-Prefill Throughput (tok/s)     5476.54              5387.69              0.984          x
-
---- DECODE PHASE ---
-Metric                         Baseline             Q2FP8                Ratio          
--------------------------------------------------------------------------------------
-Total Decode Time (ms)         9238.09              8878.60              1.040          x
-Per-Token Time (ms)            36.09                34.68                1.040          x
-Decode Throughput (tok/s)      27.71                28.83                1.040          x
-
---- TOTAL (PREFILL + DECODE) ---
-Metric                         Baseline             Q2FP8                Ratio          
--------------------------------------------------------------------------------------
-Total Time (ms)                15232.02             14971.37             1.017          x
-Memory (MB)                    31872.04             30394.69             0.954          x
-
-====================================================================================================
-SUMMARY: Q2FP8 is 1.04x FASTER in decode (28.83 vs 27.71 tok/s)
-====================================================================================================
-
-====================================================================================================
-Testing: Prompt Length = 32768, Decode Length = 512
-====================================================================================================
-
---- Benchmarking Baseline ---
-Loading baseline model from /inspire/hdd/global_user/liuzhigeng-253108120105/models/Llama-3.1-8B...
-Loading checkpoint shards:   0%|          | 0/4 [00:00<?, ?it/s]Loading checkpoint shards:  25%|██▌       | 1/4 [00:02<00:07,  2.63s/it]Loading checkpoint shards:  50%|█████     | 2/4 [00:05<00:05,  2.64s/it]Loading checkpoint shards:  75%|███████▌  | 3/4 [00:07<00:02,  2.60s/it]Loading checkpoint shards: 100%|██████████| 4/4 [00:08<00:00,  1.80s/it]Loading checkpoint shards: 100%|██████████| 4/4 [00:08<00:00,  2.10s/it]
-
---- Benchmarking Q2FP8-Unified ---
-Loading Q2FP8-Unified model from /inspire/hdd/global_user/liuzhigeng-253108120105/models/Llama-3.1-8B...
-Loading checkpoint shards:   0%|          | 0/4 [00:00<?, ?it/s]Loading checkpoint shards:  25%|██▌       | 1/4 [00:02<00:07,  2.64s/it]Loading checkpoint shards:  50%|█████     | 2/4 [00:05<00:05,  2.64s/it]Loading checkpoint shards:  75%|███████▌  | 3/4 [00:07<00:02,  2.59s/it]Loading checkpoint shards: 100%|██████████| 4/4 [00:08<00:00,  1.80s/it]Loading checkpoint shards: 100%|██████████| 4/4 [00:08<00:00,  2.10s/it]
-
-====================================================================================================
-RESULTS: Prompt Length = 32826, Decode Tokens = 512
-====================================================================================================
-
---- PREFILL PHASE ---
-Metric                         Baseline             Q2FP8                Ratio          
--------------------------------------------------------------------------------------
-Prefill Time (ms)              6005.16              6087.77              0.986          x
-Prefill Throughput (tok/s)     5466.30              5392.13              0.986          x
-
---- DECODE PHASE ---
-Metric                         Baseline             Q2FP8                Ratio          
--------------------------------------------------------------------------------------
-Total Decode Time (ms)         18527.21             17723.28             1.045          x
-Per-Token Time (ms)            36.19                34.62                1.045          x
-Decode Throughput (tok/s)      27.64                28.89                1.045          x
-
---- TOTAL (PREFILL + DECODE) ---
-Metric                         Baseline             Q2FP8                Ratio          
--------------------------------------------------------------------------------------
-Total Time (ms)                24532.37             23811.04             1.030          x
-Memory (MB)                    31904.78             30426.86             0.954          x
-
-====================================================================================================
-SUMMARY: Q2FP8 is 1.05x FASTER in decode (28.89 vs 27.64 tok/s)
-====================================================================================================
-
-====================================================================================================
-Testing: Prompt Length = 32768, Decode Length = 1024
-====================================================================================================
-
---- Benchmarking Baseline ---
-Loading baseline model from /inspire/hdd/global_user/liuzhigeng-253108120105/models/Llama-3.1-8B...
-Loading checkpoint shards:   0%|          | 0/4 [00:00<?, ?it/s]Loading checkpoint shards:  25%|██▌       | 1/4 [00:02<00:07,  2.64s/it]Loading checkpoint shards:  50%|█████     | 2/4 [00:05<00:05,  2.64s/it]Loading checkpoint shards:  75%|███████▌  | 3/4 [00:07<00:02,  2.59s/it]Loading checkpoint shards: 100%|██████████| 4/4 [00:08<00:00,  1.80s/it]Loading checkpoint shards: 100%|██████████| 4/4 [00:08<00:00,  2.10s/it]
-
---- Benchmarking Q2FP8-Unified ---
-Loading Q2FP8-Unified model from /inspire/hdd/global_user/liuzhigeng-253108120105/models/Llama-3.1-8B...
-Loading checkpoint shards:   0%|          | 0/4 [00:00<?, ?it/s]Loading checkpoint shards:  25%|██▌       | 1/4 [00:02<00:07,  2.64s/it]Loading checkpoint shards:  50%|█████     | 2/4 [00:05<00:05,  2.64s/it]Loading checkpoint shards:  75%|███████▌  | 3/4 [00:07<00:02,  2.59s/it]Loading checkpoint shards: 100%|██████████| 4/4 [00:08<00:00,  1.79s/it]Loading checkpoint shards: 100%|██████████| 4/4 [00:08<00:00,  2.10s/it]
-
-====================================================================================================
-RESULTS: Prompt Length = 32826, Decode Tokens = 1024
-====================================================================================================
-
---- PREFILL PHASE ---
-Metric                         Baseline             Q2FP8                Ratio          
--------------------------------------------------------------------------------------
-Prefill Time (ms)              6005.66              6082.80              0.987          x
-Prefill Throughput (tok/s)     5465.84              5396.52              0.987          x
-
---- DECODE PHASE ---
-Metric                         Baseline             Q2FP8                Ratio          
--------------------------------------------------------------------------------------
-Total Decode Time (ms)         37119.55             36897.39             1.006          x
-Per-Token Time (ms)            36.25                36.03                1.006          x
-Decode Throughput (tok/s)      27.59                27.75                1.006          x
-
---- TOTAL (PREFILL + DECODE) ---
-Metric                         Baseline             Q2FP8                Ratio          
--------------------------------------------------------------------------------------
-Total Time (ms)                43125.22             42980.19             1.003          x
-Memory (MB)                    31966.80             30472.11             0.953          x
-
-====================================================================================================
-SUMMARY: Q2FP8 is 1.01x FASTER in decode (27.75 vs 27.59 tok/s)
-====================================================================================================
-
-====================================================================================================
-Testing: Prompt Length = 32768, Decode Length = 2048
-====================================================================================================
-
---- Benchmarking Baseline ---
-Loading baseline model from /inspire/hdd/global_user/liuzhigeng-253108120105/models/Llama-3.1-8B...
-Loading checkpoint shards:   0%|          | 0/4 [00:00<?, ?it/s]Loading checkpoint shards:  25%|██▌       | 1/4 [00:02<00:07,  2.63s/it]Loading checkpoint shards:  50%|█████     | 2/4 [00:05<00:05,  2.64s/it]Loading checkpoint shards:  75%|███████▌  | 3/4 [00:07<00:02,  2.59s/it]Loading checkpoint shards: 100%|██████████| 4/4 [00:08<00:00,  1.79s/it]Loading checkpoint shards: 100%|██████████| 4/4 [00:08<00:00,  2.09s/it]
-
---- Benchmarking Q2FP8-Unified ---
-Loading Q2FP8-Unified model from /inspire/hdd/global_user/liuzhigeng-253108120105/models/Llama-3.1-8B...
-Loading checkpoint shards:   0%|          | 0/4 [00:00<?, ?it/s]Loading checkpoint shards:  25%|██▌       | 1/4 [00:02<00:07,  2.63s/it]Loading checkpoint shards:  50%|█████     | 2/4 [00:05<00:05,  2.63s/it]Loading checkpoint shards:  75%|███████▌  | 3/4 [00:07<00:02,  2.59s/it]Loading checkpoint shards: 100%|██████████| 4/4 [00:08<00:00,  1.80s/it]Loading checkpoint shards: 100%|██████████| 4/4 [00:08<00:00,  2.10s/it]
-
-====================================================================================================
-RESULTS: Prompt Length = 32826, Decode Tokens = 2048
-====================================================================================================
-
---- PREFILL PHASE ---
-Metric                         Baseline             Q2FP8                Ratio          
--------------------------------------------------------------------------------------
-Prefill Time (ms)              6005.32              6069.65              0.989          x
-Prefill Throughput (tok/s)     5466.16              5408.22              0.989          x
-
---- DECODE PHASE ---
-Metric                         Baseline             Q2FP8                Ratio          
--------------------------------------------------------------------------------------
-Total Decode Time (ms)         74815.91             78325.41             0.955          x
-Per-Token Time (ms)            36.53                38.24                0.955          x
-Decode Throughput (tok/s)      27.37                26.15                0.955          x
-
---- TOTAL (PREFILL + DECODE) ---
-Metric                         Baseline             Q2FP8                Ratio          
--------------------------------------------------------------------------------------
-Total Time (ms)                80821.23             84395.06             0.958          x
-Memory (MB)                    32094.80             30576.90             0.953          x
-
-====================================================================================================
-SUMMARY: Q2FP8 is 1.05x SLOWER in decode (26.15 vs 27.37 tok/s)
-====================================================================================================
-
-====================================================================================================
-Testing: Prompt Length = 32768, Decode Length = 4096
-====================================================================================================
-
---- Benchmarking Baseline ---
-Loading baseline model from /inspire/hdd/global_user/liuzhigeng-253108120105/models/Llama-3.1-8B...
-Loading checkpoint shards:   0%|          | 0/4 [00:00<?, ?it/s]Loading checkpoint shards:  25%|██▌       | 1/4 [00:02<00:07,  2.64s/it]Loading checkpoint shards:  50%|█████     | 2/4 [00:05<00:05,  2.65s/it]Loading checkpoint shards:  75%|███████▌  | 3/4 [00:07<00:02,  2.60s/it]Loading checkpoint shards: 100%|██████████| 4/4 [00:08<00:00,  1.80s/it]Loading checkpoint shards: 100%|██████████| 4/4 [00:08<00:00,  2.10s/it]
-
---- Benchmarking Q2FP8-Unified ---
-Loading Q2FP8-Unified model from /inspire/hdd/global_user/liuzhigeng-253108120105/models/Llama-3.1-8B...
-Loading checkpoint shards:   0%|          | 0/4 [00:00<?, ?it/s]Loading checkpoint shards:  25%|██▌       | 1/4 [00:02<00:07,  2.62s/it]Loading checkpoint shards:  50%|█████     | 2/4 [00:05<00:05,  2.63s/it]Loading checkpoint shards:  75%|███████▌  | 3/4 [00:07<00:02,  2.59s/it]Loading checkpoint shards: 100%|██████████| 4/4 [00:08<00:00,  1.80s/it]Loading checkpoint shards: 100%|██████████| 4/4 [00:08<00:00,  2.10s/it]
-
-====================================================================================================
-RESULTS: Prompt Length = 32826, Decode Tokens = 4096
-====================================================================================================
-
---- PREFILL PHASE ---
-Metric                         Baseline             Q2FP8                Ratio          
--------------------------------------------------------------------------------------
-Prefill Time (ms)              5994.19              6056.36              0.990          x
-Prefill Throughput (tok/s)     5476.30              5420.09              0.990          x
-
---- DECODE PHASE ---
-Metric                         Baseline             Q2FP8                Ratio          
--------------------------------------------------------------------------------------
-Total Decode Time (ms)         151367.66            155250.72            0.975          x
-Per-Token Time (ms)            36.95                37.90                0.975          x
-Decode Throughput (tok/s)      27.06                26.38                0.975          x
-
---- TOTAL (PREFILL + DECODE) ---
-Metric                         Baseline             Q2FP8                Ratio          
--------------------------------------------------------------------------------------
-Total Time (ms)                157361.84            161307.08            0.976          x
-Memory (MB)                    32350.80             30782.70             0.952          x
-
-====================================================================================================
-SUMMARY: Q2FP8 is 1.03x SLOWER in decode (26.38 vs 27.06 tok/s)
-====================================================================================================
-
-====================================================================================================
-Testing: Prompt Length = 49152, Decode Length = 256
-====================================================================================================
-
---- Benchmarking Baseline ---
-Loading baseline model from /inspire/hdd/global_user/liuzhigeng-253108120105/models/Llama-3.1-8B...
-Loading checkpoint shards:   0%|          | 0/4 [00:00<?, ?it/s]Loading checkpoint shards:  25%|██▌       | 1/4 [00:02<00:07,  2.66s/it]Loading checkpoint shards:  50%|█████     | 2/4 [00:05<00:05,  2.65s/it]Loading checkpoint shards:  75%|███████▌  | 3/4 [00:07<00:02,  2.60s/it]Loading checkpoint shards: 100%|██████████| 4/4 [00:08<00:00,  1.80s/it]Loading checkpoint shards: 100%|██████████| 4/4 [00:08<00:00,  2.10s/it]
-
---- Benchmarking Q2FP8-Unified ---
-Loading Q2FP8-Unified model from /inspire/hdd/global_user/liuzhigeng-253108120105/models/Llama-3.1-8B...
-Loading checkpoint shards:   0%|          | 0/4 [00:00<?, ?it/s]Loading checkpoint shards:  25%|██▌       | 1/4 [00:02<00:07,  2.65s/it]Loading checkpoint shards:  50%|█████     | 2/4 [00:05<00:05,  2.64s/it]Loading checkpoint shards:  75%|███████▌  | 3/4 [00:07<00:02,  2.59s/it]Loading checkpoint shards: 100%|██████████| 4/4 [00:08<00:00,  1.80s/it]Loading checkpoint shards: 100%|██████████| 4/4 [00:08<00:00,  2.10s/it]
-
-====================================================================================================
-RESULTS: Prompt Length = 49188, Decode Tokens = 256
-====================================================================================================
-
---- PREFILL PHASE ---
-Metric                         Baseline             Q2FP8                Ratio          
--------------------------------------------------------------------------------------
-Prefill Time (ms)              9620.09              9720.68              0.990          x
-Prefill Throughput (tok/s)     5113.05              5060.14              0.990          x
-
---- DECODE PHASE ---
-Metric                         Baseline             Q2FP8                Ratio          
--------------------------------------------------------------------------------------
-Total Decode Time (ms)         11070.80             13129.19             0.843          x
-Per-Token Time (ms)            43.25                51.29                0.843          x
-Decode Throughput (tok/s)      23.12                19.50                0.843          x
-
---- TOTAL (PREFILL + DECODE) ---
-Metric                         Baseline             Q2FP8                Ratio          
--------------------------------------------------------------------------------------
-Total Time (ms)                20690.88             22849.86             0.906          x
-Memory (MB)                    40092.52             37869.09             0.945          x
-
-====================================================================================================
-SUMMARY: Q2FP8 is 1.19x SLOWER in decode (19.50 vs 23.12 tok/s)
-====================================================================================================
-
-====================================================================================================
-Testing: Prompt Length = 49152, Decode Length = 512
-====================================================================================================
-
---- Benchmarking Baseline ---
-Loading baseline model from /inspire/hdd/global_user/liuzhigeng-253108120105/models/Llama-3.1-8B...
-Loading checkpoint shards:   0%|          | 0/4 [00:00<?, ?it/s]Loading checkpoint shards:  25%|██▌       | 1/4 [00:02<00:07,  2.64s/it]Loading checkpoint shards:  50%|█████     | 2/4 [00:05<00:05,  2.64s/it]Loading checkpoint shards:  75%|███████▌  | 3/4 [00:07<00:02,  2.59s/it]Loading checkpoint shards: 100%|██████████| 4/4 [00:08<00:00,  1.80s/it]Loading checkpoint shards: 100%|██████████| 4/4 [00:08<00:00,  2.10s/it]
-
---- Benchmarking Q2FP8-Unified ---
-Loading Q2FP8-Unified model from /inspire/hdd/global_user/liuzhigeng-253108120105/models/Llama-3.1-8B...
-Loading checkpoint shards:   0%|          | 0/4 [00:00<?, ?it/s]Loading checkpoint shards:  25%|██▌       | 1/4 [00:02<00:07,  2.63s/it]Loading checkpoint shards:  50%|█████     | 2/4 [00:05<00:05,  2.63s/it]Loading checkpoint shards:  75%|███████▌  | 3/4 [00:07<00:02,  2.58s/it]Loading checkpoint shards: 100%|██████████| 4/4 [00:08<00:00,  1.79s/it]Loading checkpoint shards: 100%|██████████| 4/4 [00:08<00:00,  2.09s/it]
-
-====================================================================================================
-RESULTS: Prompt Length = 49188, Decode Tokens = 512
-====================================================================================================
-
---- PREFILL PHASE ---
-Metric                         Baseline             Q2FP8                Ratio          
--------------------------------------------------------------------------------------
-Prefill Time (ms)              9660.53              9756.59              0.990          x
-Prefill Throughput (tok/s)     5091.65              5041.51              0.990          x
-
---- DECODE PHASE ---
-Metric                         Baseline             Q2FP8                Ratio          
--------------------------------------------------------------------------------------
-Total Decode Time (ms)         22154.40             17944.05             1.235          x
-Per-Token Time (ms)            43.27                35.05                1.235          x
-Decode Throughput (tok/s)      23.11                28.53                1.235          x
-
---- TOTAL (PREFILL + DECODE) ---
-Metric                         Baseline             Q2FP8                Ratio          
--------------------------------------------------------------------------------------
-Total Time (ms)                31814.93             27700.65             1.149          x
-Memory (MB)                    40123.59             37895.14             0.944          x
-
-====================================================================================================
-SUMMARY: Q2FP8 is 1.23x FASTER in decode (28.53 vs 23.11 tok/s)
-====================================================================================================
-
-====================================================================================================
-Testing: Prompt Length = 49152, Decode Length = 1024
-====================================================================================================
-
---- Benchmarking Baseline ---
-Loading baseline model from /inspire/hdd/global_user/liuzhigeng-253108120105/models/Llama-3.1-8B...
-Loading checkpoint shards:   0%|          | 0/4 [00:00<?, ?it/s]Loading checkpoint shards:  25%|██▌       | 1/4 [00:02<00:07,  2.62s/it]Loading checkpoint shards:  50%|█████     | 2/4 [00:05<00:05,  2.63s/it]Loading checkpoint shards:  75%|███████▌  | 3/4 [00:07<00:02,  2.58s/it]Loading checkpoint shards: 100%|██████████| 4/4 [00:08<00:00,  1.79s/it]Loading checkpoint shards: 100%|██████████| 4/4 [00:08<00:00,  2.09s/it]
-
---- Benchmarking Q2FP8-Unified ---
-Loading Q2FP8-Unified model from /inspire/hdd/global_user/liuzhigeng-253108120105/models/Llama-3.1-8B...
-Loading checkpoint shards:   0%|          | 0/4 [00:00<?, ?it/s]Loading checkpoint shards:  25%|██▌       | 1/4 [00:02<00:07,  2.63s/it]Loading checkpoint shards:  50%|█████     | 2/4 [00:05<00:05,  2.63s/it]Loading checkpoint shards:  75%|███████▌  | 3/4 [00:07<00:02,  2.58s/it]Loading checkpoint shards: 100%|██████████| 4/4 [00:08<00:00,  1.79s/it]Loading checkpoint shards: 100%|██████████| 4/4 [00:08<00:00,  2.09s/it]
-
-====================================================================================================
-RESULTS: Prompt Length = 49188, Decode Tokens = 1024
-====================================================================================================
-
---- PREFILL PHASE ---
-Metric                         Baseline             Q2FP8                Ratio          
--------------------------------------------------------------------------------------
-Prefill Time (ms)              9636.72              9725.67              0.991          x
-Prefill Throughput (tok/s)     5104.23              5057.54              0.991          x
-
---- DECODE PHASE ---
-Metric                         Baseline             Q2FP8                Ratio          
--------------------------------------------------------------------------------------
-Total Decode Time (ms)         44417.32             38589.72             1.151          x
-Per-Token Time (ms)            43.38                37.69                1.151          x
-Decode Throughput (tok/s)      23.05                26.54                1.151          x
-
---- TOTAL (PREFILL + DECODE) ---
-Metric                         Baseline             Q2FP8                Ratio          
--------------------------------------------------------------------------------------
-Total Time (ms)                54054.03             48315.39             1.119          x
-Memory (MB)                    40186.59             37942.20             0.944          x
-
-====================================================================================================
-SUMMARY: Q2FP8 is 1.15x FASTER in decode (26.54 vs 23.05 tok/s)
-====================================================================================================
-
-====================================================================================================
-Testing: Prompt Length = 49152, Decode Length = 2048
-====================================================================================================
-
---- Benchmarking Baseline ---
-Loading baseline model from /inspire/hdd/global_user/liuzhigeng-253108120105/models/Llama-3.1-8B...
-Loading checkpoint shards:   0%|          | 0/4 [00:00<?, ?it/s]Loading checkpoint shards:  25%|██▌       | 1/4 [00:02<00:07,  2.63s/it]Loading checkpoint shards:  50%|█████     | 2/4 [00:05<00:05,  2.64s/it]Loading checkpoint shards:  75%|███████▌  | 3/4 [00:07<00:02,  2.59s/it]Loading checkpoint shards: 100%|██████████| 4/4 [00:08<00:00,  1.80s/it]Loading checkpoint shards: 100%|██████████| 4/4 [00:08<00:00,  2.10s/it]
-
---- Benchmarking Q2FP8-Unified ---
-Loading Q2FP8-Unified model from /inspire/hdd/global_user/liuzhigeng-253108120105/models/Llama-3.1-8B...
-Loading checkpoint shards:   0%|          | 0/4 [00:00<?, ?it/s]Loading checkpoint shards:  25%|██▌       | 1/4 [00:02<00:07,  2.64s/it]Loading checkpoint shards:  50%|█████     | 2/4 [00:05<00:05,  2.64s/it]Loading checkpoint shards:  75%|███████▌  | 3/4 [00:07<00:02,  2.59s/it]Loading checkpoint shards: 100%|██████████| 4/4 [00:08<00:00,  1.80s/it]Loading checkpoint shards: 100%|██████████| 4/4 [00:08<00:00,  2.10s/it]
-
-====================================================================================================
-RESULTS: Prompt Length = 49188, Decode Tokens = 2048
-====================================================================================================
-
---- PREFILL PHASE ---
-Metric                         Baseline             Q2FP8                Ratio          
--------------------------------------------------------------------------------------
-Prefill Time (ms)              9647.34              9721.84              0.992          x
-Prefill Throughput (tok/s)     5098.61              5059.53              0.992          x
-
---- DECODE PHASE ---
-Metric                         Baseline             Q2FP8                Ratio          
--------------------------------------------------------------------------------------
-Total Decode Time (ms)         89336.63             78084.48             1.144          x
-Per-Token Time (ms)            43.62                38.13                1.144          x
-Decode Throughput (tok/s)      22.92                26.23                1.144          x
-
---- TOTAL (PREFILL + DECODE) ---
-Metric                         Baseline             Q2FP8                Ratio          
--------------------------------------------------------------------------------------
-Total Time (ms)                98983.97             87806.33             1.127          x
-Memory (MB)                    40314.59             38046.66             0.944          x
-
-====================================================================================================
-SUMMARY: Q2FP8 is 1.14x FASTER in decode (26.23 vs 22.92 tok/s)
-====================================================================================================
-
-====================================================================================================
-Testing: Prompt Length = 49152, Decode Length = 4096
-====================================================================================================
-
---- Benchmarking Baseline ---
-Loading baseline model from /inspire/hdd/global_user/liuzhigeng-253108120105/models/Llama-3.1-8B...
-Loading checkpoint shards:   0%|          | 0/4 [00:00<?, ?it/s]Loading checkpoint shards:  25%|██▌       | 1/4 [00:02<00:07,  2.65s/it]Loading checkpoint shards:  50%|█████     | 2/4 [00:05<00:05,  2.64s/it]Loading checkpoint shards:  75%|███████▌  | 3/4 [00:07<00:02,  2.59s/it]Loading checkpoint shards: 100%|██████████| 4/4 [00:08<00:00,  1.79s/it]Loading checkpoint shards: 100%|██████████| 4/4 [00:08<00:00,  2.10s/it]
-
---- Benchmarking Q2FP8-Unified ---
-Loading Q2FP8-Unified model from /inspire/hdd/global_user/liuzhigeng-253108120105/models/Llama-3.1-8B...
-Loading checkpoint shards:   0%|          | 0/4 [00:00<?, ?it/s]Loading checkpoint shards:  25%|██▌       | 1/4 [00:02<00:07,  2.64s/it]Loading checkpoint shards:  50%|█████     | 2/4 [00:05<00:05,  2.64s/it]Loading checkpoint shards:  75%|███████▌  | 3/4 [00:07<00:02,  2.60s/it]Loading checkpoint shards: 100%|██████████| 4/4 [00:08<00:00,  1.80s/it]Loading checkpoint shards: 100%|██████████| 4/4 [00:08<00:00,  2.10s/it]
-
-====================================================================================================
-RESULTS: Prompt Length = 49188, Decode Tokens = 4096
-====================================================================================================
-
---- PREFILL PHASE ---
-Metric                         Baseline             Q2FP8                Ratio          
--------------------------------------------------------------------------------------
-Prefill Time (ms)              9610.04              9722.58              0.988          x
-Prefill Throughput (tok/s)     5118.40              5059.15              0.988          x
-
---- DECODE PHASE ---
-Metric                         Baseline             Q2FP8                Ratio          
--------------------------------------------------------------------------------------
-Total Decode Time (ms)         180868.79            156222.62            1.158          x
-Per-Token Time (ms)            44.16                38.14                1.158          x
-Decode Throughput (tok/s)      22.65                26.22                1.158          x
-
---- TOTAL (PREFILL + DECODE) ---
-Metric                         Baseline             Q2FP8                Ratio          
--------------------------------------------------------------------------------------
-Total Time (ms)                190478.83            165945.19            1.148          x
-Memory (MB)                    40570.59             38253.66             0.943          x
-
-====================================================================================================
-SUMMARY: Q2FP8 is 1.16x FASTER in decode (26.22 vs 22.65 tok/s)
-====================================================================================================
-
-====================================================================================================
-All results saved to: /inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-speedtest/e2e/outputs/20260119_204317/prefill_decode_benchmark.json
-====================================================================================================
-
-========================================================================
-Generating visualizations...
-========================================================================
-Loading results from: /inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-speedtest/e2e/outputs/20260119_204317/prefill_decode_benchmark.json
-Found 15 benchmark configurations
-
-========================================================================================================================
-SUMMARY TABLE: Prefill & Decode Performance
-========================================================================================================================
-
-Prompt     Decode     Prefill (ms)                   Decode (ms)                    Per-Token (ms)                
-Length     Length     Baseline   Q2FP8      Ratio      Baseline   Q2FP8      Ratio      Baseline   Q2FP8      Ratio     
-------------------------------------------------------------------------------------------------------------------------
-16384      256        2571.5     2605.0     0.987      8238.1     8966.6     0.919      32.18      35.03      0.919     
-16384      512        2574.9     2597.8     0.991      16419.0    17687.2    0.928      32.07      34.55      0.928     
-16384      1024       2574.0     2596.0     0.992      32886.3    35211.5    0.934      32.12      34.39      0.934     
-16384      2048       2574.9     2598.9     0.991      66034.8    71059.9    0.929      32.24      34.70      0.929     
-16384      4096       2576.0     2596.2     0.992      132633.2   143229.9   0.926      32.38      34.97      0.926     
-32768      256        5993.9     6092.8     0.984      9238.1     8878.6     1.040      36.09      34.68      1.040     
-32768      512        6005.2     6087.8     0.986      18527.2    17723.3    1.045      36.19      34.62      1.045     
-32768      1024       6005.7     6082.8     0.987      37119.6    36897.4    1.006      36.25      36.03      1.006     
-32768      2048       6005.3     6069.7     0.989      74815.9    78325.4    0.955      36.53      38.24      0.955     
-32768      4096       5994.2     6056.4     0.990      151367.7   155250.7   0.975      36.95      37.90      0.975     
-49152      256        9620.1     9720.7     0.990      11070.8    13129.2    0.843      43.25      51.29      0.843     
-49152      512        9660.5     9756.6     0.990      22154.4    17944.1    1.235      43.27      35.05      1.235     
-49152      1024       9636.7     9725.7     0.991      44417.3    38589.7    1.151      43.38      37.69      1.151     
-49152      2048       9647.3     9721.8     0.992      89336.6    78084.5    1.144      43.62      38.13      1.144     
-49152      4096       9610.0     9722.6     0.988      180868.8   156222.6   1.158      44.16      38.14      1.158     
-========================================================================================================================
-
-Generating plots...
-Saved plot to: /inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-speedtest/e2e/outputs/20260119_204317/prefill_decode_analysis.png
-
-Done!
-
-========================================================================
-Benchmark complete!
-========================================================================
-Results saved to: /inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-speedtest/e2e/outputs/20260119_204317/prefill_decode_benchmark.json
-Plots saved to: /inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-speedtest/e2e/outputs/20260119_204317/prefill_decode_analysis.png
-========================================================================

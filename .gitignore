@@ -5,6 +5,8 @@ ncu_reports/
 plot/
 plots/
 results/
+outputs/
+output/
 
 *.pt
 

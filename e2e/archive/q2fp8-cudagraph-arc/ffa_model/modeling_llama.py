@@ -20,7 +20,7 @@
 
 # Name: transformers
 # Version: 4.57.3
-# Modified for FFA-Q2FP8-Sym attention
+# Modified for FFA-Q2FP8-CudaGraph attention
 
 from typing import Callable, Optional, Union
 
@@ -51,12 +51,17 @@ from transformers.utils.generic import check_model_inputs
 from transformers.models.llama.configuration_llama import LlamaConfig
 
 try:
-    from .q2fp8_cache import Q2FP8SymCache
+    from .q2fp8_cudagraph_cache import Q2FP8CudaGraphCache
+    from .cudagraph_runner import MultiLengthCudaGraphRunner
+    from .global_cudagraph_manager import GlobalCudaGraphManager
 except ImportError:
-    from q2fp8_cache import Q2FP8SymCache
+    from q2fp8_cudagraph_cache import Q2FP8CudaGraphCache
+    from cudagraph_runner import MultiLengthCudaGraphRunner
+    from global_cudagraph_manager import GlobalCudaGraphManager
 
 # Alias for compatibility
-Q2FP8SymStaticCache = Q2FP8SymCache
+Q2FP8SymCache = Q2FP8CudaGraphCache
+Q2FP8SymStaticCache = Q2FP8CudaGraphCache
 
 logger = logging.get_logger(__name__)
 
@@ -214,6 +219,9 @@ class LlamaAttention(nn.Module):
             config.num_attention_heads * self.head_dim, config.hidden_size, bias=config.attention_bias
         )
 
+        # CUDA Graph runner (每个 layer 独立)
+        self.cudagraph_runner: Optional[MultiLengthCudaGraphRunner] = None
+
     @deprecate_kwarg("past_key_value", new_name="past_key_values", version="4.58")
     def forward(
         self,
@@ -239,15 +247,15 @@ class LlamaAttention(nn.Module):
 
         q_len = query_states.shape[-2]
 
-        # Check if we're using Q2FP8SymCache
-        is_q2fp8_cache = isinstance(past_key_values, (Q2FP8SymCache, Q2FP8SymStaticCache))
+        # Check if we're using Q2FP8CudaGraphCache
+        is_q2fp8_cache = isinstance(past_key_values, Q2FP8CudaGraphCache)
 
         cache_layer = None
         if past_key_values is not None:
             # sin and cos are specific to RoPE models; cache_position needed for the static cache
             cache_kwargs = {"sin": sin, "cos": cos, "cache_position": cache_position}
             if is_q2fp8_cache:
-                # Q2FP8SymCache expects [B, T, HKV, K] to compute per-token params.
+                # Q2FP8CudaGraphCache expects [B, T, HKV, K]
                 key_states_cache = key_states.transpose(1, 2)
                 value_states_cache = value_states.transpose(1, 2)
                 key_states_cache, value_states_cache = past_key_values.update(
@@ -275,138 +283,77 @@ class LlamaAttention(nn.Module):
             pattern_layers = list(range(1000))
         assert type(pattern_layers) is list
 
-        # Check if we have quantized blocks available for FFA decode
-        has_quantized_blocks = False
-        if is_q2fp8_cache:
-            cache_layer = cache_layer or past_key_values.layers[self.layer_idx]
-            has_quantized_blocks = cache_layer.k_q is not None and cache_layer.k_scale is not None
-
-        # Check if we have unquantized tokens in k_current
-        current_len = 0
+        # Check if we have quantized data available for FFA decode
+        has_quantized_data = False
         if is_q2fp8_cache and cache_layer is not None:
-            current_len = cache_layer.get_current_len()
+            has_quantized_data = cache_layer.k_q is not None and cache_layer.k_scale is not None
 
-        # Use FFA when: decode mode, FFA enabled, has quantized blocks, in pattern layers
+        # Use FFA when: decode mode, FFA enabled, has quantized data, in pattern layers
         use_ffa_path = (
             q_len == 1 and
             use_ffa_decode and
             is_q2fp8_cache and
-            has_quantized_blocks and
+            has_quantized_data and
             self.layer_idx in pattern_layers
         )
 
         if use_ffa_path:
-            # Debug logging disabled for performance
-            # if self.layer_idx == 0:
-            #     print(f"[DEBUG] Using FFA Q2FP8 decode path: quantized_len={cache_layer.get_quantized_len()}, current_len={current_len}")
+            # Initialize CUDA Graph runner on first decode call
+            use_cudagraph = attn_settings.get("use_cudagraph", True)
+            use_global_cudagraph = attn_settings.get("use_global_cudagraph", False)
+
+            if use_cudagraph:
+                if use_global_cudagraph:
+                    # 使用全局共享的 CUDA Graph (所有层共享一个)
+                    cudagraph_runner = GlobalCudaGraphManager()
+                elif self.cudagraph_runner is None:
+                    # 每层独立的 CUDA Graph
+                    self.cudagraph_runner = MultiLengthCudaGraphRunner(
+                        kernel_fn=attn_forward_decode,
+                        device=query_states.device,
+                    )
+                    cudagraph_runner = self.cudagraph_runner
+                else:
+                    cudagraph_runner = self.cudagraph_runner
+            else:
+                cudagraph_runner = None
+
             decode_kwargs = {
                 k: v
                 for k, v in attn_settings.items()
-                if k not in ("use_ffa_prefill", "use_ffa_decode", "pattern_layers")
+                if k not in ("use_ffa_prefill", "use_ffa_decode", "pattern_layers", "use_cudagraph")
             }
 
             k_q = cache_layer.k_q
             k_residual = cache_layer.k_residual
             quantized_len = cache_layer.get_quantized_len()
 
-            # k_scale is [B, num_blocks, HKV, K] - pass per-block scale directly
-            # The kernel now supports per-block scale via USE_PERBLOCK_SCALE parameter
-            k_scale = cache_layer.k_scale  # [B, num_blocks, HKV, K]
+            # k_scale: [B, num_blocks, HKV, K] - 只传递实际使用的 blocks
+            num_actual_blocks = (quantized_len + decode_kwargs.get("BS", 128) - 1) // decode_kwargs.get("BS", 128)
+            k_scale = cache_layer.k_scale[:, :num_actual_blocks, :, :]  # [B, num_actual_blocks, HKV, K]
 
-            # Get quantized portion of v
+            # Get quantized portion of v (slice to actual length)
             v_quantized = cache_layer.value[:, :quantized_len, :, :]
-
-            skip_ratio_store = attn_settings.get("skip_ratio_store")
 
             # FFA decode expects q: [B, 1, HQ, K]
             q_for_ffa = query_states.transpose(1, 2).contiguous()  # [B, HQ, 1, K] -> [B, 1, HQ, K]
 
-            # When we have k_current, request lse for accurate merging
-            need_lse = current_len > 0 and cache_layer.k_current is not None
-            return_skip = decode_kwargs.get("return_skip_ratio", False)
-
-            decode_result = attn_forward_decode(
+            # Call FFA decode with optional CUDA Graph
+            attn_output_ffa = attn_forward_decode(
                 q=q_for_ffa,
-                k_q=k_q,
-                k_scale=k_scale,
+                k_q=k_q[:, :quantized_len, :, :],  # Slice to actual length
+                k_scale=k_scale,  # Per-block scale
                 v=v_quantized,
-                k_residual=k_residual,
-                return_lse=need_lse,
+                k_residual=k_residual[:, :quantized_len, :, :] if k_residual is not None else None,
+                cudagraph_runner=cudagraph_runner,
                 **decode_kwargs,
             )
 
-            # Parse results based on what was requested
-            if need_lse:
-                if return_skip:
-                    attn_output_ffa, ffa_m, ffa_l, skip_ratio = decode_result
-                    if isinstance(skip_ratio_store, list):
-                        skip_ratio_store.append(float(skip_ratio))
-                else:
-                    attn_output_ffa, ffa_m, ffa_l = decode_result
-            else:
-                if return_skip:
-                    attn_output_ffa, skip_ratio = decode_result
-                    if isinstance(skip_ratio_store, list):
-                        skip_ratio_store.append(float(skip_ratio))
-                else:
-                    attn_output_ffa = decode_result
-
             # FFA kernel returns [B, HQ, V], reshape to [B, 1, HQ, V]
-            attn_output_ffa = attn_output_ffa.unsqueeze(1)  # [B, HQ, V] -> [B, 1, HQ, V]
-
-            # ACCURATE MERGING: Handle k_current using merge kernel
-            if need_lse:
-                # Import merge kernel
-                try:
-                    from .merge_kernel import merge_attention_output
-                except ImportError:
-                    try:
-                        from merge_kernel import merge_attention_output
-                    except ImportError:
-                        import sys
-                        from pathlib import Path
-                        attn_kernel_path = Path(__file__).parent.parent / "attn_kernel"
-                        sys.path.insert(0, str(attn_kernel_path))
-                        from merge_kernel import merge_attention_output
-
-                # k_current: [B, current_len, HKV, K] - unfilled tokens
-                # v_current: [B, current_len, HKV, V] - unfilled tokens
-                # Extract v_current from the full value cache
-                k_current = cache_layer.k_current  # [B, current_len, HKV, K]
-
-                # Extract v_current from value cache (last current_len tokens)
-                if hasattr(cache_layer, 'v_current') and cache_layer.v_current is not None:
-                    v_current = cache_layer.v_current
-                else:
-                    # Fallback: extract from full value cache
-                    quantized_len = cache_layer.get_quantized_len()
-                    v_current = cache_layer.value[:, quantized_len:, :, :]  # [B, current_len, HKV, V]
-
-                # attn_output_ffa: [B, 1, HQ, V] -> [B, HQ, V]
-                o1 = attn_output_ffa.squeeze(1)  # [B, HQ, V]
-
-                # Call merge kernel
-                o_merged = merge_attention_output(
-                    o1=o1,                    # [B, HQ, V]
-                    m1=ffa_m,                 # [B, HQ]
-                    l1=ffa_l,                 # [B, HQ]
-                    q=q_for_ffa,              # [B, 1, HQ, K]
-                    k_current=k_current,      # [B, BS, HKV, K]
-                    v_current=v_current,      # [B, BS, HKV, V]
-                    current_len=current_len,  # int
-                    scale=self.scaling,       # float
-                )
-
-                # o_merged: [B, HQ, V] -> [B, 1, HQ, V]
-                attn_output = o_merged.unsqueeze(1)
-            else:
-                attn_output = attn_output_ffa
+            attn_output = attn_output_ffa.unsqueeze(1)  # [B, HQ, V] -> [B, 1, HQ, V]
 
         else:
-            # Use flash_attn for non-FFA path
-            # Debug logging disabled for performance
-            # if self.layer_idx == 0 and q_len == 1:
-            #     print(f"[DEBUG] Using flash_attn path: q_len={q_len}, use_ffa_decode={use_ffa_decode}, is_q2fp8_cache={is_q2fp8_cache}")
+            # Use flash_attn for prefill or non-FFA path
             attn_output = flash_attn_func(
                 query_states.transpose(1, 2),
                 key_states.transpose(1, 2),

@@ -1,35 +1,0 @@
-========================================================================
-Prefill + Decode Benchmark
-========================================================================
-Prompt lengths: 512 2048
-Decode lengths: 1 32
-Number of runs: 1
-Device: cuda:0
-Model path: <default in benchmark_prefill_decode.py>
-Use CUDA Graph: --use_cudagraph
-Max decode tokens: 2048
-Output: /inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-speedtest/e2e/outputs/20260120_073659/prefill_decode_benchmark.json
-Output dir: /inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-speedtest/e2e/outputs/20260120_073659
-Log file: /inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-speedtest/e2e/outputs/20260120_073659/run_prefill_decode_benchmark.log
-========================================================================
-`torch_dtype` is deprecated! Use `dtype` instead!
-====================================================================================================
-PREFILL + DECODE BENCHMARK
-====================================================================================================
-Model: /inspire/hdd/global_user/liuzhigeng-253108120105/models/Llama-3.1-8B
-Prompt lengths: [512, 2048]
-Decode lengths: [1, 32]
-Number of runs: 1
-Device: cuda:0
-====================================================================================================
-
-====================================================================================================
-Testing: Prompt Length = 512, Decode Length = 1
-====================================================================================================
-
---- Benchmarking Q2FP8-Unified ---
-Loading Q2FP8-CUDAGraph model from /inspire/hdd/global_user/liuzhigeng-253108120105/models/Llama-3.1-8B...
-  CUDA Graph: ENABLED
-  max_decode_tokens: 2048
-  max_current: 1 (current buffer DISABLED for CUDA Graph)
-Loading checkpoint shards:   0%|          | 0/4 [00:00<?, ?it/s]Loading checkpoint shards:  25%|██▌       | 1/4 [00:02<00:08,  2.69s/it]Loading checkpoint shards:  50%|█████     | 2/4 [00:05<00:05,  2.68s/it]
