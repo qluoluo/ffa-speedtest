@@ -1,0 +1,111 @@
+========================================================================
+Prefill + Decode Benchmark
+========================================================================
+Prompt lengths: 16384 32768
+Decode lengths: 256 512 1024
+Number of runs: 3
+Device: cuda:0
+Model path: <default in benchmark_prefill_decode.py>
+Use CUDAGraph: --use_cudagraph
+Max decode tokens: 4096
+Output: /inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-speedtest/e2e/outputs/20260120_055304/prefill_decode_benchmark.json
+Output dir: /inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-speedtest/e2e/outputs/20260120_055304
+Log file: /inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-speedtest/e2e/outputs/20260120_055304/run_prefill_decode_benchmark.log
+========================================================================
+`torch_dtype` is deprecated! Use `dtype` instead!
+====================================================================================================
+PREFILL + DECODE BENCHMARK
+====================================================================================================
+Model: /inspire/hdd/global_user/liuzhigeng-253108120105/models/Llama-3.1-8B
+Prompt lengths: [16384, 32768]
+Decode lengths: [256, 512, 1024]
+Number of runs: 3
+Device: cuda:0
+====================================================================================================
+
+====================================================================================================
+Testing: Prompt Length = 16384, Decode Length = 256
+====================================================================================================
+
+--- Benchmarking Q2FP8-Unified-CUDAGraph ---
+Loading Q2FP8-Unified-CUDAGraph model from /inspire/hdd/global_user/liuzhigeng-253108120105/models/Llama-3.1-8B...
+Loading checkpoint shards:   0%|          | 0/4 [00:00<?, ?it/s]Loading checkpoint shards:  25%|██▌       | 1/4 [00:02<00:08,  2.69s/it]Loading checkpoint shards:  50%|█████     | 2/4 [00:05<00:05,  2.69s/it]Loading checkpoint shards:  75%|███████▌  | 3/4 [00:07<00:02,  2.63s/it]Loading checkpoint shards: 100%|██████████| 4/4 [00:08<00:00,  1.82s/it]Loading checkpoint shards: 100%|██████████| 4/4 [00:08<00:00,  2.13s/it]
+
+====================================================================================================
+Testing: Prompt Length = 16384, Decode Length = 512
+====================================================================================================
+
+--- Benchmarking Q2FP8-Unified-CUDAGraph ---
+Loading Q2FP8-Unified-CUDAGraph model from /inspire/hdd/global_user/liuzhigeng-253108120105/models/Llama-3.1-8B...
+Loading checkpoint shards:   0%|          | 0/4 [00:00<?, ?it/s]Loading checkpoint shards:  25%|██▌       | 1/4 [00:02<00:07,  2.65s/it]Loading checkpoint shards:  50%|█████     | 2/4 [00:05<00:05,  2.66s/it]Loading checkpoint shards:  75%|███████▌  | 3/4 [00:07<00:02,  2.60s/it]Loading checkpoint shards: 100%|██████████| 4/4 [00:08<00:00,  1.80s/it]Loading checkpoint shards: 100%|██████████| 4/4 [00:08<00:00,  2.11s/it]
+
+====================================================================================================
+Testing: Prompt Length = 16384, Decode Length = 1024
+====================================================================================================
+
+--- Benchmarking Q2FP8-Unified-CUDAGraph ---
+Loading Q2FP8-Unified-CUDAGraph model from /inspire/hdd/global_user/liuzhigeng-253108120105/models/Llama-3.1-8B...
+Loading checkpoint shards:   0%|          | 0/4 [00:00<?, ?it/s]Loading checkpoint shards:  25%|██▌       | 1/4 [00:02<00:07,  2.66s/it]Loading checkpoint shards:  50%|█████     | 2/4 [00:05<00:05,  2.65s/it]Loading checkpoint shards:  75%|███████▌  | 3/4 [00:07<00:02,  2.61s/it]Loading checkpoint shards: 100%|██████████| 4/4 [00:08<00:00,  1.81s/it]Loading checkpoint shards: 100%|██████████| 4/4 [00:08<00:00,  2.11s/it]
+
+====================================================================================================
+Testing: Prompt Length = 32768, Decode Length = 256
+====================================================================================================
+
+--- Benchmarking Q2FP8-Unified-CUDAGraph ---
+Loading Q2FP8-Unified-CUDAGraph model from /inspire/hdd/global_user/liuzhigeng-253108120105/models/Llama-3.1-8B...
+Loading checkpoint shards:   0%|          | 0/4 [00:00<?, ?it/s]Loading checkpoint shards:  25%|██▌       | 1/4 [00:02<00:07,  2.63s/it]Loading checkpoint shards:  50%|█████     | 2/4 [00:05<00:05,  2.64s/it]Loading checkpoint shards:  75%|███████▌  | 3/4 [00:07<00:02,  2.58s/it]Loading checkpoint shards: 100%|██████████| 4/4 [00:08<00:00,  1.79s/it]Loading checkpoint shards: 100%|██████████| 4/4 [00:08<00:00,  2.09s/it]
+
+====================================================================================================
+Testing: Prompt Length = 32768, Decode Length = 512
+====================================================================================================
+
+--- Benchmarking Q2FP8-Unified-CUDAGraph ---
+Loading Q2FP8-Unified-CUDAGraph model from /inspire/hdd/global_user/liuzhigeng-253108120105/models/Llama-3.1-8B...
+Loading checkpoint shards:   0%|          | 0/4 [00:00<?, ?it/s]Loading checkpoint shards:  25%|██▌       | 1/4 [00:02<00:07,  2.63s/it]Loading checkpoint shards:  50%|█████     | 2/4 [00:05<00:05,  2.64s/it]Loading checkpoint shards:  75%|███████▌  | 3/4 [00:07<00:02,  2.59s/it]Loading checkpoint shards: 100%|██████████| 4/4 [00:08<00:00,  1.79s/it]Loading checkpoint shards: 100%|██████████| 4/4 [00:08<00:00,  2.09s/it]
+
+====================================================================================================
+Testing: Prompt Length = 32768, Decode Length = 1024
+====================================================================================================
+
+--- Benchmarking Q2FP8-Unified-CUDAGraph ---
+Loading Q2FP8-Unified-CUDAGraph model from /inspire/hdd/global_user/liuzhigeng-253108120105/models/Llama-3.1-8B...
+Loading checkpoint shards:   0%|          | 0/4 [00:00<?, ?it/s]Loading checkpoint shards:  25%|██▌       | 1/4 [00:02<00:07,  2.62s/it]Loading checkpoint shards:  50%|█████     | 2/4 [00:05<00:05,  2.63s/it]Loading checkpoint shards:  75%|███████▌  | 3/4 [00:07<00:02,  2.58s/it]Loading checkpoint shards: 100%|██████████| 4/4 [00:08<00:00,  1.79s/it]Loading checkpoint shards: 100%|██████████| 4/4 [00:08<00:00,  2.09s/it]
+
+====================================================================================================
+All results saved to: /inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-speedtest/e2e/outputs/20260120_055304/prefill_decode_benchmark.json
+====================================================================================================
+
+========================================================================
+Generating visualizations...
+========================================================================
+/inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-speedtest/e2e/visualize_prefill_decode.py:53: UserWarning: No artists with labels found to put in legend.  Note that artists whose label start with an underscore are ignored when legend() is called with no argument.
+  ax1.legend()
+/inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-speedtest/e2e/visualize_prefill_decode.py:78: UserWarning: No artists with labels found to put in legend.  Note that artists whose label start with an underscore are ignored when legend() is called with no argument.
+  ax2.legend()
+/inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-speedtest/e2e/visualize_prefill_decode.py:151: UserWarning: No artists with labels found to put in legend.  Note that artists whose label start with an underscore are ignored when legend() is called with no argument.
+  ax5.legend()
+/inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-speedtest/e2e/visualize_prefill_decode.py:176: UserWarning: No artists with labels found to put in legend.  Note that artists whose label start with an underscore are ignored when legend() is called with no argument.
+  ax6.legend()
+Loading results from: /inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-speedtest/e2e/outputs/20260120_055304/prefill_decode_benchmark.json
+Found 6 benchmark configurations
+
+========================================================================================================================
+SUMMARY TABLE: Prefill & Decode Performance
+========================================================================================================================
+
+Prompt     Decode     Prefill (ms)                   Decode (ms)                    Per-Token (ms)                
+Length     Length     Baseline   Q2FP8      Ratio      Baseline   Q2FP8      Ratio      Baseline   Q2FP8      Ratio     
+------------------------------------------------------------------------------------------------------------------------
+========================================================================================================================
+
+Generating plots...
+Saved plot to: /inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-speedtest/e2e/outputs/20260120_055304/prefill_decode_analysis.png
+
+Done!
+
+========================================================================
+Benchmark complete!
+========================================================================
+Results saved to: /inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-speedtest/e2e/outputs/20260120_055304/prefill_decode_benchmark.json
+Plots saved to: /inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-speedtest/e2e/outputs/20260120_055304/prefill_decode_analysis.png
+========================================================================

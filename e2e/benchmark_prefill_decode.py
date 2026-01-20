@@ -55,21 +55,34 @@ def load_q2fp8_model(
     block_size: int = 128,
     k_bits: int = 2,
     use_fp8_residual: bool = True,
+    use_cudagraph: bool = False,
+    max_decode_tokens: int = 1024,
 ):
     """Load Q2FP8-Unified model."""
-    sys.path.insert(0, str(Path(__file__).parent / "q2fp8-unified" / "ffa_model"))
+    if use_cudagraph:
+        model_dir = "q2fp8-cudagraph"
+        print(f"Loading Q2FP8-CUDAGraph model from {model_path}...")
+        print(f"  CUDA Graph: ENABLED")
+        print(f"  max_decode_tokens: {max_decode_tokens}")
+        print(f"  max_current: 1 (current buffer DISABLED for CUDA Graph)")
+    else:
+        model_dir = "q2fp8-unified"
+        print(f"Loading Q2FP8-Unified model from {model_path}...")
+
+    sys.path.insert(0, str(Path(__file__).parent / model_dir / "ffa_model"))
 
     # Compatibility patch
     import transformers.integrations
     if not hasattr(transformers.integrations, 'use_kernel_forward_from_hub'):
-        sys.path.insert(0, str(Path(__file__).parent / "q2fp8-unified"))
+        sys.path.insert(0, str(Path(__file__).parent / model_dir))
         from compat_patch import use_kernel_forward_from_hub
         transformers.integrations.use_kernel_forward_from_hub = use_kernel_forward_from_hub
 
     from modeling_llama import LlamaForCausalLM as FFALlamaForCausalLM
-    from q2fp8_cache import Q2FP8SymCache
-
-    print(f"Loading Q2FP8-Unified model from {model_path}...")
+    if use_cudagraph:
+        from q2fp8_cudagraph_cache import Q2FP8CudaGraphCache as CacheClass
+    else:
+        from q2fp8_cache import Q2FP8SymCache as CacheClass
 
     tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
     if tokenizer.pad_token_id is None:
@@ -83,6 +96,8 @@ def load_q2fp8_model(
         "SBS": block_size,
         "use_fp8_residual": use_fp8_residual,
         "k_bits": k_bits,
+        "use_cudagraph": use_cudagraph,
+        "max_decode_tokens": max_decode_tokens,
     }
 
     model = FFALlamaForCausalLM.from_pretrained(
@@ -94,7 +109,7 @@ def load_q2fp8_model(
     )
     model.eval()
 
-    return model, tokenizer, Q2FP8SymCache
+    return model, tokenizer, CacheClass, max_decode_tokens
 
 
 def benchmark_baseline(
@@ -195,6 +210,7 @@ def benchmark_q2fp8(
     block_size: int = 128,
     k_bits: int = 2,
     use_fp8_residual: bool = True,
+    max_decode_tokens: int = 4096,
     num_runs: int = 3,
 ) -> Dict:
     """Benchmark Q2FP8 model with separate prefill and decode timing."""
@@ -214,7 +230,7 @@ def benchmark_q2fp8(
         reset_memory_stats()
 
         # Create fresh cache
-        cache = Q2FP8SymCache(BS=block_size, use_fp8_residual=use_fp8_residual, k_bits=k_bits)
+        cache = Q2FP8SymCache(max_seq_len=max_decode_tokens, BS=block_size, use_fp8_residual=use_fp8_residual, k_bits=k_bits)
 
         input_ids = inputs["input_ids"].clone()
         attention_mask = inputs.get("attention_mask", None)
@@ -353,6 +369,8 @@ def main():
                         help="Output JSON file")
     parser.add_argument("--skip_baseline", action="store_true", help="Skip baseline benchmark")
     parser.add_argument("--skip_q2fp8", action="store_true", help="Skip Q2FP8 benchmark")
+    parser.add_argument("--use_cudagraph", action="store_true", help="Enable CUDA Graph acceleration")
+    parser.add_argument("--max_decode_tokens", type=int, default=4096, help="Max decode tokens for CUDA Graph buffer")
     args = parser.parse_args()
 
     device = torch.device(args.device)
@@ -413,13 +431,13 @@ def main():
             # Benchmark Q2FP8
             if not args.skip_q2fp8:
                 print("\n--- Benchmarking Q2FP8-Unified ---")
-                q2fp8_model, q2fp8_tokenizer, Q2FP8SymCache = load_q2fp8_model(
-                    args.model_path, device, dtype
+                q2fp8_model, q2fp8_tokenizer, Q2FP8SymCache, max_decode_tokens = load_q2fp8_model(
+                    args.model_path, device, dtype, use_cudagraph=args.use_cudagraph, max_decode_tokens=args.max_decode_tokens
                 )
 
                 # Warmup
                 warmup_inputs = q2fp8_tokenizer("Hello", return_tensors="pt").to(device)
-                warmup_cache = Q2FP8SymCache(BS=128, use_fp8_residual=True, k_bits=2)
+                warmup_cache = Q2FP8SymCache(max_seq_len=max_decode_tokens, BS=128, use_fp8_residual=True, k_bits=2)
                 with torch.no_grad():
                     _ = q2fp8_model(
                         **warmup_inputs,
@@ -430,6 +448,7 @@ def main():
 
                 q2fp8_results = benchmark_q2fp8(
                     q2fp8_model, q2fp8_tokenizer, Q2FP8SymCache, prompt, decode_len, device,
+                    max_decode_tokens=max_decode_tokens,
                     num_runs=args.num_runs
                 )
 

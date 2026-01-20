@@ -17,12 +17,14 @@ LOG_FILE="${RUN_DIR}/run_prefill_decode_benchmark.log"
 exec > >(tee "$LOG_FILE") 2>&1
 
 # 默认参数
-PROMPT_LENGTHS="16384 32768 49152 65536"
-DECODE_LENGTHS="256 512 1024 2048 4096"
+PROMPT_LENGTHS="32768"
+DECODE_LENGTHS="512"
 NUM_RUNS=3
 DEVICE="cuda:0"
 OUTPUT="prefill_decode_benchmark.json"
 MODEL_PATH=""
+USE_CUDAGRAPH=""
+MAX_DECODE_TOKENS=4096
 
 # 解析命令行参数
 while [[ $# -gt 0 ]]; do
@@ -49,6 +51,14 @@ while [[ $# -gt 0 ]]; do
             ;;
         --model_path)
             MODEL_PATH="$2"
+            shift 2
+            ;;
+        --use_cudagraph)
+            USE_CUDAGRAPH="--use_cudagraph"
+            shift 1
+            ;;
+        --max_decode_tokens)
+            MAX_DECODE_TOKENS="$2"
             shift 2
             ;;
         --skip_baseline)
@@ -88,6 +98,8 @@ echo "Decode lengths: $DECODE_LENGTHS"
 echo "Number of runs: $NUM_RUNS"
 echo "Device: $DEVICE"
 echo "Model path: ${MODEL_PATH:-<default in benchmark_prefill_decode.py>}"
+echo "Use CUDA Graph: ${USE_CUDAGRAPH:-No}"
+echo "Max decode tokens: $MAX_DECODE_TOKENS"
 echo "Output: $OUTPUT_FILE"
 echo "Output dir: $RUN_DIR"
 echo "Log file: $LOG_FILE"
@@ -100,7 +112,9 @@ python3 benchmark_prefill_decode.py \
     --num_runs $NUM_RUNS \
     --device $DEVICE \
     --output $OUTPUT_FILE \
+    --max_decode_tokens $MAX_DECODE_TOKENS \
     "${MODEL_PATH_ARG[@]}" \
+    $USE_CUDAGRAPH \
     $SKIP_BASELINE \
     $SKIP_Q2FP8
 

@@ -1,0 +1,112 @@
+========================================================================
+Prefill + Decode Benchmark
+========================================================================
+Prompt lengths: 512 2048
+Decode lengths: 1 32
+Number of runs: 1
+Device: cuda:0
+Model path: <default in benchmark_prefill_decode.py>
+Use CUDA Graph: --use_cudagraph
+Max decode tokens: 2048
+Output: /inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-speedtest/e2e/outputs/20260120_072846/prefill_decode_benchmark.json
+Output dir: /inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-speedtest/e2e/outputs/20260120_072846
+Log file: /inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-speedtest/e2e/outputs/20260120_072846/run_prefill_decode_benchmark.log
+========================================================================
+`torch_dtype` is deprecated! Use `dtype` instead!
+====================================================================================================
+PREFILL + DECODE BENCHMARK
+====================================================================================================
+Model: /inspire/hdd/global_user/liuzhigeng-253108120105/models/Llama-3.1-8B
+Prompt lengths: [512, 2048]
+Decode lengths: [1, 32]
+Number of runs: 1
+Device: cuda:0
+====================================================================================================
+
+====================================================================================================
+Testing: Prompt Length = 512, Decode Length = 1
+====================================================================================================
+
+--- Benchmarking Q2FP8-Unified ---
+Loading Q2FP8-CUDAGraph model from /inspire/hdd/global_user/liuzhigeng-253108120105/models/Llama-3.1-8B...
+  CUDA Graph: ENABLED
+  max_decode_tokens: 2048
+  max_current: 1 (current buffer DISABLED for CUDA Graph)
+Loading checkpoint shards:   0%|          | 0/4 [00:00<?, ?it/s]Loading checkpoint shards:  25%|██▌       | 1/4 [00:02<00:07,  2.66s/it]Loading checkpoint shards:  50%|█████     | 2/4 [00:05<00:05,  2.66s/it]Loading checkpoint shards:  75%|███████▌  | 3/4 [00:07<00:02,  2.61s/it]Loading checkpoint shards: 100%|██████████| 4/4 [00:08<00:00,  1.81s/it]Loading checkpoint shards: 100%|██████████| 4/4 [00:08<00:00,  2.11s/it]
+Traceback (most recent call last):
+  File "/inspire/hdd/global_user/liuzhigeng-253108120105/miniconda/envs/oc/lib/python3.10/site-packages/transformers/utils/generic.py", line 1079, in wrapper
+    outputs = func(self, *args, **kwargs_without_recordable)
+  File "/inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-speedtest/e2e/q2fp8-cudagraph/ffa_model/modeling_llama.py", line 478, in forward
+    hidden_states = decoder_layer(
+  File "/inspire/hdd/global_user/liuzhigeng-253108120105/miniconda/envs/oc/lib/python3.10/site-packages/transformers/modeling_layers.py", line 94, in __call__
+    return super().__call__(*args, **kwargs)
+  File "/inspire/hdd/global_user/liuzhigeng-253108120105/miniconda/envs/oc/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1775, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+  File "/inspire/hdd/global_user/liuzhigeng-253108120105/miniconda/envs/oc/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1786, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "/inspire/hdd/global_user/liuzhigeng-253108120105/miniconda/envs/oc/lib/python3.10/site-packages/transformers/utils/deprecation.py", line 172, in wrapped_func
+    return func(*args, **kwargs)
+  File "/inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-speedtest/e2e/q2fp8-cudagraph/ffa_model/modeling_llama.py", line 380, in forward
+    hidden_states, _ = self.self_attn(
+  File "/inspire/hdd/global_user/liuzhigeng-253108120105/miniconda/envs/oc/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1775, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+  File "/inspire/hdd/global_user/liuzhigeng-253108120105/miniconda/envs/oc/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1786, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "/inspire/hdd/global_user/liuzhigeng-253108120105/miniconda/envs/oc/lib/python3.10/site-packages/transformers/utils/deprecation.py", line 172, in wrapped_func
+    return func(*args, **kwargs)
+  File "/inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-speedtest/e2e/q2fp8-cudagraph/ffa_model/modeling_llama.py", line 259, in forward
+    key_states_cache, value_states_cache = past_key_values.update(
+  File "/inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-speedtest/e2e/q2fp8-cudagraph/ffa_model/q2fp8_cudagraph_cache.py", line 423, in update
+    self._ensure_layer(layer_idx)
+  File "/inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-speedtest/e2e/q2fp8-cudagraph/ffa_model/q2fp8_cudagraph_cache.py", line 408, in _ensure_layer
+    Q2FP8CudaGraphLayer(
+TypeError: Can't instantiate abstract class Q2FP8CudaGraphLayer with abstract method get_mask_sizes
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-speedtest/e2e/benchmark_prefill_decode.py", line 481, in <module>
+    main()
+  File "/inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-speedtest/e2e/benchmark_prefill_decode.py", line 442, in main
+    _ = q2fp8_model(
+  File "/inspire/hdd/global_user/liuzhigeng-253108120105/miniconda/envs/oc/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1775, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+  File "/inspire/hdd/global_user/liuzhigeng-253108120105/miniconda/envs/oc/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1786, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "/inspire/hdd/global_user/liuzhigeng-253108120105/miniconda/envs/oc/lib/python3.10/site-packages/transformers/utils/generic.py", line 918, in wrapper
+    output = func(self, *args, **kwargs)
+  File "/inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-speedtest/e2e/q2fp8-cudagraph/ffa_model/modeling_llama.py", line 542, in forward
+    outputs: BaseModelOutputWithPast = self.model(
+  File "/inspire/hdd/global_user/liuzhigeng-253108120105/miniconda/envs/oc/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1775, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+  File "/inspire/hdd/global_user/liuzhigeng-253108120105/miniconda/envs/oc/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1786, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "/inspire/hdd/global_user/liuzhigeng-253108120105/miniconda/envs/oc/lib/python3.10/site-packages/transformers/utils/generic.py", line 1081, in wrapper
+    raise original_exception
+  File "/inspire/hdd/global_user/liuzhigeng-253108120105/miniconda/envs/oc/lib/python3.10/site-packages/transformers/utils/generic.py", line 1072, in wrapper
+    outputs = func(self, *args, **kwargs)
+  File "/inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-speedtest/e2e/q2fp8-cudagraph/ffa_model/modeling_llama.py", line 478, in forward
+    hidden_states = decoder_layer(
+  File "/inspire/hdd/global_user/liuzhigeng-253108120105/miniconda/envs/oc/lib/python3.10/site-packages/transformers/modeling_layers.py", line 94, in __call__
+    return super().__call__(*args, **kwargs)
+  File "/inspire/hdd/global_user/liuzhigeng-253108120105/miniconda/envs/oc/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1775, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+  File "/inspire/hdd/global_user/liuzhigeng-253108120105/miniconda/envs/oc/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1786, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "/inspire/hdd/global_user/liuzhigeng-253108120105/miniconda/envs/oc/lib/python3.10/site-packages/transformers/utils/deprecation.py", line 172, in wrapped_func
+    return func(*args, **kwargs)
+  File "/inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-speedtest/e2e/q2fp8-cudagraph/ffa_model/modeling_llama.py", line 380, in forward
+    hidden_states, _ = self.self_attn(
+  File "/inspire/hdd/global_user/liuzhigeng-253108120105/miniconda/envs/oc/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1775, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+  File "/inspire/hdd/global_user/liuzhigeng-253108120105/miniconda/envs/oc/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1786, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "/inspire/hdd/global_user/liuzhigeng-253108120105/miniconda/envs/oc/lib/python3.10/site-packages/transformers/utils/deprecation.py", line 172, in wrapped_func
+    return func(*args, **kwargs)
+  File "/inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-speedtest/e2e/q2fp8-cudagraph/ffa_model/modeling_llama.py", line 259, in forward
+    key_states_cache, value_states_cache = past_key_values.update(
+  File "/inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-speedtest/e2e/q2fp8-cudagraph/ffa_model/q2fp8_cudagraph_cache.py", line 423, in update
+    self._ensure_layer(layer_idx)
+  File "/inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-speedtest/e2e/q2fp8-cudagraph/ffa_model/q2fp8_cudagraph_cache.py", line 408, in _ensure_layer
+    Q2FP8CudaGraphLayer(
+TypeError: Can't instantiate abstract class Q2FP8CudaGraphLayer with abstract method get_mask_sizes
