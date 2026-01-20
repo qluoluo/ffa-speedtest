@@ -6,9 +6,6 @@ Q2FP8 Symmetric Cache: 对称量化 K cache + FP8 残差。
 - 新增 token 累积到当前 block，满了才量化
 - 未满的 block 保持 FP16，不量化
 
-优化：
-- 融合 RoPE + 量化操作，减少内存访问
-
 支持的量化位数:
 - 2-bit: 4 个值 packed 到 1 个 uint8, QMAX=3, QZERO=1.5
 - 4-bit: 2 个值 packed 到 1 个 uint8, QMAX=15, QZERO=7.5
@@ -33,14 +30,6 @@ from typing import Any, Optional
 
 import torch
 from transformers.cache_utils import Cache, CacheLayerMixin
-
-try:
-    from .fused_rope_quant import fused_rope_and_quantize
-except ImportError:
-    try:
-        from fused_rope_quant import fused_rope_and_quantize
-    except ImportError:
-        fused_rope_and_quantize = None
 
 SUPPORTED_K_BITS = (2, 4)
 
@@ -236,7 +225,8 @@ class Q2FP8SymLayer(CacheLayerMixin):
             raise ValueError(f"k_bits must be one of {SUPPORTED_K_BITS}, got {k_bits}")
         self.BS = BS
         self.max_current = BS if max_current is None else max_current
-        # Note: max_current can be different from BS when using separated RoPE+quantization
+        if self.max_current != self.BS:
+            raise ValueError(f"max_current must equal BS for unified kernel, got {self.max_current} vs {self.BS}")
         self.use_fp8_residual = use_fp8_residual
         self.k_bits = k_bits
         self.seq_dim = 1
@@ -250,8 +240,6 @@ class Q2FP8SymLayer(CacheLayerMixin):
         # 当前未满的 block，保持 FP16 - 使用固定大小 buffer + current_len
         self.k_current: Optional[torch.Tensor] = None     # [B, max_current, HKV, K]
         self.v_current: Optional[torch.Tensor] = None     # [B, max_current, HKV, V]
-        self.cos_current: Optional[torch.Tensor] = None   # [B, max_current, K]
-        self.sin_current: Optional[torch.Tensor] = None   # [B, max_current, K]
         self.current_len: int = 0                         # 当前有效长度 (0 <= current_len <= max_current)
 
         # 完整 V cache
@@ -266,22 +254,8 @@ class Q2FP8SymLayer(CacheLayerMixin):
         self.dtype, self.device = key_states.dtype, key_states.device
         self.is_initialized = True
 
-    def _ensure_current_buffers(
-        self,
-        key_states: torch.Tensor,
-        value_states: torch.Tensor,
-        cos: Optional[torch.Tensor] = None,
-        sin: Optional[torch.Tensor] = None,
-    ) -> None:
+    def _ensure_current_buffers(self, key_states: torch.Tensor, value_states: torch.Tensor) -> None:
         if self.k_current is not None and self.v_current is not None:
-            if cos is not None and sin is not None and (self.cos_current is None or self.sin_current is None):
-                B, _, _, K = key_states.shape
-                self.cos_current = torch.empty(
-                    (B, self.max_current, K), device=key_states.device, dtype=cos.dtype
-                )
-                self.sin_current = torch.empty(
-                    (B, self.max_current, K), device=key_states.device, dtype=sin.dtype
-                )
             return
         B, _, HKV, K = key_states.shape
         V = value_states.shape[-1]
@@ -291,61 +265,14 @@ class Q2FP8SymLayer(CacheLayerMixin):
         self.v_current = torch.empty(
             (B, self.max_current, HKV, V), device=value_states.device, dtype=value_states.dtype
         )
-        if cos is not None and sin is not None:
-            self.cos_current = torch.empty(
-                (B, self.max_current, K), device=key_states.device, dtype=cos.dtype
-            )
-            self.sin_current = torch.empty(
-                (B, self.max_current, K), device=key_states.device, dtype=sin.dtype
-            )
         self.current_len = 0
 
-    def _quantize_and_store_block(self, k_block: torch.Tensor, cos: Optional[torch.Tensor] = None, sin: Optional[torch.Tensor] = None) -> None:
+    def _quantize_and_store_block(self, k_block: torch.Tensor) -> None:
         """量化一个完整的 block 并存储。"""
-        self._quantize_and_store_blocks(k_block, cos, sin)
+        self._quantize_and_store_blocks(k_block)
 
-    def _apply_rope(self, k: torch.Tensor, cos: torch.Tensor, sin: torch.Tensor) -> torch.Tensor:
-        """
-        Apply RoPE to key tensor.
-
-        Args:
-            k: [B, T, HKV, K]
-            cos: [B, T, K]
-            sin: [B, T, K]
-
-        Returns:
-            k_embed: [B, T, HKV, K]
-        """
-        # Expand cos/sin to match k's shape
-        # k: [B, T, HKV, K]
-        # cos/sin: [B, T, K] -> [B, T, 1, K]
-        cos = cos.unsqueeze(2)  # [B, T, 1, K]
-        sin = sin.unsqueeze(2)  # [B, T, 1, K]
-
-        # rotate_half: split and swap
-        k1 = k[..., : k.shape[-1] // 2]
-        k2 = k[..., k.shape[-1] // 2 :]
-        k_rotated = torch.cat((-k2, k1), dim=-1)
-
-        # Apply RoPE
-        k_embed = (k * cos) + (k_rotated * sin)
-
-        return k_embed
-
-    def _quantize_and_store_blocks(self, k_blocks: torch.Tensor, cos: Optional[torch.Tensor] = None, sin: Optional[torch.Tensor] = None) -> None:
-        """
-        量化多个完整 blocks 并存储。
-
-        使用分离的 RoPE + 量化（禁用融合kernel以避免Triton bugs）。
-        """
-        # 如果提供了 cos 和 sin，先应用 RoPE
-        if cos is not None and sin is not None:
-            # Apply RoPE to k_blocks
-            # k_blocks: [B, T, HKV, K]
-            # cos, sin: [B, T, K]
-            k_blocks = self._apply_rope(k_blocks, cos, sin)
-
-        # 然后量化
+    def _quantize_and_store_blocks(self, k_blocks: torch.Tensor) -> None:
+        """量化多个完整 blocks 并存储。"""
         k_q_new, k_scale_new, k_residual_new = quantize_symmetric_blocks(
             k_blocks,
             block_size=self.BS,
@@ -427,18 +354,6 @@ class Q2FP8SymLayer(CacheLayerMixin):
         if not self.is_initialized:
             self.lazy_initialization(key_states)
 
-        # 提取 cos 和 sin 用于融合的 RoPE + 量化
-        cos = None
-        sin = None
-        if cache_kwargs is not None:
-            cos = cache_kwargs.get("cos")
-            sin = cache_kwargs.get("sin")
-        if cos is None or sin is None:
-            cos = None
-            sin = None
-            self.cos_current = None
-            self.sin_current = None
-
         # 更新 V cache
         if self.value is None:
             self.value = value_states
@@ -446,7 +361,7 @@ class Q2FP8SymLayer(CacheLayerMixin):
             self.value = torch.cat([self.value, value_states], dim=self.seq_dim)
 
         # 更新 K/V current buffer (固定大小)
-        self._ensure_current_buffers(key_states, value_states, cos=cos, sin=sin)
+        self._ensure_current_buffers(key_states, value_states)
         total_len = key_states.shape[self.seq_dim]
         offset = 0
 
@@ -454,23 +369,15 @@ class Q2FP8SymLayer(CacheLayerMixin):
         if self.current_len > 0 and total_len > 0:
             space = self.max_current - self.current_len
             take = min(space, total_len)
-            dest_start = self.current_len
             k_slice = key_states.narrow(self.seq_dim, 0, take)
             v_slice = value_states.narrow(self.seq_dim, 0, take)
-            self.k_current.narrow(self.seq_dim, dest_start, take).copy_(k_slice)
-            self.v_current.narrow(self.seq_dim, dest_start, take).copy_(v_slice)
-            if cos is not None and sin is not None and self.cos_current is not None and self.sin_current is not None:
-                cos_slice = cos.narrow(self.seq_dim, offset, take)
-                sin_slice = sin.narrow(self.seq_dim, offset, take)
-                self.cos_current.narrow(self.seq_dim, dest_start, take).copy_(cos_slice)
-                self.sin_current.narrow(self.seq_dim, dest_start, take).copy_(sin_slice)
+            self.k_current.narrow(self.seq_dim, self.current_len, take).copy_(k_slice)
+            self.v_current.narrow(self.seq_dim, self.current_len, take).copy_(v_slice)
             self.current_len += take
             offset += take
 
             if self.current_len == self.max_current:
-                cos_block = self.cos_current if self.cos_current is not None and self.sin_current is not None else None
-                sin_block = self.sin_current if self.cos_current is not None and self.sin_current is not None else None
-                self._quantize_and_store_block(self.k_current, cos_block, sin_block)
+                self._quantize_and_store_block(self.k_current)
                 self.current_len = 0
 
         # 批量量化剩余的完整 blocks，避免逐 block cat
@@ -479,15 +386,7 @@ class Q2FP8SymLayer(CacheLayerMixin):
             full_blocks_len = (remaining // self.BS) * self.BS
             if full_blocks_len > 0:
                 k_blocks = key_states.narrow(self.seq_dim, offset, full_blocks_len)
-
-                # 提取对应的 cos/sin
-                cos_blocks = None
-                sin_blocks = None
-                if cos is not None and sin is not None:
-                    cos_blocks = cos.narrow(self.seq_dim, offset, full_blocks_len)
-                    sin_blocks = sin.narrow(self.seq_dim, offset, full_blocks_len)
-
-                self._quantize_and_store_blocks(k_blocks, cos_blocks, sin_blocks)
+                self._quantize_and_store_blocks(k_blocks)
                 offset += full_blocks_len
                 remaining -= full_blocks_len
 
@@ -497,16 +396,9 @@ class Q2FP8SymLayer(CacheLayerMixin):
             v_slice = value_states.narrow(self.seq_dim, offset, remaining)
             self.k_current.narrow(self.seq_dim, 0, remaining).copy_(k_slice)
             self.v_current.narrow(self.seq_dim, 0, remaining).copy_(v_slice)
-            if cos is not None and sin is not None and self.cos_current is not None and self.sin_current is not None:
-                cos_slice = cos.narrow(self.seq_dim, offset, remaining)
-                sin_slice = sin.narrow(self.seq_dim, offset, remaining)
-                self.cos_current.narrow(self.seq_dim, 0, remaining).copy_(cos_slice)
-                self.sin_current.narrow(self.seq_dim, 0, remaining).copy_(sin_slice)
             self.current_len = remaining
 
         self._refresh_fp_cache()
-
-        # 返回应用了 RoPE 的 key_states（已经在融合操作中应用）
         return key_states, value_states
 
     def get_seq_length(self) -> int:
@@ -537,8 +429,6 @@ class Q2FP8SymLayer(CacheLayerMixin):
         self.num_full_blocks = 0
         self.k_current = None
         self.v_current = None
-        self.cos_current = None
-        self.sin_current = None
         self.current_len = 0
         self.key_full = None
         if self.value is not None:
@@ -556,10 +446,6 @@ class Q2FP8SymLayer(CacheLayerMixin):
             self.k_current = self.k_current.repeat_interleave(repeats, dim=0)
         if self.v_current is not None:
             self.v_current = self.v_current.repeat_interleave(repeats, dim=0)
-        if self.cos_current is not None:
-            self.cos_current = self.cos_current.repeat_interleave(repeats, dim=0)
-        if self.sin_current is not None:
-            self.sin_current = self.sin_current.repeat_interleave(repeats, dim=0)
         if self.value is not None:
             self.value = self.value.repeat_interleave(repeats, dim=0)
         self._refresh_fp_cache()
@@ -576,10 +462,6 @@ class Q2FP8SymLayer(CacheLayerMixin):
             self.k_current = self.k_current.index_select(0, indices)
         if self.v_current is not None:
             self.v_current = self.v_current.index_select(0, indices)
-        if self.cos_current is not None:
-            self.cos_current = self.cos_current.index_select(0, indices)
-        if self.sin_current is not None:
-            self.sin_current = self.sin_current.index_select(0, indices)
         if self.value is not None:
             self.value = self.value.index_select(0, indices)
         self._refresh_fp_cache()

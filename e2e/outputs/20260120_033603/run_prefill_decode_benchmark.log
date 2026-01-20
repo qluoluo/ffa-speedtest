@@ -1,0 +1,36 @@
+========================================================================
+Prefill + Decode Benchmark
+========================================================================
+Prompt lengths: 16384 32768 49152 65536
+Decode lengths: 256 512 1024 2048 4096
+Number of runs: 3
+Device: cuda:0
+Model path: /inspire/hdd/global_user/liuzhigeng-253108120105/models/Llama-3_2-3B
+Output: /inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-speedtest/e2e/outputs/20260120_033603/prefill_decode_benchmark.json
+Output dir: /inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-speedtest/e2e/outputs/20260120_033603
+Log file: /inspire/qb-ilm/project/exploration-topic/liuzhigeng-253108120105/projects/ffa/ffa-speedtest/e2e/outputs/20260120_033603/run_prefill_decode_benchmark.log
+========================================================================
+`torch_dtype` is deprecated! Use `dtype` instead!
+====================================================================================================
+PREFILL + DECODE BENCHMARK
+====================================================================================================
+Model: /inspire/hdd/global_user/liuzhigeng-253108120105/models/Llama-3_2-3B
+Prompt lengths: [16384, 32768, 49152, 65536]
+Decode lengths: [256, 512, 1024, 2048, 4096]
+Number of runs: 3
+Device: cuda:0
+====================================================================================================
+
+====================================================================================================
+Testing: Prompt Length = 16384, Decode Length = 256
+====================================================================================================
+
+--- Benchmarking Baseline ---
+Loading baseline model from /inspire/hdd/global_user/liuzhigeng-253108120105/models/Llama-3_2-3B...
+Loading checkpoint shards:   0%|          | 0/2 [00:00<?, ?it/s]Loading checkpoint shards:  50%|█████     | 1/2 [00:07<00:07,  7.33s/it]Loading checkpoint shards: 100%|██████████| 2/2 [00:09<00:00,  4.49s/it]Loading checkpoint shards: 100%|██████████| 2/2 [00:09<00:00,  4.92s/it]
+The following generation flags are not valid and may be ignored: ['temperature', 'top_p']. Set `TRANSFORMERS_VERBOSITY=info` for more details.
+`torch_dtype` is deprecated! Use `dtype` instead!
+
+--- Benchmarking Q2FP8-Unified ---
+Loading Q2FP8-Unified model from /inspire/hdd/global_user/liuzhigeng-253108120105/models/Llama-3_2-3B...
+Loading checkpoint shards:   0%|          | 0/2 [00:00<?, ?it/s]Loading checkpoint shards:  50%|█████     | 1/2 [00:02<00:02,  2.51s/it]Loading checkpoint shards: 100%|██████████| 2/2 [00:03<00:00,  1.47s/it]Loading checkpoint shards: 100%|██████████| 2/2 [00:03<00:00,  1.62s/it]

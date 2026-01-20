@@ -235,6 +235,7 @@ class LlamaAttention(nn.Module):
         use_ffa_decode = attn_settings.get("use_ffa_decode", False)
 
         cos, sin = position_embeddings
+        query_states, key_states = apply_rotary_pos_emb(query_states, key_states, cos, sin)
 
         q_len = query_states.shape[-2]
 
@@ -246,22 +247,17 @@ class LlamaAttention(nn.Module):
             # sin and cos are specific to RoPE models; cache_position needed for the static cache
             cache_kwargs = {"sin": sin, "cos": cos, "cache_position": cache_position}
             if is_q2fp8_cache:
-                # For Q2FP8SymCache: apply RoPE to query only, key RoPE will be fused with quantization
-                query_states, _ = apply_rotary_pos_emb(query_states, key_states, cos, sin)
-
-                # Q2FP8SymCache expects [B, T, HKV, K] and will apply fused RoPE + quantization
+                # Q2FP8SymCache expects [B, T, HKV, K] to compute per-token params.
                 key_states_cache = key_states.transpose(1, 2)
                 value_states_cache = value_states.transpose(1, 2)
                 key_states_cache, value_states_cache = past_key_values.update(
                     key_states_cache, value_states_cache, self.layer_idx, cache_kwargs
                 )
-                # key_states_cache already has RoPE applied by the fused operation
                 key_states = key_states_cache.transpose(1, 2)
                 value_states = value_states_cache.transpose(1, 2)
                 cache_layer = past_key_values.layers[self.layer_idx]
             else:
                 # Use standard cache interface (DynamicCache, etc.)
-                query_states, key_states = apply_rotary_pos_emb(query_states, key_states, cos, sin)
                 key_states, value_states = past_key_values.update(key_states, value_states, self.layer_idx, cache_kwargs)
 
         attn_weights = None
@@ -274,88 +270,95 @@ class LlamaAttention(nn.Module):
         except ImportError:
             from ffa_fwd_decode import attn_forward_decode
 
+        pattern_layers = attn_settings.get("pattern_layers", None)
+        if pattern_layers is None:
+            pattern_layers = list(range(1000))
+        assert type(pattern_layers) is list
+
         # Check if we have quantized blocks available for FFA decode
         has_quantized_blocks = False
-        current_len = 0
         if is_q2fp8_cache:
             cache_layer = cache_layer or past_key_values.layers[self.layer_idx]
             has_quantized_blocks = cache_layer.k_q is not None and cache_layer.k_scale is not None
+
+        # Check if we have unquantized tokens in k_current
+        current_len = 0
+        if is_q2fp8_cache and cache_layer is not None:
             current_len = cache_layer.get_current_len()
 
-        # Q2FP8 cache: use FFA decode for decode phase, flash_attn for prefill
-        if is_q2fp8_cache:
-            if q_len == 1:
-                # DECODE PHASE: Must use FFA kernel (no fallback)
-                if not use_ffa_decode:
-                    raise RuntimeError(
-                        "Q2FP8 cache requires FFA decode to be enabled. "
-                        "Set config.attn_settings['use_ffa_decode'] = True"
-                    )
+        # Use FFA when: decode mode, FFA enabled, has quantized blocks, in pattern layers
+        use_ffa_path = (
+            q_len == 1 and
+            use_ffa_decode and
+            is_q2fp8_cache and
+            has_quantized_blocks and
+            self.layer_idx in pattern_layers
+        )
 
-                if not has_quantized_blocks:
-                    raise RuntimeError(
-                        "Q2FP8 decode requires quantized blocks. "
-                        "Ensure prefill phase has completed and blocks are quantized."
-                    )
+        if use_ffa_path:
+            # Debug logging disabled for performance
+            # if self.layer_idx == 0:
+            #     print(f"[DEBUG] Using FFA Q2FP8 decode path: quantized_len={cache_layer.get_quantized_len()}, current_len={current_len}")
+            decode_kwargs = {
+                k: v
+                for k, v in attn_settings.items()
+                if k not in ("use_ffa_prefill", "use_ffa_decode", "pattern_layers")
+            }
+            decode_kwargs.pop("return_lse", None)
 
-                # FFA decode path
-                decode_kwargs = {
-                    k: v
-                    for k, v in attn_settings.items()
-                    if k not in ("use_ffa_prefill", "use_ffa_decode", "pattern_layers")
-                }
-                decode_kwargs.pop("return_lse", None)
+            k_q = cache_layer.k_q
+            k_residual = cache_layer.k_residual
+            quantized_len = cache_layer.get_quantized_len()
 
-                k_q = cache_layer.k_q
-                k_residual = cache_layer.k_residual
-                quantized_len = cache_layer.get_quantized_len()
+            # k_scale is [B, num_blocks, HKV, K] - pass per-block scale directly
+            # The kernel now supports per-block scale via USE_PERBLOCK_SCALE parameter
+            k_scale = cache_layer.k_scale  # [B, num_blocks, HKV, K]
 
-                # k_scale is [B, num_blocks, HKV, K] - pass per-block scale directly
-                k_scale = cache_layer.k_scale  # [B, num_blocks, HKV, K]
+            # Get quantized portion of v
+            v_quantized = cache_layer.value[:, :quantized_len, :, :]
 
-                # Get quantized portion of v
-                v_quantized = cache_layer.value[:, :quantized_len, :, :]
+            skip_ratio_store = attn_settings.get("skip_ratio_store")
 
-                skip_ratio_store = attn_settings.get("skip_ratio_store")
+            # FFA decode expects q: [B, 1, HQ, K]
+            q_for_ffa = query_states.transpose(1, 2).contiguous()  # [B, HQ, 1, K] -> [B, 1, HQ, K]
 
-                # FFA decode expects q: [B, 1, HQ, K]
-                q_for_ffa = query_states.transpose(1, 2).contiguous()  # [B, HQ, 1, K] -> [B, 1, HQ, K]
+            return_skip = decode_kwargs.get("return_skip_ratio", False)
 
-                return_skip = decode_kwargs.get("return_skip_ratio", False)
+            decode_result = attn_forward_decode(
+                q=q_for_ffa,
+                k_q=k_q,
+                k_scale=k_scale,
+                v=v_quantized,
+                k_current=cache_layer.k_current,
+                v_current=cache_layer.v_current,
+                current_len=current_len,
+                max_current=cache_layer.max_current,
+                k_residual=k_residual,
+                **decode_kwargs,
+            )
 
-                decode_result = attn_forward_decode(
-                    q=q_for_ffa,
-                    k_q=k_q,
-                    k_scale=k_scale,
-                    v=v_quantized,
-                    k_current=cache_layer.k_current,
-                    v_current=cache_layer.v_current,
-                    current_len=current_len,
-                    max_current=cache_layer.max_current,
-                    k_residual=k_residual,
-                    **decode_kwargs,
-                )
-
-                # Parse results based on what was requested
-                if return_skip:
-                    attn_output_ffa, skip_ratio = decode_result
-                    if isinstance(skip_ratio_store, list):
-                        skip_ratio_store.append(float(skip_ratio))
-                else:
-                    attn_output_ffa = decode_result
-
-                # FFA kernel returns [B, HQ, V], reshape to [B, 1, HQ, V]
-                attn_output = attn_output_ffa.unsqueeze(1)  # [B, HQ, V] -> [B, 1, HQ, V]
+            # Parse results based on what was requested
+            if return_skip:
+                attn_output_ffa, skip_ratio = decode_result
+                if isinstance(skip_ratio_store, list):
+                    skip_ratio_store.append(float(skip_ratio))
             else:
-                # PREFILL PHASE: Use flash_attn
-                attn_output = flash_attn_func(
-                    query_states.transpose(1, 2),
-                    key_states.transpose(1, 2),
-                    value_states.transpose(1, 2),
-                    causal=self.is_causal,
-                )
+                attn_output_ffa = decode_result
+
+            # FFA kernel returns [B, HQ, V], reshape to [B, 1, HQ, V]
+            attn_output_ffa = attn_output_ffa.unsqueeze(1)  # [B, HQ, V] -> [B, 1, HQ, V]
+            attn_output = attn_output_ffa
+
         else:
-            # Standard cache: always use flash_attn
+            if is_q2fp8_cache and q_len == 1:
+                raise RuntimeError(
+                    "Q2FP8 unified cache does not keep full FP16 keys; decode fallback is not supported. "
+                    "Enable FFA decode and ensure quantized blocks are available."
+                )
+            # Use flash_attn for non-FFA path
+            # Debug logging disabled for performance
+            # if self.layer_idx == 0 and q_len == 1:
+            #     print(f"[DEBUG] Using flash_attn path: q_len={q_len}, use_ffa_decode={use_ffa_decode}, is_q2fp8_cache={is_q2fp8_cache}")
             attn_output = flash_attn_func(
                 query_states.transpose(1, 2),
                 key_states.transpose(1, 2),

@@ -6,6 +6,17 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
+# 输出目录（统一整理到时间戳子目录）
+OUTPUT_ROOT="${SCRIPT_DIR}/outputs"
+RUN_ID="$(date +%Y%m%d_%H%M%S)"
+RUN_DIR="${OUTPUT_ROOT}/${RUN_ID}"
+mkdir -p "$RUN_DIR"
+LOG_FILE="${RUN_DIR}/run_decode_comparison.log"
+OUTPUT_JSON="${RUN_DIR}/decode_speed_comparison.json"
+
+# 记录所有输出到日志
+exec > >(tee "$LOG_FILE") 2>&1
+
 # 默认参数
 PROMPT_TYPE="medium"
 MAX_NEW_TOKENS=128
@@ -15,6 +26,7 @@ K_BITS=2
 DELTA=5.0
 BLOCK_SIZE=128
 USE_CUDAGRAPH=""
+MODEL_PATH=""
 
 # 解析命令行参数
 while [[ $# -gt 0 ]]; do
@@ -51,6 +63,10 @@ while [[ $# -gt 0 ]]; do
             USE_CUDAGRAPH="--use_cudagraph"
             shift 1
             ;;
+        --model_path)
+            MODEL_PATH="$2"
+            shift 2
+            ;;
         *)
             echo "Unknown option: $1"
             exit 1
@@ -69,7 +85,16 @@ echo "K bits: $K_BITS"
 echo "Delta: $DELTA"
 echo "Block size: $BLOCK_SIZE"
 echo "Use CUDA Graph: ${USE_CUDAGRAPH:-false}"
+echo "Model path: ${MODEL_PATH:-<default in compare_decode_speed.py>}"
+echo "Output dir: $RUN_DIR"
+echo "Output JSON: $OUTPUT_JSON"
+echo "Log file: $LOG_FILE"
 echo "========================================================================"
+
+MODEL_PATH_ARG=()
+if [[ -n "$MODEL_PATH" ]]; then
+    MODEL_PATH_ARG=(--model_path "$MODEL_PATH")
+fi
 
 python3 compare_decode_speed.py \
     --prompt_type "$PROMPT_TYPE" \
@@ -79,6 +104,8 @@ python3 compare_decode_speed.py \
     --k_bits "$K_BITS" \
     --delta "$DELTA" \
     --block_size "$BLOCK_SIZE" \
+    --output "$OUTPUT_JSON" \
+    "${MODEL_PATH_ARG[@]}" \
     $USE_CUDAGRAPH
 
 echo ""
