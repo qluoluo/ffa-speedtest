@@ -21,6 +21,13 @@ Q2FP8 Symmetric Cache: 对称量化 K cache + FP8 残差。
 - k_residual: [B, num_full_blocks * BS, HKV, K] FP8 残差
 - k_current: [B, current_len, HKV, K] 当前未满 block，保持 FP16
 - v: [B, T, HKV, V] 完整 V cache
+
+MODIFICATION NOTICE:
+此版本为极致显存优化版。
+1. 移除了所有反量化逻辑。
+2. update() 返回空张量 (shape=[B, 0, ...])。
+   - 作用：支持 modeling_llama.py 中的 .transpose() 操作不报错。
+   - 效果：若误入 Flash Attention 路径，因 seqlen=0 会触发 Runtime Error，确保只走 FFA 路径。
 """
 from __future__ import annotations
 
@@ -99,20 +106,6 @@ def quantize_symmetric(k: torch.Tensor, k_bits: int = 2, eps: float = 1e-8):
         k_residual = k_residual.to(dtype)
 
     return k_q_packed, k_scale, k_residual
-
-
-def quantize_block(k_block: torch.Tensor, k_bits: int = 2, eps: float = 1e-8):
-    """
-    量化单个 block 的 K。
-
-    Returns:
-        k_q: [B, block_len, HKV, K_packed]
-        k_scale: [B, 1, HKV, K] 该 block 的 scale (带 block 维度方便拼接)
-        k_residual: [B, block_len, HKV, K]
-    """
-    k_q, k_scale, k_residual = quantize_symmetric(k_block, k_bits, eps)
-    k_scale = k_scale.unsqueeze(1)  # [B, HKV, K] -> [B, 1, HKV, K]
-    return k_q, k_scale, k_residual
 
 
 def quantize_symmetric_blocks(
@@ -344,61 +337,14 @@ class Q2FP8SymLayer(CacheLayerMixin):
 
         self.num_full_blocks += num_new_blocks
 
-    def _dequantize_blocks(self) -> Optional[torch.Tensor]:
-        """反量化所有已存储的 blocks。"""
-        if self.num_full_blocks == 0:
-            return None
-
-        T_quantized = self.num_full_blocks * self.BS
-        # 只取有效部分
-        k_q_valid = self.k_q[:, :T_quantized, :, :]
-        k_scale_valid = self.k_scale[:, :self.num_full_blocks, :, :]
-        k_residual_valid = self.k_residual[:, :T_quantized, :, :]
-
-        B, _, HKV, K_packed = k_q_valid.shape
-        QMAX = (1 << self.k_bits) - 1
-        QZERO = QMAX / 2
-        K = k_scale_valid.shape[-1]
-
-        # Unpack k_q
-        if self.k_bits == 2:
-            k_unpacked = torch.stack([
-                (k_q_valid >> 0) & 0x3,
-                (k_q_valid >> 2) & 0x3,
-                (k_q_valid >> 4) & 0x3,
-                (k_q_valid >> 6) & 0x3,
-            ], dim=-1).view(B, T_quantized, HKV, -1)[..., :K].float()
-        else:
-            k_unpacked = torch.stack([
-                (k_q_valid >> 0) & 0xF,
-                (k_q_valid >> 4) & 0xF,
-            ], dim=-1).view(B, T_quantized, HKV, -1)[..., :K].float()
-
-        # 反量化
-        k_scale_expanded = k_scale_valid.repeat_interleave(self.BS, dim=1)[:, :T_quantized, :, :]
-        k_dequant = (k_unpacked - QZERO) * k_scale_expanded
-
-        if k_residual_valid is not None:
-            k_dequant = k_dequant + k_residual_valid.to(k_dequant.dtype)
-
-        return k_dequant.to(self.dtype)
-
-    def _get_full_key(self) -> Optional[torch.Tensor]:
-        """获取完整的 FP16 K。"""
-        parts = []
-        if self.num_full_blocks > 0:
-            parts.append(self._dequantize_blocks())
-        if self.current_len > 0:
-            # 只取有效部分
-            parts.append(self.k_current[:, :self.current_len, :, :])
-        if not parts:
-            return None
-        return torch.cat(parts, dim=self.seq_dim)
-
     def _refresh_fp_cache(self) -> None:
-        self.key_full = self._get_full_key()
-        self.keys = self.key_full
-        # 只返回有效部分的 value
+        """
+        刷新缓存视图。
+        MODIFIED: 不再反量化 Key Cache，self.keys 将为 None。
+        """
+        self.key_full = None
+        self.keys = None
+        # V Cache 仍保留用于可能的 Fallback (但如果 FlashAttn key=0，V 有值也会崩)
         self.values = self.value[:, :self.value_len, :, :] if self.value_len > 0 else None
 
     def update(
@@ -470,7 +416,23 @@ class Q2FP8SymLayer(CacheLayerMixin):
             self.current_len = 0
 
         self._refresh_fp_cache()
-        return self.keys, self.values
+        
+        # MODIFIED RETURN:
+        # 为了不触发 OOM，我们不返回全量 Keys/Values。
+        # 为了让 modeling_llama.py 中的 .transpose() 能够通过（避免 None 导致的 AttributeError），
+        # 我们返回 shape=[B, 0, HKV, K] 的空 Tensor。
+        # 
+        # 效果：
+        # 1. FFA 路径：正常运行（因为它不使用这里的 key_states，而是读内部 k_q）。
+        # 2. Flash Attention 路径：因为 Key/Value 长度为 0，Flash Attention 
+        #    会抛出 RuntimeError (或者 CUDA 错误)，达到“显式报错”的目的。
+        B, _, HKV, K = key_states.shape
+        V = value_states.shape[-1]
+        
+        empty_k = torch.empty((B, 0, HKV, K), dtype=self.dtype, device=self.device)
+        empty_v = torch.empty((B, 0, HKV, V), dtype=self.dtype, device=self.device)
+        
+        return empty_k, empty_v
 
     def get_seq_length(self) -> int:
         quantized_len = self.num_full_blocks * self.BS

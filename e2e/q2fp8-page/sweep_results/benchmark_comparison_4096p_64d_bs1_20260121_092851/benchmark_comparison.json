@@ -1,0 +1,67 @@
+{
+  "timestamp": "2026-01-21T09:28:51.030677",
+  "model_path": "/inspire/hdd/global_user/liuzhigeng-253108120105/models/Llama-3.1-8B",
+  "prefill_len": 4096,
+  "decode_len": 64,
+  "batch_size": 1,
+  "device": "cuda",
+  "dtype": "bfloat16",
+  "results": [
+    {
+      "method": "FlashAttention",
+      "use_ffa_decode": false,
+      "success": true,
+      "prefill_len_target": 4096,
+      "prefill_len_actual": 3878,
+      "decode_len_target": 64,
+      "decode_len_actual": 64,
+      "prefill_time_sec": 0.4758169949054718,
+      "decode_time_sec": 1.6801561266183853,
+      "total_time_sec": 2.155973121523857,
+      "benchmark_wall_time_sec": 4.646479928866029,
+      "align_tokens": 90,
+      "align_time_sec": 2.3804979249835014,
+      "warmup_decode_tokens": 4,
+      "warmup_decode_time_sec": 0.11000888235867023,
+      "decode_throughput_tokens_per_sec": 38.09169813808401,
+      "config": {
+        "delta": null,
+        "BS": 128,
+        "k_bits": 2,
+        "dtype": "bfloat16",
+        "align_to_bs": true
+      }
+    },
+    {
+      "method": "FFA-Q2FP8",
+      "use_ffa_decode": true,
+      "success": true,
+      "prefill_len_target": 4096,
+      "prefill_len_actual": 3878,
+      "decode_len_target": 64,
+      "decode_len_actual": 64,
+      "prefill_time_sec": 0.47483368776738644,
+      "decode_time_sec": 1.4706632979214191,
+      "total_time_sec": 1.9454969856888056,
+      "benchmark_wall_time_sec": 4.243340156972408,
+      "align_tokens": 90,
+      "align_time_sec": 2.2046885546296835,
+      "warmup_decode_tokens": 4,
+      "warmup_decode_time_sec": 0.09315461665391922,
+      "decode_throughput_tokens_per_sec": 43.51777874001154,
+      "config": {
+        "delta": 5.0,
+        "BS": 128,
+        "k_bits": 2,
+        "dtype": "bfloat16",
+        "align_to_bs": true
+      }
+    }
+  ],
+  "comparison": {
+    "flash_throughput": 38.09169813808401,
+    "ffa_throughput": 43.51777874001154,
+    "speedup": 1.1424478526070894,
+    "time_reduction_percent": 12.468652488778408
+  }
+}

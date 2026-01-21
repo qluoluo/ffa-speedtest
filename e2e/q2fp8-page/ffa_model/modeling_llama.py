@@ -45,7 +45,12 @@ from transformers.modeling_outputs import (
 from transformers.modeling_rope_utils import ROPE_INIT_FUNCTIONS, dynamic_rope_update
 from transformers.modeling_utils import ALL_ATTENTION_FUNCTIONS, PreTrainedModel
 from transformers.processing_utils import Unpack
-from transformers.utils import TransformersKwargs, auto_docstring, can_return_tuple, logging
+from transformers.utils import (
+    TransformersKwargs,
+    auto_docstring,
+    can_return_tuple,
+    logging,
+)
 from transformers.utils.deprecation import deprecate_kwarg
 from transformers.utils.generic import check_model_inputs
 from transformers.models.llama.configuration_llama import LlamaConfig
@@ -93,7 +98,9 @@ class LlamaRotaryEmbedding(nn.Module):
         super().__init__()
         # BC: "rope_type" was originally "type"
         if hasattr(config, "rope_scaling") and isinstance(config.rope_scaling, dict):
-            self.rope_type = config.rope_scaling.get("rope_type", config.rope_scaling.get("type"))
+            self.rope_type = config.rope_scaling.get(
+                "rope_type", config.rope_scaling.get("type")
+            )
         else:
             self.rope_type = "default"
         self.max_seq_len_cached = config.max_position_embeddings
@@ -109,12 +116,23 @@ class LlamaRotaryEmbedding(nn.Module):
     @torch.no_grad()
     @dynamic_rope_update  # power user: used with advanced RoPE types (e.g. dynamic rope)
     def forward(self, x, position_ids):
-        inv_freq_expanded = self.inv_freq[None, :, None].float().expand(position_ids.shape[0], -1, 1).to(x.device)
+        inv_freq_expanded = (
+            self.inv_freq[None, :, None]
+            .float()
+            .expand(position_ids.shape[0], -1, 1)
+            .to(x.device)
+        )
         position_ids_expanded = position_ids[:, None, :].float()
 
-        device_type = x.device.type if isinstance(x.device.type, str) and x.device.type != "mps" else "cpu"
+        device_type = (
+            x.device.type
+            if isinstance(x.device.type, str) and x.device.type != "mps"
+            else "cpu"
+        )
         with torch.autocast(device_type=device_type, enabled=False):  # Force float32
-            freqs = (inv_freq_expanded.float() @ position_ids_expanded.float()).transpose(1, 2)
+            freqs = (
+                inv_freq_expanded.float() @ position_ids_expanded.float()
+            ).transpose(1, 2)
             emb = torch.cat((freqs, freqs), dim=-1)
             cos = emb.cos() * self.attention_scaling
             sin = emb.sin() * self.attention_scaling
@@ -144,9 +162,15 @@ class LlamaMLP(nn.Module):
         self.config = config
         self.hidden_size = config.hidden_size
         self.intermediate_size = config.intermediate_size
-        self.gate_proj = nn.Linear(self.hidden_size, self.intermediate_size, bias=config.mlp_bias)
-        self.up_proj = nn.Linear(self.hidden_size, self.intermediate_size, bias=config.mlp_bias)
-        self.down_proj = nn.Linear(self.intermediate_size, self.hidden_size, bias=config.mlp_bias)
+        self.gate_proj = nn.Linear(
+            self.hidden_size, self.intermediate_size, bias=config.mlp_bias
+        )
+        self.up_proj = nn.Linear(
+            self.hidden_size, self.intermediate_size, bias=config.mlp_bias
+        )
+        self.down_proj = nn.Linear(
+            self.intermediate_size, self.hidden_size, bias=config.mlp_bias
+        )
         self.act_fn = ACT2FN[config.hidden_act]
 
     def forward(self, x):
@@ -162,7 +186,9 @@ def repeat_kv(hidden_states: torch.Tensor, n_rep: int) -> torch.Tensor:
     batch, num_key_value_heads, slen, head_dim = hidden_states.shape
     if n_rep == 1:
         return hidden_states
-    hidden_states = hidden_states[:, :, None, :, :].expand(batch, num_key_value_heads, n_rep, slen, head_dim)
+    hidden_states = hidden_states[:, :, None, :, :].expand(
+        batch, num_key_value_heads, n_rep, slen, head_dim
+    )
     return hidden_states.reshape(batch, num_key_value_heads * n_rep, slen, head_dim)
 
 
@@ -184,8 +210,12 @@ def eager_attention_forward(
         causal_mask = attention_mask[:, :, :, : key_states.shape[-2]]
         attn_weights = attn_weights + causal_mask
 
-    attn_weights = nn.functional.softmax(attn_weights, dim=-1, dtype=torch.float32).to(query.dtype)
-    attn_weights = nn.functional.dropout(attn_weights, p=dropout, training=module.training)
+    attn_weights = nn.functional.softmax(attn_weights, dim=-1, dtype=torch.float32).to(
+        query.dtype
+    )
+    attn_weights = nn.functional.dropout(
+        attn_weights, p=dropout, training=module.training
+    )
     attn_output = torch.matmul(attn_weights, value_states)
     attn_output = attn_output.transpose(1, 2).contiguous()
 
@@ -199,23 +229,35 @@ class LlamaAttention(nn.Module):
         super().__init__()
         self.config = config
         self.layer_idx = layer_idx
-        self.head_dim = getattr(config, "head_dim", config.hidden_size // config.num_attention_heads)
-        self.num_key_value_groups = config.num_attention_heads // config.num_key_value_heads
+        self.head_dim = getattr(
+            config, "head_dim", config.hidden_size // config.num_attention_heads
+        )
+        self.num_key_value_groups = (
+            config.num_attention_heads // config.num_key_value_heads
+        )
         self.scaling = self.head_dim**-0.5
         self.attention_dropout = config.attention_dropout
         self.is_causal = True
 
         self.q_proj = nn.Linear(
-            config.hidden_size, config.num_attention_heads * self.head_dim, bias=config.attention_bias
+            config.hidden_size,
+            config.num_attention_heads * self.head_dim,
+            bias=config.attention_bias,
         )
         self.k_proj = nn.Linear(
-            config.hidden_size, config.num_key_value_heads * self.head_dim, bias=config.attention_bias
+            config.hidden_size,
+            config.num_key_value_heads * self.head_dim,
+            bias=config.attention_bias,
         )
         self.v_proj = nn.Linear(
-            config.hidden_size, config.num_key_value_heads * self.head_dim, bias=config.attention_bias
+            config.hidden_size,
+            config.num_key_value_heads * self.head_dim,
+            bias=config.attention_bias,
         )
         self.o_proj = nn.Linear(
-            config.num_attention_heads * self.head_dim, config.hidden_size, bias=config.attention_bias
+            config.num_attention_heads * self.head_dim,
+            config.hidden_size,
+            bias=config.attention_bias,
         )
 
         # CUDA Graph state for Block-wise JIT capture
@@ -249,30 +291,66 @@ class LlamaAttention(nn.Module):
         debug_stats = attn_settings.get("debug_stats")
 
         cos, sin = position_embeddings
-        query_states, key_states = apply_rotary_pos_emb(query_states, key_states, cos, sin)
+        query_states, key_states = apply_rotary_pos_emb(
+            query_states, key_states, cos, sin
+        )
 
         q_len = query_states.shape[-2]
 
         # Check if we're using Q2FP8SymCache
-        is_q2fp8_cache = isinstance(past_key_values, (Q2FP8SymCache, Q2FP8SymStaticCache))
+        is_q2fp8_cache = isinstance(
+            past_key_values, (Q2FP8SymCache, Q2FP8SymStaticCache)
+        )
 
         cache_layer = None
         if past_key_values is not None:
             # sin and cos are specific to RoPE models; cache_position needed for the static cache
             cache_kwargs = {"sin": sin, "cos": cos, "cache_position": cache_position}
+
+            # === 开始修改 ===
             if is_q2fp8_cache:
-                # Q2FP8SymCache expects [B, T, HKV, K] to compute per-token params.
+                # 备份当前的输入 (Rotated Keys/Values)
+                # 因为 update() 现在返回空张量，Prefill 阶段我们需要用到这个备份
+                key_states_input = key_states
+                value_states_input = value_states
+
+                # Q2FP8SymCache update 需要 [B, T, HKV, K] 格式
                 key_states_cache = key_states.transpose(1, 2)
                 value_states_cache = value_states.transpose(1, 2)
-                key_states_cache, value_states_cache = past_key_values.update(
+
+                # 调用 Cache Update (现在返回的是空张量!)
+                key_states_ret, value_states_ret = past_key_values.update(
                     key_states_cache, value_states_cache, self.layer_idx, cache_kwargs
                 )
-                key_states = key_states_cache.transpose(1, 2)
-                value_states = value_states_cache.transpose(1, 2)
+
+                # 检查是否返回了空张量 (长度为0)
+                if key_states_ret.shape[1] == 0:
+                    if q_len > 1:
+                        # Case 1: Prefill 阶段
+                        # Cache 虽然存进去了，但返回空的。我们需要用当前的输入来进行 Self-Attention。
+                        # 注意：这里我们假设是首轮 Prefill。如果是带历史的 Prefill，因为我们不反量化历史，
+                        # FlashAttn 只能 attend 到当前输入，这符合"不反量化"的硬性约束。
+                        key_states = key_states_input
+                        value_states = value_states_input
+                    else:
+                        # Case 2: Decode 阶段
+                        # 保持为空。
+                        # - 如果走 FFA 路径：会读取 Cache 内部变量，不受影响。
+                        # - 如果走 Flash 路径：传入空 K/V，触发 RuntimeError 报错 (符合你的预期)。
+                        key_states = key_states_ret.transpose(1, 2)
+                        value_states = value_states_ret.transpose(1, 2)
+                else:
+                    # 兼容旧逻辑 (如果 update 返回了完整数据)
+                    key_states = key_states_ret.transpose(1, 2)
+                    value_states = value_states_ret.transpose(1, 2)
+
                 cache_layer = past_key_values.layers[self.layer_idx]
+            # === 修改结束 ===
             else:
                 # Use standard cache interface (DynamicCache, etc.)
-                key_states, value_states = past_key_values.update(key_states, value_states, self.layer_idx, cache_kwargs)
+                key_states, value_states = past_key_values.update(
+                    key_states, value_states, self.layer_idx, cache_kwargs
+                )
 
         attn_weights = None
 
@@ -292,6 +370,7 @@ class LlamaAttention(nn.Module):
             except ImportError:
                 import sys
                 from pathlib import Path
+
                 attn_kernel_path = Path(__file__).parent.parent / "attn_kernel"
                 sys.path.insert(0, str(attn_kernel_path))
                 from attn_q2fp8_sym_mask import CUDAGraphDecodeRunnerQ2FP8
@@ -312,7 +391,9 @@ class LlamaAttention(nn.Module):
         has_quantized_blocks = False
         if is_q2fp8_cache:
             cache_layer = cache_layer or past_key_values.layers[self.layer_idx]
-            has_quantized_blocks = cache_layer.k_q is not None and cache_layer.k_scale is not None
+            has_quantized_blocks = (
+                cache_layer.k_q is not None and cache_layer.k_scale is not None
+            )
 
         # Check if we have unquantized tokens in k_current
         current_len = 0
@@ -321,11 +402,11 @@ class LlamaAttention(nn.Module):
 
         # Use FFA when: decode mode, FFA enabled, has quantized blocks, in pattern layers
         use_ffa_path = (
-            q_len == 1 and
-            use_ffa_decode and
-            is_q2fp8_cache and
-            has_quantized_blocks and
-            self.layer_idx in pattern_layers
+            q_len == 1
+            and use_ffa_decode
+            and is_q2fp8_cache
+            and has_quantized_blocks
+            and self.layer_idx in pattern_layers
         )
 
         if debug_stats is not None and q_len == 1:
@@ -349,7 +430,13 @@ class LlamaAttention(nn.Module):
             decode_kwargs = {
                 k: v
                 for k, v in attn_settings.items()
-                if k not in ("use_ffa_prefill", "use_ffa_decode", "pattern_layers", "debug_stats")
+                if k
+                not in (
+                    "use_ffa_prefill",
+                    "use_ffa_decode",
+                    "pattern_layers",
+                    "debug_stats",
+                )
             }
 
             # OPTIMIZATION: Use slices of pre-allocated buffers
@@ -358,9 +445,15 @@ class LlamaAttention(nn.Module):
             # the slices' data_ptr() remains constant
             quantized_len = cache_layer.get_quantized_len()
             k_q = cache_layer.k_q[:, :quantized_len, :, :]
-            k_residual = cache_layer.k_residual[:, :quantized_len, :, :] if cache_layer.k_residual is not None else None
+            k_residual = (
+                cache_layer.k_residual[:, :quantized_len, :, :]
+                if cache_layer.k_residual is not None
+                else None
+            )
             num_full_blocks = cache_layer.num_full_blocks
-            k_scale = cache_layer.k_scale[:, :num_full_blocks, :, :]  # [B, num_blocks, HKV, K]
+            k_scale = cache_layer.k_scale[
+                :, :num_full_blocks, :, :
+            ]  # [B, num_blocks, HKV, K]
             v_quantized = cache_layer.value[:, :quantized_len, :, :]
 
             skip_ratio_store = attn_settings.get("skip_ratio_store")
@@ -374,7 +467,11 @@ class LlamaAttention(nn.Module):
             return_skip = decode_kwargs.get("return_skip_ratio", False)
 
             # Block-wise JIT CUDA Graph Logic
-            num_full_blocks = cache_layer.num_full_blocks if hasattr(cache_layer, 'num_full_blocks') else 0
+            num_full_blocks = (
+                cache_layer.num_full_blocks
+                if hasattr(cache_layer, "num_full_blocks")
+                else 0
+            )
 
             if debug_stats is not None:
                 if current_len > 0:
@@ -393,9 +490,9 @@ class LlamaAttention(nn.Module):
                 # Check if we need to recapture the graph
                 k_q_ptr = k_q.data_ptr()
                 need_recapture = (
-                    self.current_graph_runner is None or
-                    num_full_blocks != self.cached_num_blocks or
-                    k_q_ptr != self.cached_k_q_ptr
+                    self.current_graph_runner is None
+                    or num_full_blocks != self.cached_num_blocks
+                    or k_q_ptr != self.cached_k_q_ptr
                 )
 
                 if debug_stats is not None and need_recapture:
@@ -407,8 +504,10 @@ class LlamaAttention(nn.Module):
 
                     # Prepare kwargs for CUDA Graph runner (exclude return_skip_ratio, return_lse, max_decode_tokens)
                     graph_kwargs = {
-                        k: v for k, v in decode_kwargs.items()
-                        if k not in ("return_skip_ratio", "return_lse", "max_decode_tokens")
+                        k: v
+                        for k, v in decode_kwargs.items()
+                        if k
+                        not in ("return_skip_ratio", "return_lse", "max_decode_tokens")
                     }
 
                     # Force use_fp8_residual=True if config enables it
@@ -423,6 +522,11 @@ class LlamaAttention(nn.Module):
                         v=v_quantized,
                         k_residual=k_residual,
                         warmup=2,
+                        # New: pass current buffers for merge
+                        k_current=cache_layer.k_current,
+                        v_current=cache_layer.v_current
+                        if hasattr(cache_layer, "v_current")
+                        else None,
                         **graph_kwargs,
                     )
 
@@ -431,24 +535,17 @@ class LlamaAttention(nn.Module):
                     self.cached_k_q_ptr = k_q_ptr
 
                 # Replay the graph with LSE support
-                if need_lse:
-                    attn_output_ffa, ffa_m, ffa_l = self.current_graph_runner.replay(
-                        q=q_for_ffa,
-                        k_q=k_q,
-                        k_scale=k_scale,
-                        v=v_quantized,
-                        k_residual=k_residual,
-                        return_lse=True,
-                    )
-                else:
-                    attn_output_ffa = self.current_graph_runner.replay(
-                        q=q_for_ffa,
-                        k_q=k_q,
-                        k_scale=k_scale,
-                        v=v_quantized,
-                        k_residual=k_residual,
-                        return_lse=False,
-                    )
+                # If we need_lse, it usually implies we also want to run the merge kernel inside the graph
+                # The Runner now handles merge internally if k_current/v_current were provided
+                attn_output_ffa = self.current_graph_runner.replay(
+                    q=q_for_ffa,
+                    k_q=k_q,
+                    k_scale=k_scale,
+                    v=v_quantized,
+                    k_residual=k_residual,
+                    return_lse=False,  # We don't need m/l back if merge is done internally
+                    current_len=current_len,
+                )
 
                 if debug_stats is not None:
                     _bump_stat(debug_stats, "ffa_graph_replay")
@@ -500,10 +597,12 @@ class LlamaAttention(nn.Module):
                         attn_output_ffa = decode_result
 
             # FFA kernel returns [B, HQ, V], reshape to [B, 1, HQ, V]
-            attn_output_ffa = attn_output_ffa.unsqueeze(1)  # [B, HQ, V] -> [B, 1, HQ, V]
+            attn_output_ffa = attn_output_ffa.unsqueeze(
+                1
+            )  # [B, HQ, V] -> [B, 1, HQ, V]
 
             # ACCURATE MERGING: Handle k_current using merge kernel
-            if need_lse:
+            if need_lse and num_full_blocks == 0:
                 # Import merge kernel
                 try:
                     from .merge_kernel import merge_attention_output
@@ -513,6 +612,7 @@ class LlamaAttention(nn.Module):
                     except ImportError:
                         import sys
                         from pathlib import Path
+
                         attn_kernel_path = Path(__file__).parent.parent / "attn_kernel"
                         sys.path.insert(0, str(attn_kernel_path))
                         from merge_kernel import merge_attention_output
@@ -523,31 +623,39 @@ class LlamaAttention(nn.Module):
                 k_current = cache_layer.k_current  # [B, current_len, HKV, K]
 
                 # Extract v_current from value cache (last current_len tokens)
-                if hasattr(cache_layer, 'v_current') and cache_layer.v_current is not None:
+                if (
+                    hasattr(cache_layer, "v_current")
+                    and cache_layer.v_current is not None
+                ):
                     v_current = cache_layer.v_current
                 else:
                     # Fallback: extract from full value cache
                     quantized_len = cache_layer.get_quantized_len()
-                    v_current = cache_layer.value[:, quantized_len:, :, :]  # [B, current_len, HKV, V]
+                    v_current = cache_layer.value[
+                        :, quantized_len:, :, :
+                    ]  # [B, current_len, HKV, V]
 
                 # attn_output_ffa: [B, 1, HQ, V] -> [B, HQ, V]
                 o1 = attn_output_ffa.squeeze(1)  # [B, HQ, V]
 
                 # OPTIMIZATION: Pre-allocate merge output buffer (致命伤2 fix)
                 # This avoids torch.empty_like() allocation on every decode step
-                if self._merge_output_buffer is None or self._merge_output_buffer.shape != o1.shape:
+                if (
+                    self._merge_output_buffer is None
+                    or self._merge_output_buffer.shape != o1.shape
+                ):
                     self._merge_output_buffer = torch.empty_like(o1)
 
                 # Call merge kernel with pre-allocated buffer
                 o_merged = merge_attention_output(
-                    o1=o1,                    # [B, HQ, V]
-                    m1=ffa_m,                 # [B, HQ]
-                    l1=ffa_l,                 # [B, HQ]
-                    q=q_for_ffa,              # [B, 1, HQ, K]
-                    k_current=k_current,      # [B, BS, HKV, K]
-                    v_current=v_current,      # [B, BS, HKV, V]
+                    o1=o1,  # [B, HQ, V]
+                    m1=ffa_m,  # [B, HQ]
+                    l1=ffa_l,  # [B, HQ]
+                    q=q_for_ffa,  # [B, 1, HQ, K]
+                    k_current=k_current,  # [B, BS, HKV, K]
+                    v_current=v_current,  # [B, BS, HKV, V]
                     current_len=current_len,  # int
-                    scale=self.scaling,       # float
+                    scale=self.scaling,  # float
                     o_final=self._merge_output_buffer,  # Pre-allocated buffer
                 )
 
@@ -582,7 +690,9 @@ class LlamaDecoderLayer(GradientCheckpointingLayer):
 
         self.mlp = LlamaMLP(config)
         self.input_layernorm = LlamaRMSNorm(config.hidden_size, eps=config.rms_norm_eps)
-        self.post_attention_layernorm = LlamaRMSNorm(config.hidden_size, eps=config.rms_norm_eps)
+        self.post_attention_layernorm = LlamaRMSNorm(
+            config.hidden_size, eps=config.rms_norm_eps
+        )
 
     @deprecate_kwarg("past_key_value", new_name="past_key_values", version="4.58")
     def forward(
@@ -593,7 +703,9 @@ class LlamaDecoderLayer(GradientCheckpointingLayer):
         past_key_values: Optional[Cache] = None,
         use_cache: Optional[bool] = False,
         cache_position: Optional[torch.LongTensor] = None,
-        position_embeddings: Optional[tuple[torch.Tensor, torch.Tensor]] = None,  # necessary, but kept here for BC
+        position_embeddings: Optional[
+            tuple[torch.Tensor, torch.Tensor]
+        ] = None,  # necessary, but kept here for BC
         **kwargs: Unpack[TransformersKwargs],
     ) -> torch.Tensor:
         residual = hidden_states
@@ -645,9 +757,14 @@ class LlamaModel(LlamaPreTrainedModel):
         self.padding_idx = config.pad_token_id
         self.vocab_size = config.vocab_size
 
-        self.embed_tokens = nn.Embedding(config.vocab_size, config.hidden_size, self.padding_idx)
+        self.embed_tokens = nn.Embedding(
+            config.vocab_size, config.hidden_size, self.padding_idx
+        )
         self.layers = nn.ModuleList(
-            [LlamaDecoderLayer(config, layer_idx) for layer_idx in range(config.num_hidden_layers)]
+            [
+                LlamaDecoderLayer(config, layer_idx)
+                for layer_idx in range(config.num_hidden_layers)
+            ]
         )
         self.norm = LlamaRMSNorm(config.hidden_size, eps=config.rms_norm_eps)
         self.rotary_emb = LlamaRotaryEmbedding(config=config)
@@ -670,15 +787,21 @@ class LlamaModel(LlamaPreTrainedModel):
         **kwargs: Unpack[TransformersKwargs],
     ) -> BaseModelOutputWithPast:
         if (input_ids is None) ^ (inputs_embeds is not None):
-            raise ValueError("You must specify exactly one of input_ids or inputs_embeds")
+            raise ValueError(
+                "You must specify exactly one of input_ids or inputs_embeds"
+            )
 
         if inputs_embeds is None:
             inputs_embeds: torch.Tensor = self.embed_tokens(input_ids)
 
         if cache_position is None:
-            past_seen_tokens = past_key_values.get_seq_length() if past_key_values is not None else 0
+            past_seen_tokens = (
+                past_key_values.get_seq_length() if past_key_values is not None else 0
+            )
             cache_position: torch.Tensor = torch.arange(
-                past_seen_tokens, past_seen_tokens + inputs_embeds.shape[1], device=inputs_embeds.device
+                past_seen_tokens,
+                past_seen_tokens + inputs_embeds.shape[1],
+                device=inputs_embeds.device,
             )
 
         if position_ids is None:
@@ -774,12 +897,21 @@ class LlamaForCausalLM(LlamaPreTrainedModel, GenerationMixin):
 
         hidden_states = outputs.last_hidden_state
         # Only compute necessary logits, and do not upcast them to float if we are not computing the loss
-        slice_indices = slice(-logits_to_keep, None) if isinstance(logits_to_keep, int) else logits_to_keep
+        slice_indices = (
+            slice(-logits_to_keep, None)
+            if isinstance(logits_to_keep, int)
+            else logits_to_keep
+        )
         logits = self.lm_head(hidden_states[:, slice_indices, :])
 
         loss = None
         if labels is not None:
-            loss = self.loss_function(logits=logits, labels=labels, vocab_size=self.config.vocab_size, **kwargs)
+            loss = self.loss_function(
+                logits=logits,
+                labels=labels,
+                vocab_size=self.config.vocab_size,
+                **kwargs,
+            )
 
         return CausalLMOutputWithPast(
             loss=loss,
@@ -790,14 +922,20 @@ class LlamaForCausalLM(LlamaPreTrainedModel, GenerationMixin):
         )
 
 
-class LlamaForSequenceClassification(GenericForSequenceClassification, LlamaPreTrainedModel): ...
+class LlamaForSequenceClassification(
+    GenericForSequenceClassification, LlamaPreTrainedModel
+): ...
 
 
 class LlamaForQuestionAnswering(GenericForQuestionAnswering, LlamaPreTrainedModel):
-    base_model_prefix = "transformer"  # For BC, where `transformer` was used instead of `model`
+    base_model_prefix = (
+        "transformer"  # For BC, where `transformer` was used instead of `model`
+    )
 
 
-class LlamaForTokenClassification(GenericForTokenClassification, LlamaPreTrainedModel): ...
+class LlamaForTokenClassification(
+    GenericForTokenClassification, LlamaPreTrainedModel
+): ...
 
 
 __all__ = [

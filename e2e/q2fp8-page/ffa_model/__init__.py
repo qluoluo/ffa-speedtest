@@ -15,7 +15,6 @@ from .q2fp8_cache import (
     Q2FP8SymCache,
     Q2FP8SymLayer,
     quantize_symmetric,
-    quantize_block,
     SUPPORTED_K_BITS,
 )
 from .ffa_fwd_decode import attn_forward_decode
@@ -26,7 +25,6 @@ __all__ = [
     "Q2FP8SymCache",
     "Q2FP8SymLayer",
     "quantize_symmetric",
-    "quantize_block",
     "SUPPORTED_K_BITS",
     "attn_forward_decode",
 ]

@@ -140,7 +140,9 @@ def _save_plots(summary: Dict[str, Any], output_dir: str) -> None:
 
 def create_test_input(tokenizer, seq_len: int) -> str:
     """Create a test prompt with approximately seq_len tokens."""
-    base_prompt = "You are an intelligent AI assistant. Please summarize the following text:\n\n"
+    base_prompt = (
+        "You are an intelligent AI assistant. Please summarize the following text:\n\n"
+    )
 
     filler_unit = (
         "The quick brown fox jumps over the lazy dog. "
@@ -175,6 +177,7 @@ def run_single_benchmark(
     align_to_bs: bool = True,
     warmup_decode_tokens: int = 4,
     debug_stats: bool = False,
+    batch_size: int = 1,
 ) -> Dict[str, Any]:
     """
     Run a single benchmark configuration.
@@ -183,10 +186,11 @@ def run_single_benchmark(
         Dictionary with timing results and metadata
     """
     method_name = "FFA-Q2FP8" if use_ffa_decode else "FlashAttention"
-    print(f"\n{'='*70}")
+    print(f"\n{'=' * 70}")
     print(f"Running benchmark: {method_name}")
-    print(f"{'='*70}")
+    print(f"{'=' * 70}")
     print(f"Prefill length: {prefill_len}, Decode length: {decode_len}")
+    print(f"Batch Size: {batch_size}")
     print(f"use_ffa_decode: {use_ffa_decode}")
     if use_ffa_decode:
         print(f"delta: {delta}, BS: {BS}, k_bits: {k_bits}")
@@ -220,21 +224,45 @@ def run_single_benchmark(
 
     # Create test input
     test_prompt = create_test_input(tokenizer, prefill_len)
-    inputs = tokenizer(test_prompt, return_tensors="pt", truncation=True, max_length=prefill_len)
+    inputs = tokenizer(
+        test_prompt, return_tensors="pt", truncation=True, max_length=prefill_len
+    )
     input_ids = inputs["input_ids"].to(device)
-    attention_mask = inputs["attention_mask"].to(device)
+
+    # Repeat input for larger batch size
+    if batch_size > 1:
+        input_ids = input_ids.repeat(batch_size, 1)
+
+    attention_mask = torch.ones_like(input_ids)
+
     actual_prefill_len = input_ids.shape[1]
     print(f"Actual prefill length: {actual_prefill_len} tokens")
 
+    # Determine required cache size
+    # Add buffer for alignment and warmup steps
+    required_max_len = prefill_len + decode_len + BS + warmup_decode_tokens + 128
+
     # Create cache
-    cache = Q2FP8SymCache(BS=BS, use_fp8_residual=True, k_bits=k_bits)
+    cache = Q2FP8SymCache(
+        BS=BS,
+        use_fp8_residual=True,
+        k_bits=k_bits,
+        max_seq_len=required_max_len,
+    )
 
     # Warmup + benchmark run
     try:
         if warmup:
             print("Running warmup...")
-            warmup_cache = Q2FP8SymCache(BS=BS, use_fp8_residual=True, k_bits=k_bits)
-            warmup_logits, _ = _run_prefill(model, input_ids, attention_mask, warmup_cache, device)
+            warmup_cache = Q2FP8SymCache(
+                BS=BS,
+                use_fp8_residual=True,
+                k_bits=k_bits,
+                max_seq_len=required_max_len,
+            )
+            warmup_logits, _ = _run_prefill(
+                model, input_ids, attention_mask, warmup_cache, device
+            )
             warmup_next = _get_next_token(warmup_logits)
             _run_decode_steps(
                 model,
@@ -249,7 +277,9 @@ def run_single_benchmark(
 
         # Actual benchmark run (prefill timed)
         print("Running benchmark...")
-        logits, prefill_time = _run_prefill(model, input_ids, attention_mask, cache, device)
+        logits, prefill_time = _run_prefill(
+            model, input_ids, attention_mask, cache, device
+        )
         next_token = _get_next_token(logits)
 
         # Optional alignment to BS boundary (not timed)
@@ -257,8 +287,17 @@ def run_single_benchmark(
         align_time = 0.0
         if align_to_bs and cache.get_current_len() > 0:
             align_tokens = (BS - cache.get_current_len()) % BS
+            remaining_tokens = max(0, cache.max_seq_len - cache.get_seq_length())
+            if align_tokens > remaining_tokens:
+                print(
+                    f"Skipping alignment: only {remaining_tokens} tokens left before "
+                    f"max_seq_len={cache.max_seq_len}"
+                )
+                align_tokens = 0
         if align_tokens > 0:
-            print(f"Aligning cache to BS boundary with {align_tokens} tokens (not timed)...")
+            print(
+                f"Aligning cache to BS boundary with {align_tokens} tokens (not timed)..."
+            )
             _sync_if_cuda(device)
             align_start = time.perf_counter()
             next_token = _run_decode_steps(
@@ -275,6 +314,15 @@ def run_single_benchmark(
         warmup_decode_tokens = max(0, int(warmup_decode_tokens))
         warmup_decode_time = 0.0
         if warmup_decode_tokens > 0:
+            remaining_tokens = max(0, cache.max_seq_len - cache.get_seq_length())
+            if warmup_decode_tokens > remaining_tokens:
+                print(
+                    f"Reducing warmup decode tokens from {warmup_decode_tokens} to "
+                    f"{remaining_tokens} to avoid cache overflow "
+                    f"(max_seq_len={cache.max_seq_len})"
+                )
+                warmup_decode_tokens = remaining_tokens
+        if warmup_decode_tokens > 0:
             print(f"Running {warmup_decode_tokens} decode warmup steps (not timed)...")
             _sync_if_cuda(device)
             warmup_start = time.perf_counter()
@@ -290,21 +338,31 @@ def run_single_benchmark(
 
         # Timed decode
         print("Running timed decode...")
+        remaining_tokens = max(0, cache.max_seq_len - cache.get_current_len())
+        decode_len_actual = min(decode_len, remaining_tokens)
+        if decode_len_actual < decode_len:
+            print(
+                f"Reducing timed decode tokens from {decode_len} to {decode_len_actual} "
+                f"to avoid cache overflow (max_seq_len={cache.max_seq_len})"
+            )
         _sync_if_cuda(device)
-        decode_start = time.perf_counter()
-        _ = _run_decode_steps(
-            model,
-            next_token,
-            num_steps=decode_len,
-            cache=cache,
-            device=device,
-        )
-        _sync_if_cuda(device)
-        decode_time = time.perf_counter() - decode_start
+        if decode_len_actual > 0:
+            decode_start = time.perf_counter()
+            _ = _run_decode_steps(
+                model,
+                next_token,
+                num_steps=decode_len_actual,
+                cache=cache,
+                device=device,
+            )
+            _sync_if_cuda(device)
+            decode_time = time.perf_counter() - decode_start
+        else:
+            decode_time = 0.0
 
         # Metrics
         total_time = prefill_time + decode_time
-        decode_throughput = decode_len / decode_time if decode_time > 0 else 0.0
+        decode_throughput = decode_len_actual / decode_time if decode_time > 0 else 0.0
 
         result = {
             "method": method_name,
@@ -313,11 +371,14 @@ def run_single_benchmark(
             "prefill_len_target": prefill_len,
             "prefill_len_actual": actual_prefill_len,
             "decode_len_target": decode_len,
-            "decode_len_actual": decode_len,
+            "decode_len_actual": decode_len_actual,
             "prefill_time_sec": prefill_time,
             "decode_time_sec": decode_time,
             "total_time_sec": total_time,
-            "benchmark_wall_time_sec": prefill_time + align_time + warmup_decode_time + decode_time,
+            "benchmark_wall_time_sec": prefill_time
+            + align_time
+            + warmup_decode_time
+            + decode_time,
             "align_tokens": align_tokens,
             "align_time_sec": align_time,
             "warmup_decode_tokens": warmup_decode_tokens,
@@ -329,22 +390,22 @@ def run_single_benchmark(
                 "k_bits": k_bits,
                 "dtype": dtype,
                 "align_to_bs": align_to_bs,
-            }
+            },
         }
         if debug_stats:
             stats_ref = model.config.attn_settings.get("debug_stats")
             if stats_ref is not None:
                 result["debug_stats"] = stats_ref
 
-        print(f"\n{'='*70}")
+        print(f"\n{'=' * 70}")
         print(f"Benchmark SUCCESSFUL: {method_name}")
-        print(f"{'='*70}")
+        print(f"{'=' * 70}")
         print(f"Prefill: {actual_prefill_len} tokens")
-        print(f"Decode: {decode_len} tokens")
+        print(f"Decode: {decode_len_actual} tokens")
         print(f"Prefill time: {prefill_time:.3f}s")
         print(f"Decode time: {decode_time:.3f}s")
         print(f"Decode throughput: {decode_throughput:.2f} tokens/sec")
-        print(f"{'='*70}")
+        print(f"{'=' * 70}")
 
         # Clean up
         del model
@@ -355,11 +416,12 @@ def run_single_benchmark(
         return result
 
     except Exception as e:
-        print(f"\n{'='*70}")
+        print(f"\n{'=' * 70}")
         print(f"Benchmark FAILED: {method_name}")
-        print(f"{'='*70}")
+        print(f"{'=' * 70}")
         print(f"Error: {type(e).__name__}: {e}")
         import traceback
+
         traceback.print_exc()
 
         # Clean up
@@ -393,18 +455,20 @@ def run_comparison_benchmark(
     align_to_bs: bool = True,
     warmup_decode_tokens: int = 4,
     debug_stats: bool = False,
+    batch_size: int = 1,
 ):
     """
     Run comparison benchmark between FFA and Flash Attention.
     """
-    print("="*70)
+    print("=" * 70)
     print("FFA vs Flash Attention Benchmark Comparison")
-    print("="*70)
+    print("=" * 70)
     print(f"Model: {model_path}")
     print(f"Prefill length: {prefill_len}")
     print(f"Decode length: {decode_len}")
+    print(f"Batch Size: {batch_size}")
     print(f"Device: {device}, dtype: {dtype}")
-    print("="*70)
+    print("=" * 70)
 
     # Load tokenizer once
     print("\nLoading tokenizer...")
@@ -417,9 +481,9 @@ def run_comparison_benchmark(
     results = []
 
     # 1. Flash Attention baseline
-    print("\n" + "="*70)
+    print("\n" + "=" * 70)
     print("BENCHMARK 1/2: Flash Attention (Baseline)")
-    print("="*70)
+    print("=" * 70)
     flash_result = run_single_benchmark(
         model_path=model_path,
         tokenizer=tokenizer,
@@ -435,13 +499,14 @@ def run_comparison_benchmark(
         align_to_bs=align_to_bs,
         warmup_decode_tokens=warmup_decode_tokens,
         debug_stats=debug_stats,
+        batch_size=batch_size,
     )
     results.append(flash_result)
 
     # 2. FFA method
-    print("\n" + "="*70)
+    print("\n" + "=" * 70)
     print("BENCHMARK 2/2: FFA-Q2FP8 (Custom Method)")
-    print("="*70)
+    print("=" * 70)
     ffa_result = run_single_benchmark(
         model_path=model_path,
         tokenizer=tokenizer,
@@ -457,19 +522,21 @@ def run_comparison_benchmark(
         align_to_bs=align_to_bs,
         warmup_decode_tokens=warmup_decode_tokens,
         debug_stats=debug_stats,
+        batch_size=batch_size,
     )
     results.append(ffa_result)
 
     # Generate summary
-    print("\n" + "="*70)
+    print("\n" + "=" * 70)
     print("BENCHMARK SUMMARY")
-    print("="*70)
+    print("=" * 70)
 
     summary = {
         "timestamp": datetime.now().isoformat(),
         "model_path": model_path,
         "prefill_len": prefill_len,
         "decode_len": decode_len,
+        "batch_size": batch_size,
         "device": device,
         "dtype": dtype,
         "results": results,
@@ -490,13 +557,15 @@ def run_comparison_benchmark(
         print(f"  Decode throughput: {ffa_throughput:.2f} tokens/sec")
 
         print(f"\nSpeedup: {speedup:.2f}x")
-        print(f"Time reduction: {(1 - 1/speedup)*100:.1f}%" if speedup > 0 else "N/A")
+        print(
+            f"Time reduction: {(1 - 1 / speedup) * 100:.1f}%" if speedup > 0 else "N/A"
+        )
 
         summary["comparison"] = {
             "flash_throughput": flash_throughput,
             "ffa_throughput": ffa_throughput,
             "speedup": speedup,
-            "time_reduction_percent": (1 - 1/speedup)*100 if speedup > 0 else None,
+            "time_reduction_percent": (1 - 1 / speedup) * 100 if speedup > 0 else None,
         }
     else:
         print("\nComparison not available due to benchmark failures.")
@@ -506,7 +575,7 @@ def run_comparison_benchmark(
     timestamp_str = datetime.now().strftime("%Y%m%d_%H%M%S")
     run_dir = os.path.join(
         output_dir,
-        f"benchmark_comparison_{prefill_len}p_{decode_len}d_{timestamp_str}",
+        f"benchmark_comparison_{prefill_len}p_{decode_len}d_bs{batch_size}_{timestamp_str}",
     )
     os.makedirs(run_dir, exist_ok=True)
     output_file = os.path.join(run_dir, "benchmark_comparison.json")
@@ -516,10 +585,10 @@ def run_comparison_benchmark(
 
     _save_plots(summary, run_dir)
 
-    print(f"\n{'='*70}")
+    print(f"\n{'=' * 70}")
     print(f"Results saved to: {output_file}")
     print(f"Plots saved to: {run_dir}")
-    print(f"{'='*70}")
+    print(f"{'=' * 70}")
 
     return summary
 
@@ -579,6 +648,12 @@ def main():
         help="Model dtype (default: bfloat16)",
     )
     parser.add_argument(
+        "--batch_size",
+        type=int,
+        default=1,
+        help="Batch size (default: 1)",
+    )
+    parser.add_argument(
         "--output_dir",
         type=str,
         default="output",
@@ -623,6 +698,7 @@ def main():
         align_to_bs=args.align_to_bs,
         warmup_decode_tokens=args.warmup_decode_tokens,
         debug_stats=args.debug_stats,
+        batch_size=args.batch_size,
     )
 
     # Exit with success if both benchmarks succeeded
