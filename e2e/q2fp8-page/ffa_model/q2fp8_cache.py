@@ -207,11 +207,12 @@ class Q2FP8SymLayer(CacheLayerMixin):
     - 按 block/page 独立量化，每个 block 有独立的 scale
     - 新增 token 累积到当前 block，满了才量化
     - 未满的 block 保持 FP16，不量化
+    - 使用预分配的固定大小 buffer，避免 torch.cat() 导致地址变化
     """
 
     is_sliding = False
 
-    def __init__(self, BS: int = 128, use_fp8_residual: bool = True, k_bits: int = 2):
+    def __init__(self, BS: int = 128, use_fp8_residual: bool = True, k_bits: int = 2, max_seq_len: int = 32768):
         super().__init__()
         if k_bits not in SUPPORTED_K_BITS:
             raise ValueError(f"k_bits must be one of {SUPPORTED_K_BITS}, got {k_bits}")
@@ -219,28 +220,87 @@ class Q2FP8SymLayer(CacheLayerMixin):
         self.use_fp8_residual = use_fp8_residual
         self.k_bits = k_bits
         self.seq_dim = 1
+        self.max_seq_len = max_seq_len
+        self.max_blocks = (max_seq_len + BS - 1) // BS
 
-        # 已量化的完整 blocks
-        self.k_q: Optional[torch.Tensor] = None           # [B, num_full_blocks * BS, HKV, K_packed]
-        self.k_scale: Optional[torch.Tensor] = None       # [B, num_full_blocks, HKV, K]
-        self.k_residual: Optional[torch.Tensor] = None    # [B, num_full_blocks * BS, HKV, K]
-        self.num_full_blocks: int = 0
+        # 已量化的完整 blocks - 预分配固定大小
+        self.k_q: Optional[torch.Tensor] = None           # [B, max_blocks * BS, HKV, K_packed]
+        self.k_scale: Optional[torch.Tensor] = None       # [B, max_blocks, HKV, K]
+        self.k_residual: Optional[torch.Tensor] = None    # [B, max_blocks * BS, HKV, K]
+        self.num_full_blocks: int = 0                     # 实际已量化的 block 数量
 
         # 当前未满的 block，保持 FP16 - 使用固定大小 buffer + mask
         self.k_current: Optional[torch.Tensor] = None     # [B, BS, HKV, K] - 固定大小
         self.v_current: Optional[torch.Tensor] = None     # [B, BS, HKV, V] - 固定大小
         self.current_len: int = 0                         # 当前有效长度 (0 <= current_len <= BS)
 
-        # 完整 V cache
-        self.value: Optional[torch.Tensor] = None         # [B, T, HKV, V]
+        # 完整 V cache - 预分配固定大小
+        self.value: Optional[torch.Tensor] = None         # [B, max_seq_len, HKV, V]
+        self.value_len: int = 0                           # V cache 的实际有效长度
 
         # 用于兼容 transformers 接口
         self.keys: Optional[torch.Tensor] = None
         self.values: Optional[torch.Tensor] = None
         self.key_full: Optional[torch.Tensor] = None
 
-    def lazy_initialization(self, key_states: torch.Tensor):
+    def lazy_initialization(self, key_states: torch.Tensor, value_states: torch.Tensor):
+        """预分配所有固定大小的 buffer。"""
         self.dtype, self.device = key_states.dtype, key_states.device
+        B, _, HKV, K = key_states.shape
+        V = value_states.shape[-1]
+
+        # 计算 packed K 的大小
+        VALS_PER_BYTE = 8 // self.k_bits
+        K_packed = (K + VALS_PER_BYTE - 1) // VALS_PER_BYTE
+
+        # 预分配 V cache - 固定大小
+        self.value = torch.zeros(
+            (B, self.max_seq_len, HKV, V),
+            dtype=self.dtype,
+            device=self.device,
+        )
+        self.value_len = 0
+
+        # 预分配量化 K cache - 固定大小
+        max_quantized_len = self.max_blocks * self.BS
+        self.k_q = torch.zeros(
+            (B, max_quantized_len, HKV, K_packed),
+            dtype=torch.uint8,
+            device=self.device,
+        )
+        self.k_scale = torch.zeros(
+            (B, self.max_blocks, HKV, K),
+            dtype=torch.float32,
+            device=self.device,
+        )
+        # FP8 residual
+        try:
+            self.k_residual = torch.zeros(
+                (B, max_quantized_len, HKV, K),
+                dtype=torch.float8_e4m3fn,
+                device=self.device,
+            )
+        except:
+            self.k_residual = torch.zeros(
+                (B, max_quantized_len, HKV, K),
+                dtype=self.dtype,
+                device=self.device,
+            )
+        self.num_full_blocks = 0
+
+        # 预分配 k_current 和 v_current - 固定大小 BS
+        self.k_current = torch.zeros(
+            (B, self.BS, HKV, K),
+            dtype=self.dtype,
+            device=self.device,
+        )
+        self.v_current = torch.zeros(
+            (B, self.BS, HKV, V),
+            dtype=self.dtype,
+            device=self.device,
+        )
+        self.current_len = 0
+
         self.is_initialized = True
 
     def _quantize_and_store_block(self, k_block: torch.Tensor) -> None:
@@ -248,70 +308,89 @@ class Q2FP8SymLayer(CacheLayerMixin):
         self._quantize_and_store_blocks(k_block)
 
     def _quantize_and_store_blocks(self, k_blocks: torch.Tensor) -> None:
-        """量化多个完整 blocks 并存储。"""
+        """量化多个完整 blocks 并存储（in-place 写入预分配的 buffer）。"""
         k_q_new, k_scale_new, k_residual_new = quantize_symmetric_blocks(
             k_blocks,
             block_size=self.BS,
             k_bits=self.k_bits,
         )
 
-        if self.k_q is None:
-            self.k_q = k_q_new
-            self.k_scale = k_scale_new
-            self.k_residual = k_residual_new
-        else:
-            self.k_q = torch.cat([self.k_q, k_q_new], dim=self.seq_dim)
-            self.k_scale = torch.cat([self.k_scale, k_scale_new], dim=1)
-            # Convert float8 to float16/bfloat16 for cat, then back to float8
-            if self.k_residual.dtype == torch.float8_e4m3fn:
-                k_residual_fp = self.k_residual.to(torch.float16)
-                k_residual_new_fp = k_residual_new.to(torch.float16)
-                self.k_residual = torch.cat([k_residual_fp, k_residual_new_fp], dim=self.seq_dim).to(torch.float8_e4m3fn)
-            else:
-                self.k_residual = torch.cat([self.k_residual, k_residual_new], dim=self.seq_dim)
+        num_new_blocks = k_scale_new.shape[1]
+        new_tokens = num_new_blocks * self.BS
 
-        self.num_full_blocks += k_scale_new.shape[1]
+        # 检查是否超出预分配的空间
+        if self.num_full_blocks + num_new_blocks > self.max_blocks:
+            raise RuntimeError(
+                f"Cache overflow: trying to store {self.num_full_blocks + num_new_blocks} blocks, "
+                f"but max_blocks={self.max_blocks}. Increase max_seq_len (current: {self.max_seq_len})"
+            )
+
+        # In-place 写入预分配的 buffer（地址不变）
+        start_token = self.num_full_blocks * self.BS
+        end_token = start_token + new_tokens
+        start_block = self.num_full_blocks
+        end_block = start_block + num_new_blocks
+
+        self.k_q[:, start_token:end_token, :, :] = k_q_new
+        self.k_scale[:, start_block:end_block, :, :] = k_scale_new
+
+        # Handle FP8 residual
+        if self.k_residual.dtype == torch.float8_e4m3fn and k_residual_new.dtype != torch.float8_e4m3fn:
+            self.k_residual[:, start_token:end_token, :, :] = k_residual_new.to(torch.float8_e4m3fn)
+        elif self.k_residual.dtype != torch.float8_e4m3fn and k_residual_new.dtype == torch.float8_e4m3fn:
+            self.k_residual[:, start_token:end_token, :, :] = k_residual_new.to(self.k_residual.dtype)
+        else:
+            self.k_residual[:, start_token:end_token, :, :] = k_residual_new
+
+        self.num_full_blocks += num_new_blocks
 
     def _dequantize_blocks(self) -> Optional[torch.Tensor]:
         """反量化所有已存储的 blocks。"""
-        if self.k_q is None:
+        if self.num_full_blocks == 0:
             return None
 
-        B, T_quantized, HKV, K_packed = self.k_q.shape
+        T_quantized = self.num_full_blocks * self.BS
+        # 只取有效部分
+        k_q_valid = self.k_q[:, :T_quantized, :, :]
+        k_scale_valid = self.k_scale[:, :self.num_full_blocks, :, :]
+        k_residual_valid = self.k_residual[:, :T_quantized, :, :]
+
+        B, _, HKV, K_packed = k_q_valid.shape
         QMAX = (1 << self.k_bits) - 1
         QZERO = QMAX / 2
-        K = self.k_scale.shape[-1]
+        K = k_scale_valid.shape[-1]
 
         # Unpack k_q
         if self.k_bits == 2:
             k_unpacked = torch.stack([
-                (self.k_q >> 0) & 0x3,
-                (self.k_q >> 2) & 0x3,
-                (self.k_q >> 4) & 0x3,
-                (self.k_q >> 6) & 0x3,
+                (k_q_valid >> 0) & 0x3,
+                (k_q_valid >> 2) & 0x3,
+                (k_q_valid >> 4) & 0x3,
+                (k_q_valid >> 6) & 0x3,
             ], dim=-1).view(B, T_quantized, HKV, -1)[..., :K].float()
         else:
             k_unpacked = torch.stack([
-                (self.k_q >> 0) & 0xF,
-                (self.k_q >> 4) & 0xF,
+                (k_q_valid >> 0) & 0xF,
+                (k_q_valid >> 4) & 0xF,
             ], dim=-1).view(B, T_quantized, HKV, -1)[..., :K].float()
 
         # 反量化
-        k_scale_expanded = self.k_scale.repeat_interleave(self.BS, dim=1)[:, :T_quantized, :, :]
+        k_scale_expanded = k_scale_valid.repeat_interleave(self.BS, dim=1)[:, :T_quantized, :, :]
         k_dequant = (k_unpacked - QZERO) * k_scale_expanded
 
-        if self.k_residual is not None:
-            k_dequant = k_dequant + self.k_residual.to(k_dequant.dtype)
+        if k_residual_valid is not None:
+            k_dequant = k_dequant + k_residual_valid.to(k_dequant.dtype)
 
         return k_dequant.to(self.dtype)
 
     def _get_full_key(self) -> Optional[torch.Tensor]:
         """获取完整的 FP16 K。"""
         parts = []
-        if self.k_q is not None and self.num_full_blocks > 0:
+        if self.num_full_blocks > 0:
             parts.append(self._dequantize_blocks())
-        if self.k_current is not None:
-            parts.append(self.k_current)
+        if self.current_len > 0:
+            # 只取有效部分
+            parts.append(self.k_current[:, :self.current_len, :, :])
         if not parts:
             return None
         return torch.cat(parts, dim=self.seq_dim)
@@ -319,7 +398,8 @@ class Q2FP8SymLayer(CacheLayerMixin):
     def _refresh_fp_cache(self) -> None:
         self.key_full = self._get_full_key()
         self.keys = self.key_full
-        self.values = self.value
+        # 只返回有效部分的 value
+        self.values = self.value[:, :self.value_len, :, :] if self.value_len > 0 else None
 
     def update(
         self,
@@ -328,48 +408,79 @@ class Q2FP8SymLayer(CacheLayerMixin):
         cache_kwargs: Optional[dict[str, Any]] = None,
     ) -> tuple[torch.Tensor, torch.Tensor]:
         if not self.is_initialized:
-            self.lazy_initialization(key_states)
+            self.lazy_initialization(key_states, value_states)
 
-        # 更新 V cache
-        if self.value is None:
-            self.value = value_states
+        new_len = key_states.shape[self.seq_dim]
+
+        # 检查是否超出预分配的空间
+        if self.value_len + new_len > self.max_seq_len:
+            raise RuntimeError(
+                f"Cache overflow: trying to store {self.value_len + new_len} tokens, "
+                f"but max_seq_len={self.max_seq_len}"
+            )
+
+        # 更新 V cache - in-place 写入
+        self.value[:, self.value_len:self.value_len + new_len, :, :] = value_states
+        self.value_len += new_len
+
+        # 更新 K cache - in-place 写入到 k_current
+        # 先把新的 key 写入 k_current
+        if self.current_len + new_len <= self.BS:
+            # 新 token 可以完全放入当前 block
+            self.k_current[:, self.current_len:self.current_len + new_len, :, :] = key_states
+            self.v_current[:, self.current_len:self.current_len + new_len, :, :] = value_states
+            self.current_len += new_len
         else:
-            self.value = torch.cat([self.value, value_states], dim=self.seq_dim)
+            # 需要处理跨 block 的情况
+            # 先填满当前 block
+            remaining_in_block = self.BS - self.current_len
+            if remaining_in_block > 0:
+                self.k_current[:, self.current_len:self.BS, :, :] = key_states[:, :remaining_in_block, :, :]
+                self.v_current[:, self.current_len:self.BS, :, :] = value_states[:, :remaining_in_block, :, :]
 
-        # 更新 K cache
-        if self.k_current is None:
-            self.k_current = key_states
-        else:
-            self.k_current = torch.cat([self.k_current, key_states], dim=self.seq_dim)
+            # 量化当前满的 block
+            self._quantize_and_store_blocks(self.k_current.contiguous())
 
-        # 当前 block 满了就量化 (可一次处理多个完整 blocks)
-        if self.k_current is not None:
-            full_len = self.k_current.shape[self.seq_dim]
-            num_full_blocks = full_len // self.BS
-            if num_full_blocks > 0:
-                full_tokens = num_full_blocks * self.BS
-                k_blocks = self.k_current.narrow(self.seq_dim, 0, full_tokens)
-                self._quantize_and_store_blocks(k_blocks.contiguous())
+            # 处理剩余的 token
+            remaining_keys = key_states[:, remaining_in_block:, :, :]
+            remaining_values = value_states[:, remaining_in_block:, :, :]
+            remaining_len = remaining_keys.shape[self.seq_dim]
 
-                remaining_len = full_len - full_tokens
-                if remaining_len > 0:
-                    self.k_current = self.k_current.narrow(self.seq_dim, full_tokens, remaining_len).contiguous()
-                else:
-                    self.k_current = None
+            # 如果剩余的 token 超过一个 block，继续量化
+            while remaining_len >= self.BS:
+                block_keys = remaining_keys[:, :self.BS, :, :]
+                self._quantize_and_store_blocks(block_keys.contiguous())
+                remaining_keys = remaining_keys[:, self.BS:, :, :]
+                remaining_values = remaining_values[:, self.BS:, :, :]
+                remaining_len = remaining_keys.shape[self.seq_dim]
+
+            # 把剩余的 token 放入新的 k_current
+            self.k_current.zero_()
+            self.v_current.zero_()
+            if remaining_len > 0:
+                self.k_current[:, :remaining_len, :, :] = remaining_keys
+                self.v_current[:, :remaining_len, :, :] = remaining_values
+            self.current_len = remaining_len
+
+        # 检查当前 block 是否满了
+        if self.current_len == self.BS:
+            self._quantize_and_store_blocks(self.k_current.contiguous())
+            self.k_current.zero_()
+            self.v_current.zero_()
+            self.current_len = 0
 
         self._refresh_fp_cache()
         return self.keys, self.values
 
     def get_seq_length(self) -> int:
         quantized_len = self.num_full_blocks * self.BS
-        current_len = 0 if self.k_current is None else self.k_current.shape[self.seq_dim]
-        return quantized_len + current_len
+        return quantized_len + self.current_len
 
     def get_quantized_len(self) -> int:
         return self.num_full_blocks * self.BS
 
     def get_current_len(self) -> int:
-        return 0 if self.k_current is None else self.k_current.shape[self.seq_dim]
+        return self.current_len
 
     def get_max_cache_shape(self) -> int:
         return -1
@@ -383,25 +494,37 @@ class Q2FP8SymLayer(CacheLayerMixin):
     def reset(self) -> None:
         if not self.is_initialized:
             return
-        self.k_q = None
-        self.k_scale = None
-        self.k_residual = None
+        # 重置长度，但保留预分配的 buffer（地址不变）
         self.num_full_blocks = 0
-        self.k_current = None
-        self.key_full = None
+        self.current_len = 0
+        self.value_len = 0
+        if self.k_q is not None:
+            self.k_q.zero_()
+        if self.k_scale is not None:
+            self.k_scale.zero_()
+        if self.k_residual is not None:
+            self.k_residual.zero_()
+        if self.k_current is not None:
+            self.k_current.zero_()
+        if self.v_current is not None:
+            self.v_current.zero_()
         if self.value is not None:
-            self.value = self.value.narrow(self.seq_dim, 0, 0).contiguous()
+            self.value.zero_()
+        self.key_full = None
         self._refresh_fp_cache()
 
     def batch_repeat_interleave(self, repeats: int) -> None:
         if self.get_seq_length() == 0:
             return
+        # 注意：这会改变 batch size，需要重新分配 buffer
         if self.k_q is not None:
             self.k_q = self.k_q.repeat_interleave(repeats, dim=0)
             self.k_scale = self.k_scale.repeat_interleave(repeats, dim=0)
             self.k_residual = self.k_residual.repeat_interleave(repeats, dim=0)
         if self.k_current is not None:
             self.k_current = self.k_current.repeat_interleave(repeats, dim=0)
+        if self.v_current is not None:
+            self.v_current = self.v_current.repeat_interleave(repeats, dim=0)
         if self.value is not None:
             self.value = self.value.repeat_interleave(repeats, dim=0)
         self._refresh_fp_cache()
@@ -410,12 +533,15 @@ class Q2FP8SymLayer(CacheLayerMixin):
         if self.get_seq_length() == 0:
             return
         indices = indices.to(self.device)
+        # 注意：这会改变 batch size，需要重新分配 buffer
         if self.k_q is not None:
             self.k_q = self.k_q.index_select(0, indices)
             self.k_scale = self.k_scale.index_select(0, indices)
             self.k_residual = self.k_residual.index_select(0, indices)
         if self.k_current is not None:
             self.k_current = self.k_current.index_select(0, indices)
+        if self.v_current is not None:
+            self.v_current = self.v_current.index_select(0, indices)
         if self.value is not None:
             self.value = self.value.index_select(0, indices)
         self._refresh_fp_cache()
@@ -432,6 +558,7 @@ class Q2FP8SymCache(Cache):
     - 按 block/page 独立量化，每个 block 有独立的 scale
     - 新增 token 累积到当前 block，满了才量化
     - 未满的 block 保持 FP16，不量化
+    - 使用预分配的固定大小 buffer，避免地址变化（支持 CUDA Graph）
     """
 
     def __init__(
@@ -439,6 +566,7 @@ class Q2FP8SymCache(Cache):
         BS: int = 128,
         use_fp8_residual: bool = True,
         k_bits: int = 2,
+        max_seq_len: int = 32768,
         offloading: bool = False,
         offload_only_non_sliding: bool = True,
     ):
@@ -448,6 +576,7 @@ class Q2FP8SymCache(Cache):
         self.BS = BS
         self.use_fp8_residual = use_fp8_residual
         self.k_bits = k_bits
+        self.max_seq_len = max_seq_len
 
     def _ensure_layer(self, layer_idx: int) -> None:
         while len(self.layers) <= layer_idx:
@@ -456,6 +585,7 @@ class Q2FP8SymCache(Cache):
                     BS=self.BS,
                     use_fp8_residual=self.use_fp8_residual,
                     k_bits=self.k_bits,
+                    max_seq_len=self.max_seq_len,
                 )
             )
 

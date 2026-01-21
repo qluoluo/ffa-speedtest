@@ -61,6 +61,10 @@ Q2FP8SymStaticCache = Q2FP8SymCache
 logger = logging.get_logger(__name__)
 
 
+def _bump_stat(stats: dict, key: str, inc: int = 1) -> None:
+    stats[key] = stats.get(key, 0) + inc
+
+
 @use_kernel_forward_from_hub("RMSNorm")
 class LlamaRMSNorm(nn.Module):
     def __init__(self, hidden_size, eps=1e-6):
@@ -219,6 +223,10 @@ class LlamaAttention(nn.Module):
         self.cached_num_blocks = -1
         self.cached_k_q_ptr = -1
 
+        # Pre-allocated merge buffer for CUDA Graph (致命伤2 fix)
+        # Will be lazily initialized on first use
+        self._merge_output_buffer = None
+
     @deprecate_kwarg("past_key_value", new_name="past_key_values", version="4.58")
     def forward(
         self,
@@ -238,6 +246,7 @@ class LlamaAttention(nn.Module):
         # Make a shallow copy so we can tweak defaults without mutating the config.
         attn_settings: dict = dict(getattr(self.config, "attn_settings", {}))
         use_ffa_decode = attn_settings.get("use_ffa_decode", False)
+        debug_stats = attn_settings.get("debug_stats")
 
         cos, sin = position_embeddings
         query_states, key_states = apply_rotary_pos_emb(query_states, key_states, cos, sin)
@@ -292,6 +301,13 @@ class LlamaAttention(nn.Module):
             pattern_layers = list(range(1000))
         assert type(pattern_layers) is list
 
+        if debug_stats is not None:
+            _bump_stat(debug_stats, "total_calls")
+            if q_len == 1:
+                _bump_stat(debug_stats, "decode_calls")
+            else:
+                _bump_stat(debug_stats, "prefill_calls")
+
         # Check if we have quantized blocks available for FFA decode
         has_quantized_blocks = False
         if is_q2fp8_cache:
@@ -312,6 +328,20 @@ class LlamaAttention(nn.Module):
             self.layer_idx in pattern_layers
         )
 
+        if debug_stats is not None and q_len == 1:
+            if not use_ffa_decode:
+                _bump_stat(debug_stats, "ffa_disabled")
+            if not is_q2fp8_cache:
+                _bump_stat(debug_stats, "not_q2fp8_cache")
+            if not has_quantized_blocks:
+                _bump_stat(debug_stats, "no_quantized_blocks")
+            if self.layer_idx not in pattern_layers:
+                _bump_stat(debug_stats, "not_in_pattern_layers")
+            if use_ffa_path:
+                _bump_stat(debug_stats, "ffa_path_calls")
+            else:
+                _bump_stat(debug_stats, "flash_path_decode_calls")
+
         if use_ffa_path:
             # Debug logging disabled for performance
             # if self.layer_idx == 0:
@@ -319,24 +349,25 @@ class LlamaAttention(nn.Module):
             decode_kwargs = {
                 k: v
                 for k, v in attn_settings.items()
-                if k not in ("use_ffa_prefill", "use_ffa_decode", "pattern_layers")
+                if k not in ("use_ffa_prefill", "use_ffa_decode", "pattern_layers", "debug_stats")
             }
 
-            k_q = cache_layer.k_q
-            k_residual = cache_layer.k_residual
+            # OPTIMIZATION: Use slices of pre-allocated buffers
+            # Slices are views that share the same underlying memory address
+            # Since the base buffers are pre-allocated and never reallocated,
+            # the slices' data_ptr() remains constant
             quantized_len = cache_layer.get_quantized_len()
-
-            # k_scale is [B, num_blocks, HKV, K] - pass per-block scale directly
-            # The kernel now supports per-block scale via USE_PERBLOCK_SCALE parameter
-            k_scale = cache_layer.k_scale  # [B, num_blocks, HKV, K]
-
-            # Get quantized portion of v
+            k_q = cache_layer.k_q[:, :quantized_len, :, :]
+            k_residual = cache_layer.k_residual[:, :quantized_len, :, :] if cache_layer.k_residual is not None else None
+            num_full_blocks = cache_layer.num_full_blocks
+            k_scale = cache_layer.k_scale[:, :num_full_blocks, :, :]  # [B, num_blocks, HKV, K]
             v_quantized = cache_layer.value[:, :quantized_len, :, :]
 
             skip_ratio_store = attn_settings.get("skip_ratio_store")
 
             # FFA decode expects q: [B, 1, HQ, K]
-            q_for_ffa = query_states.transpose(1, 2).contiguous()  # [B, HQ, 1, K] -> [B, 1, HQ, K]
+            # OPTIMIZATION: Remove contiguous() to avoid D2D copy - Triton can handle non-contiguous strides
+            q_for_ffa = query_states.transpose(1, 2)  # [B, HQ, 1, K] -> [B, 1, HQ, K]
 
             # When we have k_current, request lse for accurate merging
             need_lse = current_len > 0 and cache_layer.k_current is not None
@@ -344,6 +375,18 @@ class LlamaAttention(nn.Module):
 
             # Block-wise JIT CUDA Graph Logic
             num_full_blocks = cache_layer.num_full_blocks if hasattr(cache_layer, 'num_full_blocks') else 0
+
+            if debug_stats is not None:
+                if current_len > 0:
+                    _bump_stat(debug_stats, "ffa_current_len_nonzero")
+                else:
+                    _bump_stat(debug_stats, "ffa_current_len_zero")
+                if need_lse:
+                    _bump_stat(debug_stats, "ffa_need_lse")
+                if num_full_blocks > 0:
+                    _bump_stat(debug_stats, "ffa_has_full_blocks")
+                else:
+                    _bump_stat(debug_stats, "ffa_no_full_blocks")
 
             # Only use CUDA Graph if we have full blocks
             if num_full_blocks > 0:
@@ -354,6 +397,9 @@ class LlamaAttention(nn.Module):
                     num_full_blocks != self.cached_num_blocks or
                     k_q_ptr != self.cached_k_q_ptr
                 )
+
+                if debug_stats is not None and need_recapture:
+                    _bump_stat(debug_stats, "ffa_graph_recapture")
 
                 if need_recapture:
                     # Free old graph runner to release memory
@@ -384,46 +430,50 @@ class LlamaAttention(nn.Module):
                     self.cached_num_blocks = num_full_blocks
                     self.cached_k_q_ptr = k_q_ptr
 
-                # Replay the graph
-                attn_output_ffa = self.current_graph_runner.replay(
-                    q=q_for_ffa,
-                    k_q=k_q,
-                    k_scale=k_scale,
-                    v=v_quantized,
-                    k_residual=k_residual,
-                    return_skip_ratio=False,  # Don't capture skip_ratio in graph
-                )
-
-                # Note: CUDA Graph path doesn't support return_lse or return_skip_ratio
-                # We'll handle these outside the graph if needed
-                if need_lse or return_skip:
-                    # Fallback to non-graph path for lse/skip_ratio
-                    decode_result = attn_forward_decode(
+                # Replay the graph with LSE support
+                if need_lse:
+                    attn_output_ffa, ffa_m, ffa_l = self.current_graph_runner.replay(
                         q=q_for_ffa,
                         k_q=k_q,
                         k_scale=k_scale,
                         v=v_quantized,
                         k_residual=k_residual,
-                        return_lse=need_lse,
+                        return_lse=True,
+                    )
+                else:
+                    attn_output_ffa = self.current_graph_runner.replay(
+                        q=q_for_ffa,
+                        k_q=k_q,
+                        k_scale=k_scale,
+                        v=v_quantized,
+                        k_residual=k_residual,
+                        return_lse=False,
+                    )
+
+                if debug_stats is not None:
+                    _bump_stat(debug_stats, "ffa_graph_replay")
+
+                # Handle skip_ratio if needed (outside graph)
+                if return_skip:
+                    if debug_stats is not None:
+                        _bump_stat(debug_stats, "ffa_skip_ratio_requested")
+                    # Compute skip_ratio separately (not in graph)
+                    _, skip_ratio = attn_forward_decode(
+                        q=q_for_ffa,
+                        k_q=k_q,
+                        k_scale=k_scale,
+                        v=v_quantized,
+                        k_residual=k_residual,
+                        return_lse=False,
+                        return_skip_ratio=True,
                         **decode_kwargs,
                     )
-                    # Parse results as before
-                    if need_lse:
-                        if return_skip:
-                            attn_output_ffa, ffa_m, ffa_l, skip_ratio = decode_result
-                            if isinstance(skip_ratio_store, list):
-                                skip_ratio_store.append(float(skip_ratio))
-                        else:
-                            attn_output_ffa, ffa_m, ffa_l = decode_result
-                    else:
-                        if return_skip:
-                            attn_output_ffa, skip_ratio = decode_result
-                            if isinstance(skip_ratio_store, list):
-                                skip_ratio_store.append(float(skip_ratio))
-                        else:
-                            attn_output_ffa = decode_result
+                    if isinstance(skip_ratio_store, list):
+                        skip_ratio_store.append(float(skip_ratio))
             else:
                 # No full blocks yet, use regular path
+                if debug_stats is not None:
+                    _bump_stat(debug_stats, "ffa_no_graph")
                 decode_result = attn_forward_decode(
                     q=q_for_ffa,
                     k_q=k_q,
@@ -483,7 +533,12 @@ class LlamaAttention(nn.Module):
                 # attn_output_ffa: [B, 1, HQ, V] -> [B, HQ, V]
                 o1 = attn_output_ffa.squeeze(1)  # [B, HQ, V]
 
-                # Call merge kernel
+                # OPTIMIZATION: Pre-allocate merge output buffer (致命伤2 fix)
+                # This avoids torch.empty_like() allocation on every decode step
+                if self._merge_output_buffer is None or self._merge_output_buffer.shape != o1.shape:
+                    self._merge_output_buffer = torch.empty_like(o1)
+
+                # Call merge kernel with pre-allocated buffer
                 o_merged = merge_attention_output(
                     o1=o1,                    # [B, HQ, V]
                     m1=ffa_m,                 # [B, HQ]
@@ -493,6 +548,7 @@ class LlamaAttention(nn.Module):
                     v_current=v_current,      # [B, BS, HKV, V]
                     current_len=current_len,  # int
                     scale=self.scaling,       # float
+                    o_final=self._merge_output_buffer,  # Pre-allocated buffer
                 )
 
                 # o_merged: [B, HQ, V] -> [B, 1, HQ, V]

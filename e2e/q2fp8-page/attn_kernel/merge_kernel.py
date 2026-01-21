@@ -194,6 +194,7 @@ def merge_attention_output(
     v_current: torch.Tensor,    # [B, BS, HKV, V] - current FP16 values
     current_len: int,           # Actual valid length
     scale: float = None,        # Attention scale
+    o_final: torch.Tensor = None,  # Pre-allocated output buffer (optional)
 ) -> torch.Tensor:
     """
     Merge Q2FP8 attention output with FP16 current tokens.
@@ -207,6 +208,7 @@ def merge_attention_output(
         v_current: current values [B, BS, HKV, V]
         current_len: actual valid length in current buffer
         scale: attention scale (default: 1/sqrt(K))
+        o_final: pre-allocated output buffer [B, HQ, V] (optional, for CUDA Graph)
 
     Returns:
         o_final: merged output [B, HQ, V]
@@ -218,8 +220,13 @@ def merge_attention_output(
     if scale is None:
         scale = 1.0 / (K ** 0.5)
 
-    # Allocate output
-    o_final = torch.empty_like(o1)
+    # OPTIMIZATION: Use pre-allocated buffer if provided (for CUDA Graph)
+    # Otherwise allocate new buffer
+    if o_final is None:
+        o_final = torch.empty_like(o1)
+    else:
+        # Verify shape matches
+        assert o_final.shape == o1.shape, f"o_final shape mismatch: {o_final.shape} vs {o1.shape}"
 
     # Launch kernel
     grid = (B, HQ)

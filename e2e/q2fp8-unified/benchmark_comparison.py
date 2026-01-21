@@ -1,5 +1,5 @@
 """
-Benchmark comparison script for FFA-Q2FP8-Page vs Flash Attention.
+Benchmark comparison script for FFA-Q2FP8-Unified vs Flash Attention.
 
 This script compares the performance of:
 1. Custom FFA method (use_ffa_decode=True)
@@ -182,7 +182,7 @@ def run_single_benchmark(
     Returns:
         Dictionary with timing results and metadata
     """
-    method_name = "FFA-Q2FP8" if use_ffa_decode else "FlashAttention"
+    method_name = "FFA-Q2FP8-Unified" if use_ffa_decode else "FlashAttention"
     print(f"\n{'='*70}")
     print(f"Running benchmark: {method_name}")
     print(f"{'='*70}")
@@ -226,14 +226,20 @@ def run_single_benchmark(
     actual_prefill_len = input_ids.shape[1]
     print(f"Actual prefill length: {actual_prefill_len} tokens")
 
-    # Create cache
-    cache = Q2FP8SymCache(BS=BS, use_fp8_residual=True, k_bits=k_bits)
+    # Create cache - only use Q2FP8 cache for FFA decode
+    if use_ffa_decode:
+        cache = Q2FP8SymCache(BS=BS, use_fp8_residual=True, k_bits=k_bits)
+    else:
+        cache = None  # Use standard transformers cache for Flash Attention
 
     # Warmup + benchmark run
     try:
         if warmup:
             print("Running warmup...")
-            warmup_cache = Q2FP8SymCache(BS=BS, use_fp8_residual=True, k_bits=k_bits)
+            if use_ffa_decode:
+                warmup_cache = Q2FP8SymCache(BS=BS, use_fp8_residual=True, k_bits=k_bits)
+            else:
+                warmup_cache = None
             warmup_logits, _ = _run_prefill(model, input_ids, attention_mask, warmup_cache, device)
             warmup_next = _get_next_token(warmup_logits)
             _run_decode_steps(
@@ -252,10 +258,10 @@ def run_single_benchmark(
         logits, prefill_time = _run_prefill(model, input_ids, attention_mask, cache, device)
         next_token = _get_next_token(logits)
 
-        # Optional alignment to BS boundary (not timed)
+        # Optional alignment to BS boundary (not timed) - only for FFA decode
         align_tokens = 0
         align_time = 0.0
-        if align_to_bs and cache.get_current_len() > 0:
+        if use_ffa_decode and align_to_bs and cache is not None and cache.get_current_len() > 0:
             align_tokens = (BS - cache.get_current_len()) % BS
         if align_tokens > 0:
             print(f"Aligning cache to BS boundary with {align_tokens} tokens (not timed)...")
@@ -398,7 +404,7 @@ def run_comparison_benchmark(
     Run comparison benchmark between FFA and Flash Attention.
     """
     print("="*70)
-    print("FFA vs Flash Attention Benchmark Comparison")
+    print("FFA-Q2FP8-Unified vs Flash Attention Benchmark Comparison")
     print("="*70)
     print(f"Model: {model_path}")
     print(f"Prefill length: {prefill_len}")
@@ -440,7 +446,7 @@ def run_comparison_benchmark(
 
     # 2. FFA method
     print("\n" + "="*70)
-    print("BENCHMARK 2/2: FFA-Q2FP8 (Custom Method)")
+    print("BENCHMARK 2/2: FFA-Q2FP8-Unified (Custom Method)")
     print("="*70)
     ffa_result = run_single_benchmark(
         model_path=model_path,
@@ -485,7 +491,7 @@ def run_comparison_benchmark(
         print(f"  Total time: {flash_result['total_time_sec']:.3f}s")
         print(f"  Decode throughput: {flash_throughput:.2f} tokens/sec")
 
-        print(f"\nFFA-Q2FP8:")
+        print(f"\nFFA-Q2FP8-Unified:")
         print(f"  Total time: {ffa_result['total_time_sec']:.3f}s")
         print(f"  Decode throughput: {ffa_throughput:.2f} tokens/sec")
 
@@ -526,7 +532,7 @@ def run_comparison_benchmark(
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Benchmark comparison: FFA-Q2FP8 vs Flash Attention"
+        description="Benchmark comparison: FFA-Q2FP8-Unified vs Flash Attention"
     )
     parser.add_argument(
         "--model_path",

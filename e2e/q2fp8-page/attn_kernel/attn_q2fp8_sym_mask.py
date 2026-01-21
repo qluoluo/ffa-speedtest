@@ -682,9 +682,11 @@ def attn_forward_decode_quantized(
 class CUDAGraphDecodeRunnerQ2FP8:
     """Capture and replay the Q2FP8 decode kernel with static buffers.
 
-    This wrapper avoids per-step kernel launches by using torch.cuda.CUDAGraph.
-    Output is written into a persistent tensor; callers should not assume it
-    survives across replays.
+    OPTIMIZATION: This wrapper uses CUDA Graph to eliminate kernel launch overhead.
+    Key principle: CUDA Graph requires fixed memory addresses. We capture the graph
+    using the cache's own pre-allocated buffers directly (NO COPIES during replay).
+
+    Only Q is copied (small, 1 token), while K/V cache buffers are used directly.
     """
 
     def __init__(
@@ -735,13 +737,15 @@ class CUDAGraphDecodeRunnerQ2FP8:
         if self._use_ext_th and precomputed_threshold is None:
             raise ValueError("precomputed_threshold is required when use_ext_th=True")
 
+        # OPTIMIZATION: Only allocate buffer for Q (small, 1 token)
+        # K/V cache buffers are used directly from the cache (no copy needed)
         self._static_q = torch.empty_like(q, device=self._device)
-        self._static_k_q = torch.empty_like(k_q, device=self._device)
-        self._static_k_scale = torch.empty_like(k_scale, device=self._device)
-        self._static_v = torch.empty_like(v, device=self._device)
-        self._static_k_residual = None
-        if self._use_fp8_residual:
-            self._static_k_residual = torch.empty_like(k_residual, device=self._device)
+
+        # Store references to cache buffers (these are pre-allocated and won't move)
+        self._cache_k_q = k_q
+        self._cache_k_scale = k_scale
+        self._cache_v = v
+        self._cache_k_residual = k_residual if self._use_fp8_residual else None
 
         self._static_threshold = None
         if self._use_ext_th:
@@ -749,30 +753,32 @@ class CUDAGraphDecodeRunnerQ2FP8:
                 precomputed_threshold, device=self._device
             )
 
-        # Seed static buffers once to avoid uninitialized data in capture.
+        # Allocate static LSE buffers for accurate merging
+        B, _, HQ, _ = q.shape
+        self._static_m = torch.empty((B, HQ), device=self._device, dtype=torch.float32)
+        self._static_l = torch.empty((B, HQ), device=self._device, dtype=torch.float32)
+
+        # Seed Q buffer once to avoid uninitialized data in capture
         self._static_q.copy_(q)
-        self._static_k_q.copy_(k_q)
-        self._static_k_scale.copy_(k_scale)
-        self._static_v.copy_(v)
-        if self._use_fp8_residual:
-            self._static_k_residual.copy_(k_residual)
         if self._use_ext_th:
             self._static_threshold.copy_(precomputed_threshold)
 
         # Warmup to trigger Triton JIT before graph capture.
+        # Use cache buffers directly (no copy needed for K/V)
         for _ in range(max(1, warmup)):
             attn_forward_decode_quantized(
                 q=self._static_q,
-                k_q=self._static_k_q,
-                k_scale=self._static_k_scale,
-                k_residual=self._static_k_residual,
-                v=self._static_v,
+                k_q=self._cache_k_q,
+                k_scale=self._cache_k_scale,
+                k_residual=self._cache_k_residual,
+                v=self._cache_v,
                 k_bits=self._k_bits,
                 scale=self._scale,
                 BS=self._BS,
                 SBS=self._SBS,
                 delta=self._delta,
                 return_skip_ratio=False,
+                return_lse=True,  # Warmup with LSE
                 precomputed_threshold=self._static_threshold,
                 use_fp8_residual=self._use_fp8_residual,
                 num_warps_th=self._num_warps_th,
@@ -787,18 +793,21 @@ class CUDAGraphDecodeRunnerQ2FP8:
         self._graph = torch.cuda.CUDAGraph()
         self._pool = torch.cuda.graphs.graph_pool_handle()
         with torch.cuda.graph(self._graph, pool=self._pool):
-            self._static_out = attn_forward_decode_quantized(
+            # Capture with return_lse=True to get (o, m, l)
+            # Use cache buffers directly - addresses are fixed
+            result = attn_forward_decode_quantized(
                 q=self._static_q,
-                k_q=self._static_k_q,
-                k_scale=self._static_k_scale,
-                k_residual=self._static_k_residual,
-                v=self._static_v,
+                k_q=self._cache_k_q,
+                k_scale=self._cache_k_scale,
+                k_residual=self._cache_k_residual,
+                v=self._cache_v,
                 k_bits=self._k_bits,
                 scale=self._scale,
                 BS=self._BS,
                 SBS=self._SBS,
                 delta=self._delta,
                 return_skip_ratio=False,
+                return_lse=True,  # Always capture with LSE
                 precomputed_threshold=self._static_threshold,
                 use_fp8_residual=self._use_fp8_residual,
                 num_warps_th=self._num_warps_th,
@@ -808,6 +817,10 @@ class CUDAGraphDecodeRunnerQ2FP8:
                 num_warps_s2=self._num_warps_s2,
                 num_stages_s2=self._num_stages_s2,
             )
+            # Unpack result: (o, m, l)
+            self._static_out = result[0]
+            self._static_m.copy_(result[1])
+            self._static_l.copy_(result[2])
 
     @property
     def output(self) -> torch.Tensor:
@@ -823,6 +836,7 @@ class CUDAGraphDecodeRunnerQ2FP8:
         k_residual: Optional[torch.Tensor] = None,
         precomputed_threshold: Optional[torch.Tensor] = None,
         return_skip_ratio: bool = False,
+        return_lse: bool = False,
     ) -> torch.Tensor:
         if q.device != self._device:
             raise ValueError("q must be on the same device as the captured graph.")
@@ -831,42 +845,75 @@ class CUDAGraphDecodeRunnerQ2FP8:
         if self._use_ext_th and precomputed_threshold is None:
             raise ValueError("precomputed_threshold is required for this captured graph.")
 
+        # OPTIMIZATION: Only copy Q (small, 1 token)
+        # K/V cache buffers are used directly - NO COPY needed (addresses are fixed)
+        # This eliminates O(N) copy overhead where N = sequence length
         self._static_q.copy_(q)
-        self._static_k_q.copy_(k_q)
-        self._static_k_scale.copy_(k_scale)
-        self._static_v.copy_(v)
-        if self._use_fp8_residual:
-            self._static_k_residual.copy_(k_residual)
         if self._use_ext_th:
             self._static_threshold.copy_(precomputed_threshold)
 
-        self._graph.replay()
-        if not return_skip_ratio:
-            return self._static_out
+        # NOTE: Assertions removed - cache buffers are now pre-allocated with fixed addresses
+        # The cache uses in-place writes, so addresses never change
 
-        # NOTE: Skip ratio computation is not captured; it re-runs the kernel once.
-        _, skip_ratio = attn_forward_decode_quantized(
-            q=self._static_q,
-            k_q=self._static_k_q,
-            k_scale=self._static_k_scale,
-            k_residual=self._static_k_residual,
-            v=self._static_v,
-            k_bits=self._k_bits,
-            scale=self._scale,
-            BS=self._BS,
-            SBS=self._SBS,
-            delta=self._delta,
-            return_skip_ratio=True,
-            precomputed_threshold=self._static_threshold,
-            use_fp8_residual=self._use_fp8_residual,
-            num_warps_th=self._num_warps_th,
-            num_stages_th=self._num_stages_th,
-            num_warps_s1=self._num_warps_s1,
-            num_stages_s1=self._num_stages_s1,
-            num_warps_s2=self._num_warps_s2,
-            num_stages_s2=self._num_stages_s2,
-        )
-        return self._static_out, skip_ratio
+        self._graph.replay()
+
+        # Build return value based on flags
+        if return_lse:
+            if return_skip_ratio:
+                # NOTE: Skip ratio computation is not captured; it re-runs the kernel once.
+                _, _, _, skip_ratio = attn_forward_decode_quantized(
+                    q=self._static_q,
+                    k_q=self._cache_k_q,
+                    k_scale=self._cache_k_scale,
+                    k_residual=self._cache_k_residual,
+                    v=self._cache_v,
+                    k_bits=self._k_bits,
+                    scale=self._scale,
+                    BS=self._BS,
+                    SBS=self._SBS,
+                    delta=self._delta,
+                    return_skip_ratio=True,
+                    return_lse=True,
+                    precomputed_threshold=self._static_threshold,
+                    use_fp8_residual=self._use_fp8_residual,
+                    num_warps_th=self._num_warps_th,
+                    num_stages_th=self._num_stages_th,
+                    num_warps_s1=self._num_warps_s1,
+                    num_stages_s1=self._num_stages_s1,
+                    num_warps_s2=self._num_warps_s2,
+                    num_stages_s2=self._num_stages_s2,
+                )
+                return self._static_out, self._static_m, self._static_l, skip_ratio
+            else:
+                # Return without cloning to avoid overhead
+                return self._static_out, self._static_m, self._static_l
+        else:
+            if return_skip_ratio:
+                # NOTE: Skip ratio computation is not captured; it re-runs the kernel once.
+                _, skip_ratio = attn_forward_decode_quantized(
+                    q=self._static_q,
+                    k_q=self._cache_k_q,
+                    k_scale=self._cache_k_scale,
+                    k_residual=self._cache_k_residual,
+                    v=self._cache_v,
+                    k_bits=self._k_bits,
+                    scale=self._scale,
+                    BS=self._BS,
+                    SBS=self._SBS,
+                    delta=self._delta,
+                    return_skip_ratio=True,
+                    precomputed_threshold=self._static_threshold,
+                    use_fp8_residual=self._use_fp8_residual,
+                    num_warps_th=self._num_warps_th,
+                    num_stages_th=self._num_stages_th,
+                    num_warps_s1=self._num_warps_s1,
+                    num_stages_s1=self._num_stages_s1,
+                    num_warps_s2=self._num_warps_s2,
+                    num_stages_s2=self._num_stages_s2,
+                )
+                return self._static_out, skip_ratio
+            else:
+                return self._static_out
 
     __call__ = replay
 
